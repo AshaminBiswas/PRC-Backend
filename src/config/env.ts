@@ -22,8 +22,8 @@ const envSchema = z.object({
   SUPABASE_STORAGE_BUCKET_CATEGORIES: z.string().default('categories'),
 
   SMTP_HOST: z.string().default('smtp.gmail.com'),
-  SMTP_PORT: z.coerce.number().default(587),
-  SMTP_SECURE: z.string().transform((v) => v === 'true').default('false'),
+  SMTP_PORT: z.coerce.number().default(465),
+  SMTP_SECURE: z.string().transform((v) => v === 'true').default('true'),
   SMTP_USER: z.string().optional().default(''),
   SMTP_PASS: z.string().optional().default(''),
   SMTP_FROM_NAME: z.string().default('PRC Hardware'),

@@ -9,14 +9,19 @@ let transporter: Transporter;
 
 const getTransporter = (): Transporter => {
   if (!transporter) {
+    const isSecure = env.smtp.secure || env.smtp.port === 465;
+
     transporter = nodemailer.createTransport({
       host: env.smtp.host,
       port: env.smtp.port,
-      secure: env.smtp.secure,
+      secure: isSecure,
       auth: {
         user: env.smtp.user,
         pass: env.smtp.pass,
       },
+      connectionTimeout: 5000, // 5-second socket timeout to prevent HTTP request hanging
+      greetingTimeout: 5000,
+      socketTimeout: 5000,
     });
   }
   return transporter;
@@ -32,7 +37,7 @@ interface SendMailOptions {
 
 export const sendMail = async (options: SendMailOptions): Promise<void> => {
   if (!env.smtp.user || !env.smtp.pass) {
-    console.warn(`[Email Warning] SMTP_USER or SMTP_PASS is missing in environment variables. Email to ${options.to} was not dispatched.`);
+    console.warn(`[Email Warning] SMTP_USER or SMTP_PASS is missing in environment. Email to ${options.to} was not sent.`);
     return;
   }
 
@@ -47,15 +52,15 @@ export const sendMail = async (options: SendMailOptions): Promise<void> => {
 
     console.log(`[Email Success] Sent to ${options.to} | Subject: "${options.subject}" | MessageID: ${info.messageId}`);
   } catch (error: any) {
-    console.error(`[Email Error] Failed sending email to ${options.to}:`, error?.message || error);
-    throw error;
+    console.error(`[Email Error] Connection/SMTP error sending to ${options.to}:`, error?.message || error);
+    // Catch SMTP timeout/network errors gracefully so HTTP requests do not fail with 500 Connection Timeout
   }
 };
 
 // ─── Email Dispatcher ─────────────────────────────────────────────────────────
 
 const enqueueEmail = async (options: SendMailOptions): Promise<void> => {
-  // If async jobs are disabled or in dev mode, send email directly via Nodemailer
+  // In dev mode or when async jobs are disabled, send email directly via Nodemailer
   if (env.isDev || !env.asyncJobs.enabled) {
     await sendMail(options);
     return;
