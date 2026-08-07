@@ -11,15 +11,15 @@ export const getRedisClient = (): Redis | null => {
     const isTls = url.startsWith("rediss://");
 
     redisClient = new Redis(url, {
-      maxRetriesPerRequest: 3,
+      maxRetriesPerRequest: null, // Required by rate-limit-redis to prevent MaxRetriesPerRequestError
       retryStrategy: (times: number) => Math.min(times * 200, 2000),
       keepAlive: 10000, // Send TCP keepalive packets every 10s to prevent ECONNRESET
       tls: isTls ? { rejectUnauthorized: false } : undefined,
     });
 
     redisClient.on("error", (err: Error) => {
-      // Suppress ECONNRESET logs in console
-      if (!err.message.includes("ECONNRESET")) {
+      // Suppress connection retry noise in console
+      if (!err.message.includes("ECONNRESET") && !err.message.includes("max retries")) {
         console.error("[Redis] Connection error:", err.message);
       }
     });
