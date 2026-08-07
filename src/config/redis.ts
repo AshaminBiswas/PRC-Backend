@@ -24,7 +24,7 @@ export const getRedisClient = (): Redis | null => {
       }
     });
 
-    redisClient.on("connect", () => {
+    redisClient.once("connect", () => {
       console.log("[Redis] Connected successfully");
     });
   }
