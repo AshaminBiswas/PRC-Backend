@@ -14,8 +14,8 @@ const startWorker = async () => {
     await connectDatabases();
     console.log(`Database connected on ${env.INSTANCE_ID}`);
 
-    server = app.listen(env.PORT, () => {
-      console.log(`PRC Hardware API listening on http://localhost:${env.PORT}${env.API_PREFIX} (${env.INSTANCE_ID})`);
+    server = app.listen(env.PORT, '0.0.0.0', () => {
+      console.log(`PRC Hardware API listening on http://0.0.0.0:${env.PORT}${env.API_PREFIX} (${env.INSTANCE_ID})`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
