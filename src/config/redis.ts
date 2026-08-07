@@ -1,24 +1,31 @@
 import Redis from "ioredis";
+import { env } from "./env";
 
 let redisClient: Redis | null = null;
 
 export const getRedisClient = (): Redis | null => {
-  const url = process.env.REDIS_URL;
+  const url = env.redis.url;
   if (!url) return null;
 
   if (!redisClient) {
+    const isTls = url.startsWith("rediss://");
+
     redisClient = new Redis(url, {
       maxRetriesPerRequest: 3,
-      lazyConnect: true,
-      enableReadyCheck: false,
+      retryStrategy: (times: number) => Math.min(times * 200, 2000),
+      keepAlive: 10000, // Send TCP keepalive packets every 10s to prevent ECONNRESET
+      tls: isTls ? { rejectUnauthorized: false } : undefined,
     });
 
     redisClient.on("error", (err: Error) => {
-      console.error("[Redis] Connection error:", err.message);
+      // Suppress ECONNRESET logs in console
+      if (!err.message.includes("ECONNRESET")) {
+        console.error("[Redis] Connection error:", err.message);
+      }
     });
 
     redisClient.on("connect", () => {
-      console.log("[Redis] Connected");
+      console.log("[Redis] Connected successfully");
     });
   }
 
