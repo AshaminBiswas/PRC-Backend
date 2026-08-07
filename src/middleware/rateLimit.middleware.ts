@@ -12,11 +12,7 @@ const makeStore = (prefix: string): RedisStore | undefined => {
   return new RedisStore({
     prefix,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sendCommand: async (command: string, ...args: string[]): Promise<any> => {
-      // If Redis client is not ready, fail instantly so passOnStoreError bypasses without hanging
-      if (client.status !== "ready") {
-        throw new Error(`Redis client status: ${client.status}`);
-      }
+    sendCommand: (command: string, ...args: string[]): Promise<any> => {
       return client.call(command, ...args) as Promise<any>;
     },
   });
