@@ -24,7 +24,7 @@ import type {
   ChangePasswordInput,
 } from './auth.schema';
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 
 // ─── Helper: build token pair ─────────────────────────────────────────────────
 
@@ -49,10 +49,7 @@ const getPrimaryRoleSlug = (userRoles: Array<{ role: { slug: string } }>): strin
 // ─── Register ─────────────────────────────────────────────────────────────────
 
 export const register = async (input: RegisterInput) => {
-  const existing = await prisma.user.findUnique({
-    where: { email: input.email },
-    select: { id: true },
-  });
+  const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
     throw new AppError('EMAIL_TAKEN', 'An account with this email already exists', 409);
   }
@@ -60,7 +57,7 @@ export const register = async (input: RegisterInput) => {
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
 
   // Ensure default regular B2C Customer role exists and assign to new user
-  let customerRole = await prisma.role.findUnique({ where: { slug: 'customer' }, select: { id: true } });
+  let customerRole = await prisma.role.findUnique({ where: { slug: 'customer' } });
   if (!customerRole) {
     customerRole = await prisma.role.create({
       data: {
@@ -69,7 +66,6 @@ export const register = async (input: RegisterInput) => {
         description: 'Regular B2C customer',
         isSystem: true,
       },
-      select: { id: true },
     });
   }
 
@@ -86,11 +82,6 @@ export const register = async (input: RegisterInput) => {
         create: { roleId: customerRole.id },
       },
     },
-    select: {
-      id: true,
-      email: true,
-      firstName: true,
-    },
   });
 
   // Create email verification token
@@ -103,10 +94,8 @@ export const register = async (input: RegisterInput) => {
     },
   });
 
-  // Send verification email asynchronously off the event loop
-  setImmediate(() => {
-    sendVerificationEmail(user.email, user.firstName, verifyToken).catch(console.error);
-  });
+  // Send verification email (non-blocking)
+  sendVerificationEmail(user.email, user.firstName, verifyToken).catch(console.error);
 
   return { userId: user.id, email: user.email, requiresVerification: true };
 };

@@ -12,8 +12,16 @@ const makeStore = (prefix: string): RedisStore | undefined => {
   return new RedisStore({
     prefix,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sendCommand: (command: string, ...args: string[]): Promise<any> => {
-      return client.call(command, ...args) as Promise<any>;
+    sendCommand: async (command: string, ...args: string[]): Promise<any> => {
+      // 500ms timeout race to guarantee rate limiting NEVER hangs HTTP requests
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Redis rate-limit timeout")), 500)
+      );
+
+      return Promise.race([
+        client.call(command, ...args),
+        timeoutPromise,
+      ]);
     },
   });
 };
@@ -23,7 +31,7 @@ export const generalLimiter = rateLimit({
   max: env.rateLimit.maxRequests,
   standardHeaders: true,
   legacyHeaders: false,
-  passOnStoreError: true, // Gracefully fallback to memory if Redis is unavailable
+  passOnStoreError: true, // Gracefully fallback to memory if Redis socket drops or times out
   store: makeStore("rl:general:"),
   message: "Too many requests, please try again later.",
 });
@@ -33,7 +41,7 @@ export const authLimiter = rateLimit({
   max: env.rateLimit.authMax,
   standardHeaders: true,
   legacyHeaders: false,
-  passOnStoreError: true, // Gracefully fallback to memory if Redis is unavailable
+  passOnStoreError: true, // Gracefully fallback to memory if Redis socket drops or times out
   store: makeStore("rl:auth:"),
   message: "Too many authentication attempts, please try again later.",
 });
@@ -43,7 +51,7 @@ export const emailLimiter = rateLimit({
   max: env.rateLimit.authMax,
   standardHeaders: true,
   legacyHeaders: false,
-  passOnStoreError: true, // Gracefully fallback to memory if Redis is unavailable
+  passOnStoreError: true, // Gracefully fallback to memory if Redis socket drops or times out
   store: makeStore("rl:email:"),
   message: "Too many email requests, please try again later.",
 });

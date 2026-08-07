@@ -47,8 +47,9 @@ import webhookRoutes from './modules/payments/webhook.routes';
 
 const app = express();
 
-// Trust proxy for Cloudflare / Render load balancers
-app.set('trust proxy', 1);
+if (env.scaling.trustProxy) {
+  app.set('trust proxy', 1);
+}
 
 // Security headers
 app.use(helmet());
@@ -59,11 +60,16 @@ app.use((_req, res, next) => {
   next();
 });
 
-// CORS (Resilient origin matching)
+// CORS (Allow configured origins, localhost, or reflect request origin safely)
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || env.cors.allowedOrigins.includes('*') || env.cors.allowedOrigins.includes(origin) || env.isDev) {
+      if (
+        !origin ||
+        env.cors.allowedOrigins.includes('*') ||
+        env.cors.allowedOrigins.includes(origin) ||
+        env.isDev
+      ) {
         callback(null, true);
       } else {
         callback(null, true);
@@ -71,7 +77,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Instance-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
 
@@ -82,19 +88,9 @@ app.use(morgan(env.isDev ? 'dev' : 'combined', { stream: morganStream }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ─── Un-throttled Health Check & Documentation Endpoints ─────────────────────
+// ─── Health Checks & OpenAPI Documentation (Mounted BEFORE rate limiter) ──────
 
 const prefix = env.API_PREFIX;
-
-app.get('/', (_req, res) => {
-  res.json({
-    success: true,
-    message: 'Pacific Hardware Enterprise API',
-    version: '1.0.0',
-    documentation: `${prefix}/docs`,
-    health: '/health',
-  });
-});
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -116,12 +112,10 @@ app.get('/ready', (_req, res) => {
   });
 });
 
-// OpenAPI Interactive Documentation Portal
 app.get(`${prefix}/docs.json`, serveDocsJson);
 app.get(`${prefix}/docs`, serveDocsUi);
 
-// ─── General Rate Limiter (API Data Endpoints Only) ──────────────────────────
-
+// ─── General Rate Limiter (Mounted for feature API routes) ────────────────────
 app.use(generalLimiter);
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
@@ -161,7 +155,7 @@ app.use('/api/warehouse', allocationRoutes);
 app.use(`${prefix}/logistics`, logisticsRoutes);
 app.use(`${prefix}/invoices`, invoiceRoutes);
 
-// Razorpay Webhooks
+// ─── Razorpay Webhooks (raw body required) ───────────────────────────────────
 app.use(`${prefix}/payments/webhook`, webhookRoutes);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
