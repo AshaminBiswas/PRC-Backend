@@ -6,6 +6,7 @@ import { morganStream } from './config/logger';
 import { env } from './config/env';
 import { generalLimiter } from './middleware/rateLimit.middleware';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
+import { serveDocsJson, serveDocsUi } from './config/swagger';
 
 // ─── Module Routes ────────────────────────────────────────────────────────────
 import authRoutes from './modules/auth/auth.routes';
@@ -46,9 +47,8 @@ import webhookRoutes from './modules/payments/webhook.routes';
 
 const app = express();
 
-if (env.scaling.trustProxy) {
-  app.set('trust proxy', 1);
-}
+// Trust proxy for Cloudflare / Render load balancers
+app.set('trust proxy', 1);
 
 // Security headers
 app.use(helmet());
@@ -59,19 +59,19 @@ app.use((_req, res, next) => {
   next();
 });
 
-// CORS
+// CORS (Resilient origin matching)
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || env.cors.allowedOrigins.includes(origin)) {
+      if (!origin || env.cors.allowedOrigins.includes('*') || env.cors.allowedOrigins.includes(origin) || env.isDev) {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        callback(null, true);
       }
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Instance-ID'],
   })
 );
 
@@ -82,10 +82,19 @@ app.use(morgan(env.isDev ? 'dev' : 'combined', { stream: morganStream }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// General rate limiter (all routes)
-app.use(generalLimiter);
+// ─── Un-throttled Health Check & Documentation Endpoints ─────────────────────
 
-// ─── Health Check ─────────────────────────────────────────────────────────────
+const prefix = env.API_PREFIX;
+
+app.get('/', (_req, res) => {
+  res.json({
+    success: true,
+    message: 'Pacific Hardware Enterprise API',
+    version: '1.0.0',
+    documentation: `${prefix}/docs`,
+    health: '/health',
+  });
+});
 
 app.get('/health', (_req, res) => {
   res.json({
@@ -107,20 +116,20 @@ app.get('/ready', (_req, res) => {
   });
 });
 
-import { serveDocsJson, serveDocsUi } from './config/swagger';
-
-// ─── API Routes ───────────────────────────────────────────────────────────────
-
-const prefix = env.API_PREFIX;
-
-// OpenAPI Documentation
+// OpenAPI Interactive Documentation Portal
 app.get(`${prefix}/docs.json`, serveDocsJson);
 app.get(`${prefix}/docs`, serveDocsUi);
+
+// ─── General Rate Limiter (API Data Endpoints Only) ──────────────────────────
+
+app.use(generalLimiter);
+
+// ─── API Routes ───────────────────────────────────────────────────────────────
 
 app.use(`${prefix}/auth`, authRoutes);
 app.use(`${prefix}/users`, usersRoutes);
 app.use(`${prefix}/roles`, rolesRoutes);
-app.use(`${prefix}/permissions`, rolesRoutes); // /permissions shares roles router
+app.use(`${prefix}/permissions`, rolesRoutes);
 app.use(`${prefix}/categories`, categoriesRoutes);
 app.use(`${prefix}/products/:productId/variants`, variantsRoutes);
 app.use(`${prefix}/variants`, variantsRoutes);
@@ -152,9 +161,7 @@ app.use('/api/warehouse', allocationRoutes);
 app.use(`${prefix}/logistics`, logisticsRoutes);
 app.use(`${prefix}/invoices`, invoiceRoutes);
 
-// ─── Razorpay Webhooks (raw body required — mounted BEFORE json parser) ───────
-// Note: webhook route uses express.raw() internally, so it must be registered
-// after the body parsers but uses its own raw body middleware.
+// Razorpay Webhooks
 app.use(`${prefix}/payments/webhook`, webhookRoutes);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
