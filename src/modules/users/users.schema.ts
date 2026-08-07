@@ -1,0 +1,61 @@
+import { z } from 'zod';
+
+export const ListUsersQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().optional(),
+  role: z.string().optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
+  sortBy: z.string().default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+});
+
+export const CreateUserSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  firstName: z.string().min(1).max(50),
+  lastName: z.string().min(1).max(50),
+  phone: z.string().optional(),
+  roleId: z.string().uuid('Invalid role ID'),
+  status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
+});
+
+export const UpdateUserSchema = z.object({
+  firstName: z.string().min(1).max(50).optional(),
+  lastName: z.string().min(1).max(50).optional(),
+  phone: z.string().optional(),
+  roleId: z.string().uuid().optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
+});
+
+export const UpdateProfileSchema = z.object({
+  firstName: z.string().min(1).max(50).optional(),
+  lastName: z.string().min(1).max(50).optional(),
+  phone: z.string().optional(),
+  companyName: z.string().optional(),
+  gstin: z.string().length(15).optional(),
+});
+
+export const UpdateAvatarSchema = z.object({
+  avatar: z.string().min(1, 'Avatar URL is required'),
+});
+
+export const UpdateUserRolesSchema = z.object({
+  roleIds: z.array(z.string().uuid()).min(1, 'At least one role is required'),
+});
+
+export const ActivityQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+});
+
+export const UuidParamSchema = z.object({
+  id: z.string().uuid('Invalid user ID'),
+});
+
+export type ListUsersQuery = z.infer<typeof ListUsersQuerySchema>;
+export type CreateUserInput = z.infer<typeof CreateUserSchema>;
+export type UpdateUserInput = z.infer<typeof UpdateUserSchema>;
+export type UpdateProfileInput = z.infer<typeof UpdateProfileSchema>;

@@ -1,0 +1,31 @@
+services:
+  osrm:
+    build:
+      context: ./docker/osrm
+      dockerfile: Dockerfile.osrm
+    container_name: osrm-india
+    ports:
+      - "5000:5000"
+    volumes:
+      - osrm_data:/data
+    environment:
+      - OSM_REGION=india
+      - OSM_PBF_URL=https://download.geofabrik.de/asia/india-latest.osm.pbf
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 600s  # Allow up to 10 min for first-time OSM preprocessing
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+        reservations:
+          memory: 1G
+
+volumes:
+  osrm_data:
+    driver: local

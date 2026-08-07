@@ -1,0 +1,42 @@
+services:
+  api-1: &api
+    build: .
+    env_file: .env
+    environment:
+      INSTANCE_ID: api-1
+      TRUST_PROXY: "true"
+      CLUSTER_MODE: "false"
+    expose:
+      - "3000"
+
+  api-2:
+    <<: *api
+    environment:
+      INSTANCE_ID: api-2
+      TRUST_PROXY: "true"
+      CLUSTER_MODE: "false"
+
+  api-3:
+    <<: *api
+    environment:
+      INSTANCE_ID: api-3
+      TRUST_PROXY: "true"
+      CLUSTER_MODE: "false"
+
+  worker:
+    <<: *api
+    command: ["node", "dist/jobs/worker.js"]
+    environment:
+      INSTANCE_ID: worker-1
+      TRUST_PROXY: "false"
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api-1
+      - api-2
+      - api-3

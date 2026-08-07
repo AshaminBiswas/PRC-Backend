@@ -1,0 +1,7 @@
+node_modules
+dist
+.git
+api-test-server.log
+api-test-server.err.log
+postman/api-smoke-test-report.json
+.env
