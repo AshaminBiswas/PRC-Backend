@@ -115,8 +115,8 @@ app.get('/ready', (_req, res) => {
 app.get(`${prefix}/docs.json`, serveDocsJson);
 app.get(`${prefix}/docs`, serveDocsUi);
 
-// ─── General Rate Limiter (Mounted for feature API routes) ────────────────────
-app.use(generalLimiter);
+// ─── General Rate Limiter (Commented out) ────────────────────────────────────
+// app.use(generalLimiter);
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 
