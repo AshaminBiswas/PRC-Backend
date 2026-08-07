@@ -11,12 +11,19 @@ const startWorker = async () => {
   let server: http.Server | undefined;
 
   try {
-    await connectDatabases();
-    console.log(`Database connected on ${env.INSTANCE_ID}`);
+    const port = env.PORT || 3000;
 
-    server = app.listen(env.PORT, '0.0.0.0', () => {
-      console.log(`PRC Hardware API listening on http://0.0.0.0:${env.PORT}${env.API_PREFIX} (${env.INSTANCE_ID})`);
+    server = app.listen(port, '0.0.0.0', () => {
+      console.log(`PRC Hardware API listening on http://0.0.0.0:${port}${env.API_PREFIX} (${env.INSTANCE_ID})`);
     });
+
+    connectDatabases()
+      .then(() => {
+        console.log(`Database connected on ${env.INSTANCE_ID}`);
+      })
+      .catch((error) => {
+        console.error(`Database connection error on ${env.INSTANCE_ID}:`, error.message || error);
+      });
   } catch (error) {
     console.error('Failed to start server:', error);
     await disconnectDatabases();
