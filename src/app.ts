@@ -92,6 +92,17 @@ app.use(express.urlencoded({ extended: true }));
 
 const prefix = env.API_PREFIX;
 
+app.get('/', (_req, res) => {
+  res.json({
+    success: true,
+    name: 'Pacific Hardware Enterprise REST API',
+    version: '1.0.0',
+    documentation: `${prefix}/docs`,
+    health: '/health',
+    status: 'ONLINE',
+  });
+});
+
 app.get('/health', (_req, res) => {
   res.json({
     success: true,

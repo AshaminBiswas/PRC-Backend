@@ -31,16 +31,44 @@ interface SendMailOptions {
 }
 
 export const sendMail = async (options: SendMailOptions): Promise<void> => {
-  const transport = getTransporter();
-  const info = await transport.sendMail({
-    from: `"${env.smtp.fromName}" <${env.smtp.fromEmail}>`,
-    to: options.to,
-    subject: options.subject,
-    html: options.html,
-  });
+  if (!env.smtp.user || !env.smtp.pass) {
+    console.warn(`[Email Warning] SMTP_USER or SMTP_PASS is missing in environment variables. Email to ${options.to} was not dispatched.`);
+    return;
+  }
 
-  if (env.isDev) {
-    console.log(`[Email] Sent to ${options.to} | Subject: ${options.subject} | ID: ${info.messageId}`);
+  try {
+    const transport = getTransporter();
+    const info = await transport.sendMail({
+      from: `"${env.smtp.fromName}" <${env.smtp.fromEmail}>`,
+      to: options.to,
+      subject: options.subject,
+      html: options.html,
+    });
+
+    console.log(`[Email Success] Sent to ${options.to} | Subject: "${options.subject}" | MessageID: ${info.messageId}`);
+  } catch (error: any) {
+    console.error(`[Email Error] Failed sending email to ${options.to}:`, error?.message || error);
+    throw error;
+  }
+};
+
+// ─── Email Dispatcher ─────────────────────────────────────────────────────────
+
+const enqueueEmail = async (options: SendMailOptions): Promise<void> => {
+  // If async jobs are disabled or in dev mode, send email directly via Nodemailer
+  if (env.isDev || !env.asyncJobs.enabled) {
+    await sendMail(options);
+    return;
+  }
+
+  try {
+    const job = await enqueueJob('email.send', options as unknown as Prisma.InputJsonObject, { queue: 'default' });
+    if (!job) {
+      await sendMail(options);
+    }
+  } catch (error) {
+    console.error('[Email] Enqueue failed, falling back to direct send:', error);
+    await sendMail(options);
   }
 };
 
@@ -71,24 +99,6 @@ const baseTemplate = (content: string): string => `
   </div>
 </body>
 </html>`;
-
-const enqueueEmail = async (options: SendMailOptions): Promise<void> => {
-  // In dev mode, send email directly so emails dispatch immediately without requiring a separate background worker process
-  if (env.isDev) {
-    await sendMail(options);
-    return;
-  }
-
-  try {
-    const job = await enqueueJob('email.send', options as unknown as Prisma.InputJsonObject, { queue: 'default' });
-    if (!job) {
-      await sendMail(options);
-    }
-  } catch (error) {
-    console.error('[Email] Enqueue failed, falling back to direct send:', error);
-    await sendMail(options);
-  }
-};
 
 // ─── Specific Emails ──────────────────────────────────────────────────────────
 
