@@ -7,7 +7,10 @@ export const RegisterSchema = z
     confirmPassword: z.string(),
     firstName: z.string().min(1, 'First name is required').max(50),
     lastName: z.string().min(1, 'Last name is required').max(50),
-    phone: z.string().optional(),
+    phone: z
+      .string({ required_error: 'Phone number is required' })
+      .min(10, 'Phone number must be at least 10 digits')
+      .max(15, 'Phone number cannot exceed 15 digits'),
     companyName: z.string().optional(),
     gstin: z.string().length(15, 'GSTIN must be exactly 15 characters').optional(),
   })

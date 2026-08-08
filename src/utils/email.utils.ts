@@ -142,14 +142,11 @@ export const sendMail = async (options: SendMailOptions): Promise<void> => {
 // ─── Email Dispatcher ─────────────────────────────────────────────────────────
 
 const enqueueEmail = async (options: SendMailOptions): Promise<void> => {
-  // Execute email sending in the next event loop tick so Express responds to client instantly (<15ms)
-  setImmediate(async () => {
-    try {
-      await sendMail(options);
-    } catch (err: any) {
-      console.error(`[Email] Delivery failed for "${options.subject}" → ${options.to}:`, err?.message || err);
-    }
-  });
+  try {
+    await sendMail(options);
+  } catch (err: any) {
+    console.error(`[Email] Delivery failed for "${options.subject}" → ${options.to}:`, err?.message || err);
+  }
 };
 
 // ─── Base Template ────────────────────────────────────────────────────────────

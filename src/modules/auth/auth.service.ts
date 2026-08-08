@@ -92,9 +92,11 @@ export const register = async (input: RegisterInput) => {
     data: { token: otp, userId: user.id, expiresAt: getOtpExpiry() },
   });
 
-  sendOtpEmail(user.email, user.firstName, otp).catch((err) =>
-    console.error('[Register] Failed to send OTP email:', err?.message || err)
-  );
+  try {
+    await sendOtpEmail(user.email, user.firstName, otp);
+  } catch (emailErr: any) {
+    console.error('[Register] Failed to send OTP email:', emailErr?.message || emailErr);
+  }
 
   return { userId: user.id, email: user.email, requiresVerification: true };
 };
@@ -240,10 +242,12 @@ export const forgotPassword = async (email: string) => {
 
   const token = generateSecureToken();
   await prisma.passwordReset.create({ data: { token, userId: user.id, expiresAt: getPasswordResetExpiry() } });
-  // Fire-and-forget — SMTP failures must never surface as 500 to the client
-  sendPasswordResetEmail(user.email, user.firstName, token).catch((err) =>
-    console.error('[ForgotPassword] Failed to send reset email:', err?.message || err)
-  );
+
+  try {
+    await sendPasswordResetEmail(user.email, user.firstName, token);
+  } catch (err: any) {
+    console.error('[ForgotPassword] Failed to send reset email:', err?.message || err);
+  }
 };
 
 export const resetPassword = async (input: ResetPasswordInput) => {
@@ -301,7 +305,9 @@ export const resendVerification = async (email: string) => {
   const otp = generateOtp();
   await prisma.emailVerification.create({ data: { token: otp, userId: user.id, expiresAt: getOtpExpiry() } });
 
-  sendOtpEmail(user.email, user.firstName, otp).catch((err) =>
-    console.error('[ResendVerification] Failed to send OTP email:', err?.message || err)
-  );
+  try {
+    await sendOtpEmail(user.email, user.firstName, otp);
+  } catch (err: any) {
+    console.error('[ResendVerification] Failed to send OTP email:', err?.message || err);
+  }
 };
