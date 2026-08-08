@@ -119,7 +119,20 @@ export const getUserById = async (id: string) => {
 
 export const createUser = async (input: CreateUserInput) => {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
-  if (existing) throw new AppError('EMAIL_TAKEN', 'Email already in use', 409);
+  if (existing) {
+    if (existing.deletedAt === null) {
+      throw new AppError('EMAIL_TAKEN', 'Email already in use', 409);
+    }
+    // User was soft-deleted: purge or anonymize old soft-deleted user to free the unique email constraint
+    try {
+      await prisma.user.delete({ where: { id: existing.id } });
+    } catch (_err) {
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: { email: `deleted_${Date.now()}_${existing.email}` },
+      });
+    }
+  }
 
   const role = await prisma.role.findUnique({ where: { id: input.roleId } });
   if (!role) throw new AppError('NOT_FOUND', 'Role not found', 404);

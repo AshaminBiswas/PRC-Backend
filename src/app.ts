@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { morganStream } from './config/logger';
+import compression from 'compression';
 import { env } from './config/env';
 import { generalLimiter } from './middleware/rateLimit.middleware';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
@@ -50,6 +51,9 @@ const app = express();
 if (env.scaling.trustProxy) {
   app.set('trust proxy', 1);
 }
+
+// HTTP Response Compression (Gzip / Brotli)
+app.use(compression());
 
 // Security headers
 app.use(helmet());

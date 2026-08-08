@@ -50,7 +50,20 @@ const getPrimaryRoleSlug = (userRoles: Array<{ role: { slug: string } }>): strin
 
 export const register = async (input: RegisterInput) => {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
-  if (existing) throw new AppError('EMAIL_TAKEN', 'An account with this email already exists', 409);
+  if (existing) {
+    if (existing.deletedAt === null) {
+      throw new AppError('EMAIL_TAKEN', 'An account with this email already exists', 409);
+    }
+    // User was soft-deleted: purge or anonymize old soft-deleted user to free the unique email constraint
+    try {
+      await prisma.user.delete({ where: { id: existing.id } });
+    } catch (_err) {
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: { email: `deleted_${Date.now()}_${existing.email}` },
+      });
+    }
+  }
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
 
