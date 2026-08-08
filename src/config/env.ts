@@ -21,7 +21,7 @@ const envSchema = z.object({
   SUPABASE_STORAGE_BUCKET_PRODUCTS: z.string().default('products'),
   SUPABASE_STORAGE_BUCKET_CATEGORIES: z.string().default('categories'),
 
-  SMTP_HOST: z.string().default('smtp.gmail.com'),
+  SMTP_HOST: z.string().default('smtp-relay.brevo.com'),
   SMTP_PORT: z.coerce.number().default(465),
   SMTP_SECURE: z.string().transform((v) => v === 'true').default('true'),
   SMTP_USER: z.string().optional().default(''),
