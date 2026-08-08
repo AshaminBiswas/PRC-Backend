@@ -13,7 +13,7 @@
   "scripts": {
     "dev": "ts-node src/server.ts",
     "dev:worker": "ts-node src/jobs/worker.ts",
-    "build": "prisma generate && tsc",
+    "build": "prisma generate && tsc && node -e \"require('fs').mkdirSync('dist/public',{recursive:true});require('fs').copyFileSync('src/public/docs.html','dist/public/docs.html')\"",
     "start": "node dist/server.js",
     "start:cluster": "node dist/server.js",
     "start:worker": "node dist/jobs/worker.js",

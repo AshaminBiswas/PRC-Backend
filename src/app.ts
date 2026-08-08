@@ -97,16 +97,24 @@ app.use(
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+import path from 'path';
+
 // ─── Health Checks & OpenAPI Documentation (Mounted BEFORE rate limiter) ──────
 
 const prefix = env.API_PREFIX;
+
+const serveHtmlDocs = (_req: express.Request, res: express.Response) => {
+  const filePath = path.join(__dirname, 'public', 'docs.html');
+  res.sendFile(filePath);
+};
 
 app.get('/', (_req, res) => {
   res.json({
     success: true,
     name: 'Pacific Hardware Enterprise REST API',
     version: '1.0.0',
-    documentation: `${prefix}/docs`,
+    documentation: `${prefix}/docs-ui`,
+    swaggerDocs: `${prefix}/docs`,
     health: '/health',
     status: 'ONLINE',
   });
@@ -132,6 +140,8 @@ app.get('/ready', (_req, res) => {
   });
 });
 
+app.get('/docs-ui', serveHtmlDocs);
+app.get(`${prefix}/docs-ui`, serveHtmlDocs);
 app.get(`${prefix}/docs.json`, serveDocsJson);
 app.get(`${prefix}/docs`, serveDocsUi);
 
