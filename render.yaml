@@ -37,6 +37,9 @@ services:
         value: PRC Hardware
       - key: SMTP_FROM_EMAIL
         value: ashaminbiswas1@gmail.com
+      # ── Brevo HTTP API Key (bypasses SMTP port restrictions on Render) ───────
+      - key: BREVO_API_KEY
+        sync: false          # set in Render Dashboard (e.g. xkeysib-...)
       # ── Frontend URL (update to your deployed frontend domain) ────────────────
       - key: FRONTEND_URL
         sync: false          # e.g. https://your-frontend.vercel.app

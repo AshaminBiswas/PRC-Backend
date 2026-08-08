@@ -1,9 +1,50 @@
-import nodemailer, { Transporter } from 'nodemailer';
+﻿import nodemailer, { Transporter } from 'nodemailer';
 import { env } from '../config/env';
 import { Prisma } from '@prisma/client';
 import { enqueueJob } from '../jobs/asyncJob.service';
 
-// ─── Transporter ─────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface SendMailOptions {
+  to: string;
+  subject: string;
+  html: string;
+}
+
+// ─── Brevo HTTP API Sender (primary — works on any host, port 443) ────────────
+
+const sendViaBrevoApi = async (options: SendMailOptions): Promise<void> => {
+  if (!env.brevo.apiKey) {
+    throw new Error('[Email] BREVO_API_KEY is not set');
+  }
+
+  const body = JSON.stringify({
+    sender: { name: env.smtp.fromName, email: env.smtp.fromEmail },
+    to: [{ email: options.to }],
+    subject: options.subject,
+    htmlContent: options.html,
+  });
+
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'accept': 'application/json',
+      'api-key': env.brevo.apiKey,
+      'content-type': 'application/json',
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`[Email] Brevo API error ${response.status}: ${text}`);
+  }
+
+  const data = (await response.json()) as { messageId?: string };
+  console.log(`[Email Success] Brevo API → ${options.to} | Subject: "${options.subject}" | ID: ${data.messageId}`);
+};
+
+// ─── SMTP Sender (fallback — may be blocked on some hosts) ───────────────────
 
 let transporter: Transporter | null = null;
 
@@ -29,29 +70,39 @@ const getTransporter = (): Transporter => {
   return transporter;
 };
 
-// ─── Base Send ────────────────────────────────────────────────────────────────
+const sendViaSmtp = async (options: SendMailOptions): Promise<void> => {
+  const transport = getTransporter();
+  const info = await transport.sendMail({
+    from: `"${env.smtp.fromName}" <${env.smtp.fromEmail}>`,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+  });
+  console.log(`[Email Success] SMTP → ${options.to} | Subject: "${options.subject}" | ID: ${info.messageId}`);
+};
 
-interface SendMailOptions {
-  to: string;
-  subject: string;
-  html: string;
-}
+// ─── Unified sendMail (Brevo API first, SMTP fallback) ────────────────────────
 
 export const sendMail = async (options: SendMailOptions): Promise<void> => {
-  try {
-    const transport = getTransporter();
-    const info = await transport.sendMail({
-      from: `"${env.smtp.fromName}" <${env.smtp.fromEmail}>`,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-    });
-    console.log(`[Email Success] Sent to ${options.to} | Subject: "${options.subject}" | MessageID: ${info.messageId}`);
-  } catch (error: any) {
-    transporter = null; // reset so next call retries connection
-    console.error(`[Email Error] Failed to send to ${options.to}:`, error?.message || error);
-    throw error;
+  // Try Brevo HTTP API first (never blocked, works everywhere)
+  if (env.brevo.apiKey) {
+    await sendViaBrevoApi(options);
+    return;
   }
+
+  // Fallback: SMTP (blocked on some cloud hosts — use only in local dev)
+  if (env.smtp.user && env.smtp.pass) {
+    try {
+      await sendViaSmtp(options);
+      return;
+    } catch (err: any) {
+      transporter = null; // reset so next call retries
+      console.error(`[Email] SMTP failed for ${options.to}:`, err?.message || err);
+      throw err;
+    }
+  }
+
+  throw new Error('[Email] No delivery method configured. Set BREVO_API_KEY or SMTP credentials.');
 };
 
 // ─── Email Dispatcher ─────────────────────────────────────────────────────────
@@ -71,7 +122,7 @@ const enqueueEmail = async (options: SendMailOptions): Promise<void> => {
       await sendMail(options);
     }
   } catch (err: any) {
-    // Final safety net — SMTP errors must never propagate to HTTP handlers
+    // Final safety net — email failures must never propagate to HTTP handlers
     console.error(`[Email] Delivery failed for "${options.subject}" → ${options.to}:`, err?.message || err);
   }
 };
