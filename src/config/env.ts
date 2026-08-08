@@ -72,6 +72,7 @@ const envSchema = z.object({
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
   BREVO_API_KEY: z.string().optional().default(''),
+  RESEND_API_KEY: z.string().optional().default(''),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -182,6 +183,9 @@ export const env = {
 
   brevo: {
     apiKey: rawEnv.BREVO_API_KEY,
+  },
+  resend: {
+    apiKey: rawEnv.RESEND_API_KEY,
   },
 } as const;
 

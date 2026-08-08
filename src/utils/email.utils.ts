@@ -1,4 +1,5 @@
 import nodemailer, { Transporter } from 'nodemailer';
+import { Resend } from 'resend';
 import { env } from '../config/env';
 import { Prisma } from '@prisma/client';
 import { enqueueJob } from '../jobs/asyncJob.service';
@@ -10,6 +11,29 @@ interface SendMailOptions {
   subject: string;
   html: string;
 }
+
+// ─── Resend Official SDK Sender (primary modern choice — re_...) ───────────────
+
+let resendClient: Resend | null = null;
+
+const sendViaResend = async (options: SendMailOptions, apiKey: string): Promise<void> => {
+  if (!resendClient) {
+    resendClient = new Resend(apiKey);
+  }
+
+  const { data, error } = await resendClient.emails.send({
+    from: `${env.smtp.fromName} <onboarding@resend.dev>`,
+    to: [options.to],
+    subject: options.subject,
+    html: options.html,
+  });
+
+  if (error) {
+    throw new Error(`Resend SDK error: ${error.message}`);
+  }
+
+  console.log(`[Email Success] Resend SDK → ${options.to} | Subject: "${options.subject}" | ID: ${data?.id || 'sent'}`);
+};
 
 // ─── Brevo HTTP API Sender (for xkeysib- API keys) ───────────────────────────
 
@@ -40,7 +64,7 @@ const sendViaBrevoApi = async (options: SendMailOptions, apiKey: string): Promis
   console.log(`[Email Success] Brevo REST API → ${options.to} | Subject: "${options.subject}" | ID: ${data.messageId || 'sent'}`);
 };
 
-// ─── SMTP Sender (Port 465 SSL — 100% working for xsmtpsib- keys) ────────────
+// ─── SMTP Sender (Port 465 SSL — Gmail App Password or Brevo SMTP) ───────────
 
 let transporter: Transporter | null = null;
 
@@ -50,12 +74,11 @@ const getTransporter = (): Transporter => {
       throw new Error('[Email] SMTP credentials missing in environment variables.');
     }
 
-    // Default to Port 465 (SSL/TLS) for Brevo, as Port 587 STARTTLS is blocked on many ISPs/clouds
     const port = env.smtp.port || 465;
     const isSecure = port === 465 || env.smtp.secure;
 
     transporter = nodemailer.createTransport({
-      host: env.smtp.host || 'smtp-relay.brevo.com',
+      host: env.smtp.host || 'smtp.gmail.com',
       port,
       secure: isSecure,
       auth: { user: env.smtp.user, pass: env.smtp.pass },
@@ -75,23 +98,33 @@ const sendViaSmtp = async (options: SendMailOptions): Promise<void> => {
     subject: options.subject,
     html: options.html,
   });
-  console.log(`[Email Success] Brevo SMTP (Port 465 SSL) → ${options.to} | Subject: "${options.subject}" | ID: ${info.messageId}`);
+  console.log(`[Email Success] Nodemailer SMTP → ${options.to} | Subject: "${options.subject}" | ID: ${info.messageId}`);
 };
 
-// ─── Unified sendMail ─────────────────────────────────────────────────────────
+// ─── Unified sendMail Cascade ─────────────────────────────────────────────────
 
 export const sendMail = async (options: SendMailOptions): Promise<void> => {
-  // 1. If explicit Brevo REST API key (xkeysib-) is provided, use Brevo HTTP REST API
+  // 1. Try Resend HTTP API if RESEND_API_KEY (re_...) is set
+  if (env.resend.apiKey && env.resend.apiKey.startsWith('re_')) {
+    try {
+      await sendViaResend(options, env.resend.apiKey);
+      return;
+    } catch (resendErr: any) {
+      console.warn('[Email Warning] Resend API failed, falling back:', resendErr?.message || resendErr);
+    }
+  }
+
+  // 2. Try Brevo REST API if BREVO_API_KEY (xkeysib-) is set
   if (env.brevo.apiKey && env.brevo.apiKey.startsWith('xkeysib-')) {
     try {
       await sendViaBrevoApi(options, env.brevo.apiKey);
       return;
     } catch (apiErr: any) {
-      console.warn('[Email Warning] Brevo REST API failed, trying SMTP fallback:', apiErr?.message || apiErr);
+      console.warn('[Email Warning] Brevo REST API failed, falling back:', apiErr?.message || apiErr);
     }
   }
 
-  // 2. Default/Primary: Nodemailer SMTP on Port 465 SSL (works for xsmtpsib- Brevo SMTP keys)
+  // 3. Try Nodemailer SMTP (Gmail App Password or Brevo SMTP on Port 465 SSL)
   if (env.smtp.user && env.smtp.pass) {
     try {
       await sendViaSmtp(options);
@@ -103,7 +136,7 @@ export const sendMail = async (options: SendMailOptions): Promise<void> => {
     }
   }
 
-  throw new Error('[Email] No valid email configuration found. Set SMTP_USER and SMTP_PASS in environment.');
+  throw new Error('[Email] No valid email provider configured. Set RESEND_API_KEY, BREVO_API_KEY, or SMTP credentials.');
 };
 
 // ─── Email Dispatcher ─────────────────────────────────────────────────────────

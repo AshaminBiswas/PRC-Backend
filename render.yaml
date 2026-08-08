@@ -40,6 +40,9 @@ services:
       # ── Brevo HTTP API Key (bypasses SMTP port restrictions on Render) ───────
       - key: BREVO_API_KEY
         sync: false          # set in Render Dashboard (e.g. xkeysib-...)
+      # ── Resend HTTP API Key (recommended #1 choice for production Node.js) ──
+      - key: RESEND_API_KEY
+        sync: false          # set in Render Dashboard (e.g. re_...)
       # ── Frontend URL (update to your deployed frontend domain) ────────────────
       - key: FRONTEND_URL
         sync: false          # e.g. https://your-frontend.vercel.app
