@@ -1,4 +1,4 @@
-﻿import bcrypt from 'bcryptjs';
+import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
@@ -227,7 +227,10 @@ export const forgotPassword = async (email: string) => {
 
   const token = generateSecureToken();
   await prisma.passwordReset.create({ data: { token, userId: user.id, expiresAt: getPasswordResetExpiry() } });
-  await sendPasswordResetEmail(user.email, user.firstName, token);
+  // Fire-and-forget — SMTP failures must never surface as 500 to the client
+  sendPasswordResetEmail(user.email, user.firstName, token).catch((err) =>
+    console.error('[ForgotPassword] Failed to send reset email:', err?.message || err)
+  );
 };
 
 export const resetPassword = async (input: ResetPasswordInput) => {

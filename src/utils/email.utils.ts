@@ -1,4 +1,4 @@
-﻿import nodemailer, { Transporter } from 'nodemailer';
+import nodemailer, { Transporter } from 'nodemailer';
 import { env } from '../config/env';
 import { Prisma } from '@prisma/client';
 import { enqueueJob } from '../jobs/asyncJob.service';
@@ -57,16 +57,22 @@ export const sendMail = async (options: SendMailOptions): Promise<void> => {
 // ─── Email Dispatcher ─────────────────────────────────────────────────────────
 
 const enqueueEmail = async (options: SendMailOptions): Promise<void> => {
-  if (env.isDev || !env.asyncJobs.enabled) {
-    await sendMail(options);
-    return;
-  }
   try {
-    const job = await enqueueJob('email.send', options as unknown as Prisma.InputJsonObject, { queue: 'default' });
-    if (!job) await sendMail(options);
-  } catch (error) {
-    console.error('[Email] Enqueue failed, falling back to direct send:', error);
-    await sendMail(options);
+    if (env.isDev || !env.asyncJobs.enabled) {
+      await sendMail(options);
+      return;
+    }
+
+    try {
+      const job = await enqueueJob('email.send', options as unknown as Prisma.InputJsonObject, { queue: 'default' });
+      if (!job) await sendMail(options);
+    } catch (queueErr) {
+      console.error('[Email] Enqueue failed, falling back to direct send:', queueErr);
+      await sendMail(options);
+    }
+  } catch (err: any) {
+    // Final safety net — SMTP errors must never propagate to HTTP handlers
+    console.error(`[Email] Delivery failed for "${options.subject}" → ${options.to}:`, err?.message || err);
   }
 };
 

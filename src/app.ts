@@ -81,8 +81,13 @@ app.use(
   })
 );
 
-// HTTP logging (routed through Winston)
-app.use(morgan(env.isDev ? 'dev' : 'combined', { stream: morganStream }));
+// HTTP logging (routed through Winston — health & readiness probes are skipped)
+app.use(
+  morgan(env.isDev ? 'dev' : 'combined', {
+    stream: morganStream,
+    skip: (req) => req.url === '/health' || req.url === '/ready',
+  })
+);
 
 // Body parsers
 app.use(express.json({ limit: '10mb' }));
