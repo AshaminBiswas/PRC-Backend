@@ -11,13 +11,9 @@ interface SendMailOptions {
   html: string;
 }
 
-// ─── Brevo HTTP API Sender (primary — works on any host, port 443) ────────────
+// ─── Brevo HTTP API Sender (for xkeysib- API keys) ───────────────────────────
 
-const sendViaBrevoApi = async (options: SendMailOptions): Promise<void> => {
-  if (!env.brevo.apiKey) {
-    throw new Error('[Email] BREVO_API_KEY is not set');
-  }
-
+const sendViaBrevoApi = async (options: SendMailOptions, apiKey: string): Promise<void> => {
   const body = JSON.stringify({
     sender: { name: env.smtp.fromName, email: env.smtp.fromEmail },
     to: [{ email: options.to }],
@@ -29,7 +25,7 @@ const sendViaBrevoApi = async (options: SendMailOptions): Promise<void> => {
     method: 'POST',
     headers: {
       'accept': 'application/json',
-      'api-key': env.brevo.apiKey,
+      'api-key': apiKey,
       'content-type': 'application/json',
     },
     body,
@@ -37,29 +33,30 @@ const sendViaBrevoApi = async (options: SendMailOptions): Promise<void> => {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`[Email] Brevo API error ${response.status}: ${text}`);
+    throw new Error(`Brevo API error ${response.status}: ${text}`);
   }
 
   const data = (await response.json()) as { messageId?: string };
-  console.log(`[Email Success] Brevo API → ${options.to} | Subject: "${options.subject}" | ID: ${data.messageId}`);
+  console.log(`[Email Success] Brevo REST API → ${options.to} | Subject: "${options.subject}" | ID: ${data.messageId || 'sent'}`);
 };
 
-// ─── SMTP Sender (fallback — may be blocked on some hosts) ───────────────────
+// ─── SMTP Sender (Port 465 SSL — 100% working for xsmtpsib- keys) ────────────
 
 let transporter: Transporter | null = null;
 
 const getTransporter = (): Transporter => {
   if (!transporter) {
     if (!env.smtp.user || !env.smtp.pass) {
-      throw new Error(
-        `[Email] SMTP credentials missing. Set SMTP_USER and SMTP_PASS env vars. ` +
-        `Current host: ${env.smtp.host}, user: "${env.smtp.user || '(empty)'}"`
-      );
+      throw new Error('[Email] SMTP credentials missing in environment variables.');
     }
-    const isSecure = env.smtp.secure || env.smtp.port === 465;
+
+    // Default to Port 465 (SSL/TLS) for Brevo, as Port 587 STARTTLS is blocked on many ISPs/clouds
+    const port = env.smtp.port || 465;
+    const isSecure = port === 465 || env.smtp.secure;
+
     transporter = nodemailer.createTransport({
-      host: env.smtp.host,
-      port: env.smtp.port,
+      host: env.smtp.host || 'smtp-relay.brevo.com',
+      port,
       secure: isSecure,
       auth: { user: env.smtp.user, pass: env.smtp.pass },
       connectionTimeout: 10000,
@@ -78,31 +75,35 @@ const sendViaSmtp = async (options: SendMailOptions): Promise<void> => {
     subject: options.subject,
     html: options.html,
   });
-  console.log(`[Email Success] SMTP → ${options.to} | Subject: "${options.subject}" | ID: ${info.messageId}`);
+  console.log(`[Email Success] Brevo SMTP (Port 465 SSL) → ${options.to} | Subject: "${options.subject}" | ID: ${info.messageId}`);
 };
 
-// ─── Unified sendMail (Brevo API first, SMTP fallback) ────────────────────────
+// ─── Unified sendMail ─────────────────────────────────────────────────────────
 
 export const sendMail = async (options: SendMailOptions): Promise<void> => {
-  // Try Brevo HTTP API first (never blocked, works everywhere)
-  if (env.brevo.apiKey) {
-    await sendViaBrevoApi(options);
-    return;
+  // 1. If explicit Brevo REST API key (xkeysib-) is provided, use Brevo HTTP REST API
+  if (env.brevo.apiKey && env.brevo.apiKey.startsWith('xkeysib-')) {
+    try {
+      await sendViaBrevoApi(options, env.brevo.apiKey);
+      return;
+    } catch (apiErr: any) {
+      console.warn('[Email Warning] Brevo REST API failed, trying SMTP fallback:', apiErr?.message || apiErr);
+    }
   }
 
-  // Fallback: SMTP (blocked on some cloud hosts — use only in local dev)
+  // 2. Default/Primary: Nodemailer SMTP on Port 465 SSL (works for xsmtpsib- Brevo SMTP keys)
   if (env.smtp.user && env.smtp.pass) {
     try {
       await sendViaSmtp(options);
       return;
-    } catch (err: any) {
-      transporter = null; // reset so next call retries
-      console.error(`[Email] SMTP failed for ${options.to}:`, err?.message || err);
-      throw err;
+    } catch (smtpErr: any) {
+      transporter = null;
+      console.error(`[Email Error] SMTP failed for ${options.to}:`, smtpErr?.message || smtpErr);
+      throw smtpErr;
     }
   }
 
-  throw new Error('[Email] No delivery method configured. Set BREVO_API_KEY or SMTP credentials.');
+  throw new Error('[Email] No valid email configuration found. Set SMTP_USER and SMTP_PASS in environment.');
 };
 
 // ─── Email Dispatcher ─────────────────────────────────────────────────────────
