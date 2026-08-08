@@ -13,6 +13,7 @@ import {
   ResetPasswordSchema,
   ChangePasswordSchema,
   VerifyEmailSchema,
+  VerifyOtpSchema,
   ResendVerificationSchema,
 } from './auth.schema';
 
@@ -26,6 +27,7 @@ router.post('/refresh-token', validate(RefreshTokenSchema), controller.refreshTo
 router.post('/forgot-password', emailLimiter, validate(ForgotPasswordSchema), controller.forgotPassword);
 router.post('/reset-password', validate(ResetPasswordSchema), controller.resetPassword);
 router.post('/verify-email', validate(VerifyEmailSchema), controller.verifyEmail);
+router.post('/verify-otp', authLimiter, validate(VerifyOtpSchema), controller.verifyOtp);
 router.post('/resend-verification', emailLimiter, validate(ResendVerificationSchema), controller.resendVerification);
 
 // Protected routes

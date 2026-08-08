@@ -21,22 +21,35 @@ services:
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
+      # ── SMTP (Brevo / any provider) ───────────────────────────────────────────
+      # Set these values in Render Dashboard → Environment (never commit secrets)
+      - key: SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false          # fill in Render Dashboard
+      - key: SMTP_PASS
+        sync: false          # fill in Render Dashboard
+      - key: SMTP_FROM_NAME
+        value: PRC Hardware
+      - key: SMTP_FROM_EMAIL
+        value: ashaminbiswas1@gmail.com
+      # ── Frontend URL (update to your deployed frontend domain) ────────────────
+      - key: FRONTEND_URL
+        sync: false          # e.g. https://your-frontend.vercel.app
       - key: DATABASE_URL
         fromDatabase:
           name: prc-postgres
           property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: prc-redis
-          property: connectionString
-
-  # ─── Redis Cache & Job Queue Service ───────────────────────────────────────
-  - type: redis
-    name: prc-redis
-    region: singapore
-    plan: free
-    maxmemoryPolicy: allkeys-lru
+      # ── Redis (Upstash — Mumbai ap-south-1) ──────────────────────────────────
+      # Set both values in Render Dashboard → Environment (never commit secrets)
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false          # e.g. https://above-spider-196160.upstash.io
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false          # your Upstash REST token
 
 databases:
   # ─── PostgreSQL Database ───────────────────────────────────────────────────

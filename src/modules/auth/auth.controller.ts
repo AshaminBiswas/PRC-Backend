@@ -72,6 +72,13 @@ export const verifyEmail = async (req: Request, res: Response, next: NextFunctio
   } catch (error) { next(error); }
 };
 
+export const verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await authService.verifyOtp(req.body);
+    sendSuccess(res, data, data.autoLogin ? 'Email verified. You are now logged in.' : 'Email verified successfully.');
+  } catch (error) { next(error); }
+};
+
 export const resendVerification = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await authService.resendVerification(req.body.email);

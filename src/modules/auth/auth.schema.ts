@@ -69,6 +69,14 @@ export const VerifyEmailSchema = z.object({
   token: z.string().min(1, 'Verification token is required'),
 });
 
+export const VerifyOtpSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  otp: z
+    .string()
+    .length(6, 'OTP must be exactly 6 digits')
+    .regex(/^\d{6}$/, 'OTP must contain only digits'),
+});
+
 export const ResendVerificationSchema = z.object({
   email: z.string().email('Invalid email format'),
 });
@@ -80,3 +88,4 @@ export type RefreshTokenInput = z.infer<typeof RefreshTokenSchema>;
 export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
+export type VerifyOtpInput = z.infer<typeof VerifyOtpSchema>;

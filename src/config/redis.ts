@@ -1,40 +1,32 @@
-import Redis from "ioredis";
-import { env } from "./env";
+﻿import { Redis } from '@upstash/redis';
+import { env } from './env';
+
+// ─── Upstash Redis Client (HTTP REST SDK) ─────────────────────────────────────
+// Uses @upstash/redis which communicates over HTTPS — works in any environment
+// including serverless and edge runtimes. No TCP connection required.
 
 let redisClient: Redis | null = null;
 
 export const getRedisClient = (): Redis | null => {
-  const url = env.redis.url;
-  if (!url) return null;
+  if (!env.redis.url || !env.redis.token) {
+    return null;
+  }
 
   if (!redisClient) {
-    const isTls = url.startsWith("rediss://");
-
-    redisClient = new Redis(url, {
-      maxRetriesPerRequest: null, // Required by rate-limit-redis to prevent MaxRetriesPerRequestError
-      retryStrategy: (times: number) => Math.min(times * 200, 2000),
-      keepAlive: 10000, // Send TCP keepalive packets every 10s to prevent ECONNRESET
-      tls: isTls ? { rejectUnauthorized: false } : undefined,
+    redisClient = new Redis({
+      url: env.redis.url,
+      token: env.redis.token,
     });
 
-    redisClient.on("error", (err: Error) => {
-      // Suppress connection retry noise in console
-      if (!err.message.includes("ECONNRESET") && !err.message.includes("max retries")) {
-        console.error("[Redis] Connection error:", err.message);
-      }
-    });
-
-    redisClient.once("connect", () => {
-      console.log("[Redis] Connected successfully");
-    });
+    console.log('[Redis] Upstash client initialised →', env.redis.url);
   }
 
   return redisClient;
 };
 
+// ─── Graceful shutdown (no-op for HTTP client — no persistent connection) ─────
+
 export const disconnectRedis = async (): Promise<void> => {
-  if (redisClient) {
-    await redisClient.quit();
-    redisClient = null;
-  }
+  redisClient = null;
+  console.log('[Redis] Upstash client cleared');
 };

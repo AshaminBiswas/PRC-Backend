@@ -64,7 +64,8 @@ const envSchema = z.object({
   OSRM_FALLBACK_TO_HAVERSINE: z.string().transform((v) => v === 'true').default('true'),
   ALLOCATION_DEFAULT_STRATEGY: z.string().default('ROAD_DISTANCE'),
 
-  REDIS_URL: z.string().nullable().optional().default(null),
+  UPSTASH_REDIS_REST_URL: z.string().nullable().optional().default(null),
+  UPSTASH_REDIS_REST_TOKEN: z.string().nullable().optional().default(null),
 
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
@@ -167,7 +168,8 @@ export const env = {
   },
 
   redis: {
-    url: rawEnv.REDIS_URL || null,
+    url: rawEnv.UPSTASH_REDIS_REST_URL || null,
+    token: rawEnv.UPSTASH_REDIS_REST_TOKEN || null,
   },
 
   razorpay: {
