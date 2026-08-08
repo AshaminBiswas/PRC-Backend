@@ -149,6 +149,8 @@ export const login = async (input: LoginInput) => {
 
   if (!user || !(await bcrypt.compare(input.password, user.passwordHash)))
     throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+  if (!user.isVerified)
+    throw new AppError('EMAIL_NOT_VERIFIED', 'Please verify your email address using the 6-digit OTP code sent to your email before logging in.', 403);
   if (user.status === 'SUSPENDED')
     throw new AppError('ACCOUNT_SUSPENDED', 'Your account has been suspended', 403);
   if (user.status === 'INACTIVE')
