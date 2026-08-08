@@ -6,9 +6,7 @@
   "overrides": {
     "fast-csv": "^4.3.6",
     "tmp": "^0.2.5",
-    "uuid": "^14.0.1",
-    "glob": "^11.0.0",
-    "rimraf": "^5.0.10"
+    "uuid": "^14.0.1"
   },
   "scripts": {
     "dev": "ts-node src/server.ts",
