@@ -18,6 +18,8 @@ export const emailQueue = new Queue('email-queue', { connection: getRedisConnect
 export const invoiceQueue = new Queue('invoice-queue', { connection: getRedisConnection() });
 export const inventoryQueue = new Queue('inventory-queue', { connection: getRedisConnection() });
 export const notificationQueue = new Queue('notification-queue', { connection: getRedisConnection() });
+export const reportQueue = new Queue('report-queue', { connection: getRedisConnection() });
+export const imageQueue = new Queue('image-queue', { connection: getRedisConnection() });
 
 export const addEmailJob = async (jobName: string, data: any) => {
   return emailQueue.add(jobName, data, { attempts: 3, backoff: { type: 'exponential', delay: 1000 } });
@@ -29,4 +31,12 @@ export const addInvoiceJob = async (jobName: string, data: any) => {
 
 export const addInventoryJob = async (jobName: string, data: any) => {
   return inventoryQueue.add(jobName, data, { attempts: 5, backoff: { type: 'fixed', delay: 3000 } });
+};
+
+export const addReportJob = async (jobName: string, data: any) => {
+  return reportQueue.add(jobName, data, { attempts: 2, backoff: { type: 'exponential', delay: 5000 } });
+};
+
+export const addImageJob = async (jobName: string, data: any) => {
+  return imageQueue.add(jobName, data, { attempts: 3, backoff: { type: 'exponential', delay: 2000 } });
 };
