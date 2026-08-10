@@ -52,8 +52,17 @@ if (env.scaling.trustProxy) {
   app.set('trust proxy', 1);
 }
 
-// HTTP Response Compression (Gzip / Brotli)
-app.use(compression());
+// HTTP Response Compression (Gzip / Brotli with 1KB threshold & level 6 tuning)
+app.use(
+  compression({
+    level: 6,
+    threshold: 1024, // Don't compress responses smaller than 1KB
+    filter: (req, res) => {
+      if (req.headers['x-no-compression']) return false;
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // Security headers
 app.use(helmet());
