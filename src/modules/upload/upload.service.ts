@@ -1,3 +1,4 @@
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import supabase from '../../config/supabase';
 import { env } from '../../config/env';
 import { AppError } from '../../middleware/error.middleware';
@@ -8,6 +9,28 @@ type BucketKey = 'avatars' | 'products' | 'categories';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+// ─── Cloudflare R2 S3-Compatible Client ───────────────────────────────────────
+
+let r2Client: S3Client | null = null;
+
+const getR2Client = (): S3Client | null => {
+  if (env.r2.accountId && env.r2.accessKeyId && env.r2.secretAccessKey) {
+    if (!r2Client) {
+      r2Client = new S3Client({
+        region: 'auto',
+        endpoint: `https://${env.r2.accountId}.r2.cloudflarestorage.com`,
+        credentials: {
+          accessKeyId: env.r2.accessKeyId,
+          secretAccessKey: env.r2.secretAccessKey,
+        },
+      });
+      console.log('⚡ [Storage] Cloudflare R2 Client initialised →', env.r2.bucketName);
+    }
+    return r2Client;
+  }
+  return null;
+};
 
 // ─── Upload File ──────────────────────────────────────────────────────────────
 
@@ -30,9 +53,31 @@ export const uploadFile = async (
 
   const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
   const fileName = `${uuidv4()}${ext}`;
-  const filePath = folder ? `${folder}/${fileName}` : fileName;
-  const bucketName = env.supabase.buckets[bucket];
+  const filePath = folder ? `${bucket}/${folder}/${fileName}` : `${bucket}/${fileName}`;
 
+  const clientR2 = getR2Client();
+  if (clientR2) {
+    // Primary: Cloudflare R2 Storage ($0 Egress Fees)
+    try {
+      await clientR2.send(
+        new PutObjectCommand({
+          Bucket: env.r2.bucketName,
+          Key: filePath,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+        })
+      );
+
+      const publicDomain = env.r2.publicDomain || `https://${env.r2.bucketName}.${env.r2.accountId}.r2.dev`;
+      return `${publicDomain}/${filePath}`;
+    } catch (err: any) {
+      console.error('[Cloudflare R2 Upload Error]:', err?.message || err);
+      throw new AppError('UPLOAD_FAILED', `Cloudflare R2 Upload failed: ${err.message}`, 500);
+    }
+  }
+
+  // Fallback: Supabase Storage
+  const bucketName = env.supabase.buckets[bucket];
   const { error } = await supabase.storage.from(bucketName).upload(filePath, file.buffer, {
     contentType: file.mimetype,
     upsert: false,
@@ -49,6 +94,23 @@ export const uploadFile = async (
 // ─── Delete File ──────────────────────────────────────────────────────────────
 
 export const deleteFile = async (url: string, bucket: BucketKey): Promise<void> => {
+  const clientR2 = getR2Client();
+  if (clientR2) {
+    try {
+      const publicDomain = env.r2.publicDomain || `https://${env.r2.bucketName}.${env.r2.accountId}.r2.dev`;
+      const filePath = url.replace(`${publicDomain}/`, '');
+      await clientR2.send(
+        new DeleteObjectCommand({
+          Bucket: env.r2.bucketName,
+          Key: filePath,
+        })
+      );
+      return;
+    } catch (err: any) {
+      console.error('[Cloudflare R2 Delete Error]:', err?.message || err);
+    }
+  }
+
   const bucketName = env.supabase.buckets[bucket];
   const bucketUrl = `${env.supabase.url}/storage/v1/object/public/${bucketName}/`;
   const filePath = url.replace(bucketUrl, '');

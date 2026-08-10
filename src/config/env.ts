@@ -70,6 +70,12 @@ const envSchema = z.object({
   UPSTASH_REDIS_REST_URL: z.string().nullable().optional().default(null),
   UPSTASH_REDIS_REST_TOKEN: z.string().nullable().optional().default(null),
 
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET_NAME: z.string().optional(),
+  R2_PUBLIC_DOMAIN: z.string().optional(),
+
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
@@ -193,6 +199,13 @@ export const env = {
   },
   auth: {
     otpTtlSeconds: rawEnv.OTP_TTL_SECONDS,
+  },
+  r2: {
+    accountId: rawEnv.R2_ACCOUNT_ID,
+    accessKeyId: rawEnv.R2_ACCESS_KEY_ID,
+    secretAccessKey: rawEnv.R2_SECRET_ACCESS_KEY,
+    bucketName: rawEnv.R2_BUCKET_NAME || 'prc-uploads',
+    publicDomain: rawEnv.R2_PUBLIC_DOMAIN,
   },
 } as const;
 
