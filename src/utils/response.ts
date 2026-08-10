@@ -125,3 +125,21 @@ export const getCursorParams = (
   const limit = Math.min(100, Math.max(1, parseInt(String(query.limit ?? '20'), 10)));
   return { cursor, limit };
 };
+
+// ─── JSON Payload Sanitizer & Security Stripper ──────────────────────────────
+
+export const sanitizePayload = <T = any>(obj: T): T => {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizePayload) as unknown as T;
+  if (typeof obj === 'object') {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (key === 'passwordHash') continue; // Never expose password hashes
+      if (value !== null && value !== undefined) {
+        cleaned[key] = sanitizePayload(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return obj;
+};
