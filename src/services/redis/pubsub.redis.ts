@@ -1,6 +1,6 @@
 import { getRedisClient } from '../../config/redis';
 
-// ─── Pure Redis (ioredis) Pub/Sub Adapter for Real-Time Scaling ───────────────
+// ─── Universal Redis Pub/Sub Adapter for Real-Time Scaling ───────────────────
 
 export const publishEvent = async (channel: string, message: any): Promise<void> => {
   const client = getRedisClient();
@@ -8,7 +8,9 @@ export const publishEvent = async (channel: string, message: any): Promise<void>
 
   try {
     const payload = typeof message === 'string' ? message : JSON.stringify(message);
-    await client.publish(channel, payload);
+    if (typeof client.publish === 'function') {
+      await client.publish(channel, payload);
+    }
   } catch (err: any) {
     console.error(`[Redis PubSub Publish Error] channel="${channel}":`, err?.message || err);
   }
@@ -16,11 +18,11 @@ export const publishEvent = async (channel: string, message: any): Promise<void>
 
 export const subscribeToChannel = (channel: string, callback: (message: string) => void): void => {
   const client = getRedisClient();
-  if (!client) return;
+  if (!client || typeof client.duplicate !== 'function') return;
 
   try {
     const subscriber = client.duplicate();
-    subscriber.subscribe(channel, (err) => {
+    subscriber.subscribe(channel, (err?: Error | null) => {
       if (err) {
         console.error(`[Redis PubSub Subscribe Error] channel="${channel}":`, err.message);
       } else {

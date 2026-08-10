@@ -1,41 +1,52 @@
+import { Redis as UpstashRedis } from '@upstash/redis';
 import Redis from 'ioredis';
 import { env } from './env';
 
-// ─── Pure Open-Source Redis Client (ioredis TCP) ─────────────────────────────
+// ─── Universal Dual Redis Client (Supports Upstash REST & Pure TCP) ────────────
 
-let redisClient: Redis | null = null;
+let upstashClient: UpstashRedis | null = null;
+let ioredisClient: Redis | null = null;
 
-export const getRedisClient = (): Redis | null => {
-  const redisUrl = env.redis.url || 'redis://localhost:6379';
-
-  if (!redisClient) {
-    try {
-      redisClient = new Redis(redisUrl, {
-        maxRetriesPerRequest: 5,
-        enableOfflineQueue: true,
-        retryStrategy: (times) => Math.min(times * 100, 3000),
+export const getRedisClient = (): any => {
+  // 1. Upstash HTTP REST Redis (Primary for Render Cloud & Serverless)
+  if (env.redis.upstashUrl && env.redis.token) {
+    if (!upstashClient) {
+      upstashClient = new UpstashRedis({
+        url: env.redis.upstashUrl,
+        token: env.redis.token,
       });
-
-      redisClient.on('connect', () => {
-        console.log('⚡ [Redis] Pure open-source Redis client connected →', redisUrl);
-      });
-
-      redisClient.on('error', (err) => {
-        console.error('❌ [Redis Error]:', err?.message || err);
-      });
-    } catch (err: any) {
-      console.error('❌ [Redis Failed to initialise]:', err?.message || err);
-      redisClient = null;
+      console.log('⚡ [Redis] Upstash HTTP REST client initialised →', env.redis.upstashUrl);
     }
+    return upstashClient;
   }
 
-  return redisClient;
+  // 2. Standard TCP Redis (Docker Container / Localhost / VPS)
+  if (env.redis.url && (env.redis.url.startsWith('redis://') || env.redis.url.startsWith('rediss://'))) {
+    if (!ioredisClient) {
+      ioredisClient = new Redis(env.redis.url, {
+        maxRetriesPerRequest: 5,
+        enableOfflineQueue: true,
+      });
+
+      ioredisClient.on('connect', () => {
+        console.log('⚡ [Redis] Standard TCP client connected →', env.redis.url);
+      });
+
+      ioredisClient.on('error', (err) => {
+        console.error('❌ [Redis Error]:', err?.message || err);
+      });
+    }
+    return ioredisClient;
+  }
+
+  return null;
 };
 
 export const disconnectRedis = async (): Promise<void> => {
-  if (redisClient) {
-    await redisClient.quit();
-    redisClient = null;
-    console.log('🔌 [Redis] Pure Redis client disconnected');
+  if (ioredisClient) {
+    await ioredisClient.quit();
+    ioredisClient = null;
   }
+  upstashClient = null;
+  console.log('🔌 [Redis] Client disconnected');
 };

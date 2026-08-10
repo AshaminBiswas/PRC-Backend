@@ -1,6 +1,6 @@
 import { getRedisClient } from '../../config/redis';
 
-// ─── Pure Redis (ioredis) OTP Storage & Verification ──────────────────────────
+// ─── Universal Redis OTP Storage & Verification ───────────────────────────────
 
 export const storeOtpInRedis = async (email: string, otp: string, ttlSeconds = 600): Promise<void> => {
   const client = getRedisClient();
@@ -11,8 +11,13 @@ export const storeOtpInRedis = async (email: string, otp: string, ttlSeconds = 6
   const attemptsKey = `otp:attempts:${normalized}`;
 
   try {
-    await client.setex(key, ttlSeconds, otp);
-    await client.setex(attemptsKey, ttlSeconds, '0');
+    if (typeof client.setex === 'function') {
+      await client.setex(key, ttlSeconds, otp);
+      await client.setex(attemptsKey, ttlSeconds, '0');
+    } else if (typeof client.set === 'function') {
+      await client.set(key, otp, { ex: ttlSeconds });
+      await client.set(attemptsKey, '0', { ex: ttlSeconds });
+    }
   } catch (err: any) {
     console.error(`[Redis OTP Store Error] email="${email}":`, err?.message || err);
   }
@@ -30,7 +35,7 @@ export const verifyOtpFromRedis = async (email: string, inputOtp: string): Promi
 
   try {
     const rawAttempts = await client.get(attemptsKey);
-    const attempts = rawAttempts ? parseInt(rawAttempts, 10) : 0;
+    const attempts = rawAttempts ? parseInt(String(rawAttempts), 10) : 0;
 
     if (attempts >= 5) {
       await client.del(key);
@@ -43,8 +48,10 @@ export const verifyOtpFromRedis = async (email: string, inputOtp: string): Promi
       return { valid: false, message: 'Invalid or expired OTP. Please request a new code.' };
     }
 
-    if (storedOtp.trim() !== inputOtp.trim()) {
-      await client.incr(attemptsKey);
+    if (String(storedOtp).trim() !== inputOtp.trim()) {
+      if (typeof client.incr === 'function') {
+        await client.incr(attemptsKey);
+      }
       return { valid: false, message: 'Incorrect OTP code. Please try again.' };
     }
 

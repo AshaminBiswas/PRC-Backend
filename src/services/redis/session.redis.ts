@@ -1,6 +1,6 @@
 import { getRedisClient } from '../../config/redis';
 
-// ─── Pure Redis (ioredis) Session & Token Management ──────────────────────────
+// ─── Universal Redis Session & Token Management ───────────────────────────────
 
 export const storeUserSession = async (userId: string, sessionData: any, ttlSeconds = 86400): Promise<void> => {
   const client = getRedisClient();
@@ -9,7 +9,11 @@ export const storeUserSession = async (userId: string, sessionData: any, ttlSeco
   const key = `session:user:${userId}`;
   try {
     const serialized = JSON.stringify(sessionData);
-    await client.setex(key, ttlSeconds, serialized);
+    if (typeof client.setex === 'function') {
+      await client.setex(key, ttlSeconds, serialized);
+    } else if (typeof client.set === 'function') {
+      await client.set(key, serialized, { ex: ttlSeconds });
+    }
   } catch (err: any) {
     console.error(`[Redis Session Store Error] userId="${userId}":`, err?.message || err);
   }
@@ -23,7 +27,8 @@ export const getUserSession = async <T = any>(userId: string): Promise<T | null>
   try {
     const raw = await client.get(key);
     if (!raw) return null;
-    return JSON.parse(raw) as T;
+    const value = typeof raw === 'string' ? raw : JSON.stringify(raw);
+    return JSON.parse(value) as T;
   } catch (err: any) {
     console.error(`[Redis Session Get Error] userId="${userId}":`, err?.message || err);
     return null;
@@ -48,7 +53,11 @@ export const revokeTokenInRedis = async (tokenId: string, ttlSeconds = 604800): 
 
   const key = `token:revoked:${tokenId}`;
   try {
-    await client.setex(key, ttlSeconds, 'true');
+    if (typeof client.setex === 'function') {
+      await client.setex(key, ttlSeconds, 'true');
+    } else if (typeof client.set === 'function') {
+      await client.set(key, 'true', { ex: ttlSeconds });
+    }
   } catch (err: any) {
     console.error(`[Redis Revoke Token Error] tokenId="${tokenId}":`, err?.message || err);
   }
