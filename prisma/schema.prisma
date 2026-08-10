@@ -140,6 +140,7 @@ model User {
 
   @@index([email])
   @@index([status])
+  @@index([email, deletedAt])
   @@map("users")
 }
 
@@ -367,6 +368,11 @@ model Product {
   @@index([sku])
   @@index([categoryId])
   @@index([status])
+  @@index([categoryId, status, isVisible])
+  @@index([status, isVisible, isFeatured])
+  @@index([status, isVisible, isBestseller])
+  @@index([status, isVisible, isNewArrival])
+  @@index([status, isVisible, createdAt])
   @@map("products")
 }
 
@@ -526,6 +532,8 @@ model Order {
   @@index([paymentStatus])
   @@index([allocatedWarehouseId])
   @@index([allocatedCourierId])
+  @@index([userId, status, createdAt])
+  @@index([status, createdAt])
   @@map("orders")
 }
 
