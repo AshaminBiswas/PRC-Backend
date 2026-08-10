@@ -17,6 +17,12 @@ export interface ApiError {
   details?: unknown[];
 }
 
+export interface CursorPaginationMeta {
+  limit: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export const sendSuccess = (
@@ -45,6 +51,24 @@ export const sendPaginated = (
   });
 };
 
+export const sendCursorPaginated = (
+  res: Response,
+  data: unknown[],
+  nextCursor: string | null,
+  limit: number,
+  statusCode = 200
+): Response => {
+  return res.status(statusCode).json({
+    success: true,
+    data,
+    pagination: {
+      limit,
+      nextCursor,
+      hasMore: nextCursor !== null,
+    },
+  });
+};
+
 export const sendError = (
   res: Response,
   error: ApiError,
@@ -67,7 +91,7 @@ export const sendMessage = (
   });
 };
 
-// ─── Pagination Calculator ────────────────────────────────────────────────────
+// ─── Pagination Calculators ───────────────────────────────────────────────────
 
 export const buildPagination = (
   page: number,
@@ -92,4 +116,12 @@ export const getPaginationParams = (
   const limit = Math.min(100, Math.max(1, parseInt(String(query.limit ?? '20'), 10)));
   const skip = (page - 1) * limit;
   return { page, limit, skip };
+};
+
+export const getCursorParams = (
+  query: Record<string, unknown>
+): { cursor: string | null; limit: number } => {
+  const cursor = query.cursor ? String(query.cursor) : null;
+  const limit = Math.min(100, Math.max(1, parseInt(String(query.limit ?? '20'), 10)));
+  return { cursor, limit };
 };
