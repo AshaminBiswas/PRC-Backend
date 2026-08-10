@@ -53,3 +53,19 @@ export const clearResponseCache = async (pattern = '*'): Promise<void> => {
   const { deleteCache } = await import('../services/redis/cache.redis');
   await deleteCache(pattern);
 };
+
+// ─── Edge CDN Cache-Control Header Middleware ───────────────────────────────
+
+export const edgeCacheControl = (publicMaxAgeSeconds = 300, staleWhileRevalidateSeconds = 60) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (req.method === 'GET') {
+      res.setHeader(
+        'Cache-Control',
+        `public, max-age=${publicMaxAgeSeconds}, s-maxage=${publicMaxAgeSeconds}, stale-while-revalidate=${staleWhileRevalidateSeconds}`
+      );
+    } else {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    }
+    next();
+  };
+};
