@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import ImageKit, { toFile } from '@imagekit/nodejs';
 import supabase from '../../config/supabase';
 import { env } from '../../config/env';
 import { AppError } from '../../middleware/error.middleware';
@@ -9,6 +10,23 @@ type BucketKey = 'avatars' | 'products' | 'categories';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+// ─── ImageKit.io Client (100% Free 20GB No-Card Storage) ───────────────────────
+
+let imagekitClient: ImageKit | null = null;
+
+const getImageKitClient = (): ImageKit | null => {
+  if (env.imagekit.privateKey && env.imagekit.urlEndpoint) {
+    if (!imagekitClient) {
+      imagekitClient = new ImageKit({
+        privateKey: env.imagekit.privateKey,
+      });
+      console.log('⚡ [Storage] ImageKit.io Client initialised →', env.imagekit.urlEndpoint);
+    }
+    return imagekitClient;
+  }
+  return null;
+};
 
 // ─── Cloudflare R2 S3-Compatible Client ───────────────────────────────────────
 
@@ -55,9 +73,27 @@ export const uploadFile = async (
   const fileName = `${uuidv4()}${ext}`;
   const filePath = folder ? `${bucket}/${folder}/${fileName}` : `${bucket}/${fileName}`;
 
+  // 1. Primary Priority: ImageKit.io (20GB Free CDN, No Credit Card Required)
+  const ikClient = getImageKitClient();
+  if (ikClient) {
+    try {
+      const uploadable = await toFile(file.buffer, fileName, { type: file.mimetype });
+      const response = await ikClient.files.upload({
+        file: uploadable,
+        fileName,
+        folder: folder ? `/${bucket}/${folder}` : `/${bucket}`,
+        useUniqueFileName: true,
+      });
+      return response.url || `${env.imagekit.urlEndpoint}/${response.filePath}`;
+    } catch (err: any) {
+      console.error('[ImageKit Upload Error]:', err?.message || err);
+      throw new AppError('UPLOAD_FAILED', `ImageKit Upload failed: ${err.message}`, 500);
+    }
+  }
+
+  // 2. Secondary Priority: Cloudflare R2 Storage ($0 Egress Fees)
   const clientR2 = getR2Client();
   if (clientR2) {
-    // Primary: Cloudflare R2 Storage ($0 Egress Fees)
     try {
       await clientR2.send(
         new PutObjectCommand({
@@ -76,7 +112,7 @@ export const uploadFile = async (
     }
   }
 
-  // Fallback: Supabase Storage
+  // 3. Fallback: Supabase Storage
   const bucketName = env.supabase.buckets[bucket];
   const { error } = await supabase.storage.from(bucketName).upload(filePath, file.buffer, {
     contentType: file.mimetype,
@@ -94,8 +130,27 @@ export const uploadFile = async (
 // ─── Delete File ──────────────────────────────────────────────────────────────
 
 export const deleteFile = async (url: string, bucket: BucketKey): Promise<void> => {
+  const ikClient = getImageKitClient();
+  if (ikClient && url.includes('imagekit.io')) {
+    try {
+      const fileNameMatch = url.split('/').pop()?.split('?')[0];
+      if (fileNameMatch) {
+        const searchRes = await ikClient.assets.list({ name: fileNameMatch });
+        if (searchRes && Array.isArray(searchRes) && searchRes.length > 0) {
+          const fileId = (searchRes[0] as any).id || (searchRes[0] as any).fileId;
+          if (fileId) {
+            await ikClient.files.delete(fileId);
+            return;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('[ImageKit Delete Error]:', err?.message || err);
+    }
+  }
+
   const clientR2 = getR2Client();
-  if (clientR2) {
+  if (clientR2 && !url.includes('supabase.co')) {
     try {
       const publicDomain = env.r2.publicDomain || `https://${env.r2.bucketName}.${env.r2.accountId}.r2.dev`;
       const filePath = url.replace(`${publicDomain}/`, '');

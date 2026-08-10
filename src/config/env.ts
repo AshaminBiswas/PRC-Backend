@@ -76,6 +76,10 @@ const envSchema = z.object({
   R2_BUCKET_NAME: z.string().optional(),
   R2_PUBLIC_DOMAIN: z.string().optional(),
 
+  IMAGEKIT_PUBLIC_KEY: z.string().optional(),
+  IMAGEKIT_PRIVATE_KEY: z.string().optional(),
+  IMAGEKIT_URL_ENDPOINT: z.string().optional(),
+
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
@@ -206,6 +210,11 @@ export const env = {
     secretAccessKey: rawEnv.R2_SECRET_ACCESS_KEY,
     bucketName: rawEnv.R2_BUCKET_NAME || 'prc-uploads',
     publicDomain: rawEnv.R2_PUBLIC_DOMAIN,
+  },
+  imagekit: {
+    publicKey: rawEnv.IMAGEKIT_PUBLIC_KEY,
+    privateKey: rawEnv.IMAGEKIT_PRIVATE_KEY,
+    urlEndpoint: rawEnv.IMAGEKIT_URL_ENDPOINT,
   },
 } as const;
 
