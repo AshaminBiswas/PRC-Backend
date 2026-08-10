@@ -1,22 +1,18 @@
 import { getRedisClient } from '../../config/redis';
 
-// ─── Redis OTP Storage & Verification ───────────────────────────────────────
+// ─── Pure Redis (ioredis) OTP Storage & Verification ──────────────────────────
 
 export const storeOtpInRedis = async (email: string, otp: string, ttlSeconds = 600): Promise<void> => {
   const client = getRedisClient();
   if (!client) return;
 
-  const key = `otp:${email.toLowerCase().trim()}`;
-  const attemptsKey = `otp:attempts:${email.toLowerCase().trim()}`;
+  const normalized = email.toLowerCase().trim();
+  const key = `otp:${normalized}`;
+  const attemptsKey = `otp:attempts:${normalized}`;
 
   try {
-    if (typeof client.setex === 'function') {
-      await client.setex(key, ttlSeconds, otp);
-      await client.setex(attemptsKey, ttlSeconds, '0');
-    } else if (typeof client.set === 'function') {
-      await client.set(key, otp, { ex: ttlSeconds });
-      await client.set(attemptsKey, '0', { ex: ttlSeconds });
-    }
+    await client.setex(key, ttlSeconds, otp);
+    await client.setex(attemptsKey, ttlSeconds, '0');
   } catch (err: any) {
     console.error(`[Redis OTP Store Error] email="${email}":`, err?.message || err);
   }
@@ -34,7 +30,7 @@ export const verifyOtpFromRedis = async (email: string, inputOtp: string): Promi
 
   try {
     const rawAttempts = await client.get(attemptsKey);
-    const attempts = rawAttempts ? parseInt(String(rawAttempts), 10) : 0;
+    const attempts = rawAttempts ? parseInt(rawAttempts, 10) : 0;
 
     if (attempts >= 5) {
       await client.del(key);
@@ -47,10 +43,8 @@ export const verifyOtpFromRedis = async (email: string, inputOtp: string): Promi
       return { valid: false, message: 'Invalid or expired OTP. Please request a new code.' };
     }
 
-    if (String(storedOtp).trim() !== inputOtp.trim()) {
-      if (typeof client.incr === 'function') {
-        await client.incr(attemptsKey);
-      }
+    if (storedOtp.trim() !== inputOtp.trim()) {
+      await client.incr(attemptsKey);
       return { valid: false, message: 'Incorrect OTP code. Please try again.' };
     }
 

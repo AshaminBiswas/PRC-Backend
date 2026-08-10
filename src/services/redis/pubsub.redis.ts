@@ -1,6 +1,6 @@
 import { getRedisClient } from '../../config/redis';
 
-// ─── Redis Pub/Sub Adapter for Real-Time WebSocket Scaling ───────────────────
+// ─── Pure Redis (ioredis) Pub/Sub Adapter for Real-Time Scaling ───────────────
 
 export const publishEvent = async (channel: string, message: any): Promise<void> => {
   const client = getRedisClient();
@@ -8,9 +8,7 @@ export const publishEvent = async (channel: string, message: any): Promise<void>
 
   try {
     const payload = typeof message === 'string' ? message : JSON.stringify(message);
-    if (typeof client.publish === 'function') {
-      await client.publish(channel, payload);
-    }
+    await client.publish(channel, payload);
   } catch (err: any) {
     console.error(`[Redis PubSub Publish Error] channel="${channel}":`, err?.message || err);
   }
@@ -18,15 +16,15 @@ export const publishEvent = async (channel: string, message: any): Promise<void>
 
 export const subscribeToChannel = (channel: string, callback: (message: string) => void): void => {
   const client = getRedisClient();
-  if (!client || typeof client.duplicate !== 'function') return;
+  if (!client) return;
 
   try {
     const subscriber = client.duplicate();
-    subscriber.subscribe(channel, (err?: Error) => {
+    subscriber.subscribe(channel, (err) => {
       if (err) {
         console.error(`[Redis PubSub Subscribe Error] channel="${channel}":`, err.message);
       } else {
-        console.log(`[Redis PubSub Subscribed] channel="${channel}"`);
+        console.log(`⚡ [Redis PubSub Subscribed] channel="${channel}"`);
       }
     });
 

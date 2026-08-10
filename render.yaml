@@ -50,12 +50,9 @@ services:
         fromDatabase:
           name: prc-postgres
           property: connectionString
-      # ── Redis (Upstash — Mumbai ap-south-1) ──────────────────────────────────
-      # Set both values in Render Dashboard → Environment (never commit secrets)
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false          # e.g. https://above-spider-196160.upstash.io
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false          # your Upstash REST token
+      # ── Pure Open-Source Redis URL ───────────────────────────────────────────
+      - key: REDIS_URL
+        sync: false          # e.g. redis://redis:6379 or rediss://:password@host:6379
 
 databases:
   # ─── PostgreSQL Database ───────────────────────────────────────────────────
