@@ -80,6 +80,10 @@ const envSchema = z.object({
   IMAGEKIT_PRIVATE_KEY: z.string().optional(),
   IMAGEKIT_URL_ENDPOINT: z.string().optional(),
 
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
+
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
@@ -215,6 +219,11 @@ export const env = {
     publicKey: rawEnv.IMAGEKIT_PUBLIC_KEY,
     privateKey: rawEnv.IMAGEKIT_PRIVATE_KEY,
     urlEndpoint: rawEnv.IMAGEKIT_URL_ENDPOINT,
+  },
+  cloudinary: {
+    cloudName: rawEnv.CLOUDINARY_CLOUD_NAME,
+    apiKey: rawEnv.CLOUDINARY_API_KEY,
+    apiSecret: rawEnv.CLOUDINARY_API_SECRET,
   },
 } as const;
 

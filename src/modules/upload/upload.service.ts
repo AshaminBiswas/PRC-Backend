@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import ImageKit, { toFile } from '@imagekit/nodejs';
+import { v2 as cloudinary } from 'cloudinary';
 import supabase from '../../config/supabase';
 import { env } from '../../config/env';
 import { AppError } from '../../middleware/error.middleware';
@@ -11,7 +12,7 @@ type BucketKey = 'avatars' | 'products' | 'categories';
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
-// ─── ImageKit.io Client (100% Free 20GB No-Card Storage) ───────────────────────
+// ─── 1. Primary: ImageKit.io Client ───────────────────────────────────────────
 
 let imagekitClient: ImageKit | null = null;
 
@@ -28,7 +29,28 @@ const getImageKitClient = (): ImageKit | null => {
   return null;
 };
 
-// ─── Cloudflare R2 S3-Compatible Client ───────────────────────────────────────
+// ─── 2. Secondary: Cloudinary Client ──────────────────────────────────────────
+
+let isCloudinaryConfigured = false;
+
+const getCloudinaryClient = () => {
+  if (env.cloudinary.cloudName && env.cloudinary.apiKey && env.cloudinary.apiSecret) {
+    if (!isCloudinaryConfigured) {
+      cloudinary.config({
+        cloud_name: env.cloudinary.cloudName,
+        api_key: env.cloudinary.apiKey,
+        api_secret: env.cloudinary.apiSecret,
+        secure: true,
+      });
+      isCloudinaryConfigured = true;
+      console.log('⚡ [Storage] Cloudinary Client initialised →', env.cloudinary.cloudName);
+    }
+    return cloudinary;
+  }
+  return null;
+};
+
+// ─── 4. Last: Cloudflare R2 S3-Compatible Client ──────────────────────────────
 
 let r2Client: S3Client | null = null;
 
@@ -91,7 +113,38 @@ export const uploadFile = async (
     }
   }
 
-  // 2. Secondary Priority: Cloudflare R2 Storage ($0 Egress Fees)
+  // 2. Secondary Priority: Cloudinary (25GB Free CDN, No Credit Card Required)
+  const cldClient = getCloudinaryClient();
+  if (cldClient) {
+    try {
+      const base64Data = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+      const result = await cldClient.uploader.upload(base64Data, {
+        folder: folder ? `${bucket}/${folder}` : bucket,
+        public_id: path.parse(fileName).name,
+        resource_type: 'auto',
+      });
+      return result.secure_url;
+    } catch (err: any) {
+      console.error('[Cloudinary Upload Error]:', err?.message || err);
+      throw new AppError('UPLOAD_FAILED', `Cloudinary Upload failed: ${err.message}`, 500);
+    }
+  }
+
+  // 3. Fallback: Supabase Storage
+  if (env.supabase.url && env.supabase.serviceKey) {
+    const bucketName = env.supabase.buckets[bucket];
+    const { error } = await supabase.storage.from(bucketName).upload(filePath, file.buffer, {
+      contentType: file.mimetype,
+      upsert: false,
+    });
+
+    if (!error) {
+      const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+      return data.publicUrl;
+    }
+  }
+
+  // 4. Last Priority: Cloudflare R2 Storage ($0 Egress Fees)
   const clientR2 = getR2Client();
   if (clientR2) {
     try {
@@ -112,24 +165,13 @@ export const uploadFile = async (
     }
   }
 
-  // 3. Fallback: Supabase Storage
-  const bucketName = env.supabase.buckets[bucket];
-  const { error } = await supabase.storage.from(bucketName).upload(filePath, file.buffer, {
-    contentType: file.mimetype,
-    upsert: false,
-  });
-
-  if (error) {
-    throw new AppError('UPLOAD_FAILED', `Upload failed: ${error.message}`, 500);
-  }
-
-  const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
-  return data.publicUrl;
+  throw new AppError('STORAGE_UNAVAILABLE', 'No active storage provider configured', 500);
 };
 
 // ─── Delete File ──────────────────────────────────────────────────────────────
 
 export const deleteFile = async (url: string, bucket: BucketKey): Promise<void> => {
+  // 1. Delete from ImageKit if URL matches
   const ikClient = getImageKitClient();
   if (ikClient && url.includes('imagekit.io')) {
     try {
@@ -149,8 +191,36 @@ export const deleteFile = async (url: string, bucket: BucketKey): Promise<void> 
     }
   }
 
+  // 2. Delete from Cloudinary if URL matches
+  const cldClient = getCloudinaryClient();
+  if (cldClient && url.includes('cloudinary.com')) {
+    try {
+      const urlParts = url.split('/');
+      const publicIdWithExt = urlParts.slice(-2).join('/'); // folder/filename.ext
+      const publicId = publicIdWithExt.substring(0, publicIdWithExt.lastIndexOf('.'));
+      await cldClient.uploader.destroy(publicId);
+      return;
+    } catch (err: any) {
+      console.error('[Cloudinary Delete Error]:', err?.message || err);
+    }
+  }
+
+  // 3. Delete from Supabase if URL matches
+  if (url.includes('supabase.co')) {
+    const bucketName = env.supabase.buckets[bucket];
+    const bucketUrl = `${env.supabase.url}/storage/v1/object/public/${bucketName}/`;
+    const filePath = url.replace(bucketUrl, '');
+
+    const { error } = await supabase.storage.from(bucketName).remove([filePath]);
+    if (error) {
+      console.error(`[Supabase Storage] Failed to delete file: ${error.message}`);
+    }
+    return;
+  }
+
+  // 4. Delete from Cloudflare R2
   const clientR2 = getR2Client();
-  if (clientR2 && !url.includes('supabase.co')) {
+  if (clientR2) {
     try {
       const publicDomain = env.r2.publicDomain || `https://${env.r2.bucketName}.${env.r2.accountId}.r2.dev`;
       const filePath = url.replace(`${publicDomain}/`, '');
@@ -164,14 +234,5 @@ export const deleteFile = async (url: string, bucket: BucketKey): Promise<void> 
     } catch (err: any) {
       console.error('[Cloudflare R2 Delete Error]:', err?.message || err);
     }
-  }
-
-  const bucketName = env.supabase.buckets[bucket];
-  const bucketUrl = `${env.supabase.url}/storage/v1/object/public/${bucketName}/`;
-  const filePath = url.replace(bucketUrl, '');
-
-  const { error } = await supabase.storage.from(bucketName).remove([filePath]);
-  if (error) {
-    console.error(`[Storage] Failed to delete file: ${error.message}`);
   }
 };
