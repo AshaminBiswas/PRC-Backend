@@ -17,6 +17,10 @@ const startWorker = async () => {
       console.log(`PRC Hardware API listening on http://0.0.0.0:${port}${env.API_PREFIX} (${env.INSTANCE_ID})`);
     });
 
+    // Configure Node.js HTTP Keep-Alive timeouts for ALB / Reverse Proxy compatibility
+    server.keepAliveTimeout = 65000; // 65 seconds (exceeds AWS ALB 60s idle timeout)
+    server.headersTimeout = 66000;   // 66 seconds (must exceed keepAliveTimeout)
+
     connectDatabases()
       .then(() => {
         console.log(`Database connected on ${env.INSTANCE_ID}`);
