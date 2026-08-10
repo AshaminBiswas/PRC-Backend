@@ -1,7 +1,9 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import prisma from '../../config/database';
+import { env } from '../../config/env';
 import { AppError } from '../../middleware/error.middleware';
+import { storeOtpInRedis, verifyOtpFromRedis } from '../../services/redis/otp.redis';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -35,7 +37,7 @@ const generateOtp = (): string => {
   return String(num);
 };
 
-const getOtpExpiry = (): Date => new Date(Date.now() + 10 * 60 * 1000);
+const getOtpExpiry = (): Date => new Date(Date.now() + env.auth.otpTtlSeconds * 1000);
 
 const buildTokenPair = async (userId: string, email: string, roleSlug: string) => {
   const accessToken = generateAccessToken({ userId, email, roleSlug });
@@ -92,6 +94,8 @@ export const register = async (input: RegisterInput) => {
     data: { token: otp, userId: user.id, expiresAt: getOtpExpiry() },
   });
 
+  await storeOtpInRedis(user.email, otp, env.auth.otpTtlSeconds);
+
   try {
     await sendOtpEmail(user.email, user.firstName, otp);
   } catch (emailErr: any) {
@@ -109,6 +113,11 @@ export const verifyOtp = async (input: VerifyOtpInput) => {
 
   if (!user) throw new AppError('NOT_FOUND', 'No account found with this email address', 404);
   if (user.isVerified) throw new AppError('ALREADY_VERIFIED', 'Email is already verified', 400);
+
+  const redisResult = await verifyOtpFromRedis(input.email, input.otp);
+  if (!redisResult.valid && redisResult.message.includes('attempts')) {
+    throw new AppError('TOO_MANY_ATTEMPTS', redisResult.message, 429);
+  }
 
   const record = await prisma.emailVerification.findFirst({
     where: { userId: user.id, token: input.otp, usedAt: null, expiresAt: { gt: new Date() } },
@@ -306,6 +315,7 @@ export const resendVerification = async (email: string) => {
 
   const otp = generateOtp();
   await prisma.emailVerification.create({ data: { token: otp, userId: user.id, expiresAt: getOtpExpiry() } });
+  await storeOtpInRedis(user.email, otp, env.auth.otpTtlSeconds);
 
   try {
     await sendOtpEmail(user.email, user.firstName, otp);

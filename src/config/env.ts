@@ -38,6 +38,8 @@ const envSchema = z.object({
 
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
 
+  OTP_TTL_SECONDS: z.coerce.number().default(600),
+
   TRUST_PROXY: z.string().transform((v) => v === 'true').default('false'),
   CLUSTER_MODE: z.string().transform((v) => v === 'true').default('false'),
   WEB_CONCURRENCY: z.coerce.number().default(0),
@@ -188,6 +190,9 @@ export const env = {
   },
   resend: {
     apiKey: rawEnv.RESEND_API_KEY,
+  },
+  auth: {
+    otpTtlSeconds: rawEnv.OTP_TTL_SECONDS,
   },
 } as const;
 
