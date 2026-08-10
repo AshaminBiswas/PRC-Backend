@@ -149,6 +149,25 @@ app.get('/ready', (_req, res) => {
   });
 });
 
+// ─── Prometheus Metrics Endpoint ─────────────────────────────────────────────
+import { register, httpRequestDurationMicroseconds, httpRequestsTotal } from './config/metrics';
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    const route = req.route ? req.route.path : req.path;
+    httpRequestDurationMicroseconds.observe({ method: req.method, route, status_code: res.statusCode }, duration);
+    httpRequestsTotal.inc({ method: req.method, route, status_code: res.statusCode });
+  });
+  next();
+});
+
+app.get('/metrics', async (_req, res) => {
+  res.setHeader('Content-Type', register.contentType);
+  res.send(await register.metrics());
+});
+
 app.get('/docs-ui', serveHtmlDocs);
 app.get(`${prefix}/docs-ui`, serveHtmlDocs);
 app.get(`${prefix}/docs.json`, serveDocsJson);
