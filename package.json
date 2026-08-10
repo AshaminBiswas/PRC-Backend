@@ -33,6 +33,7 @@
     "@types/compression": "^1.8.1",
     "@upstash/redis": "^1.38.2",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^6.0.9",
     "bwip-js": "^4.11.2",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
