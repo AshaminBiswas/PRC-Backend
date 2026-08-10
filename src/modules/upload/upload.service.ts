@@ -135,7 +135,7 @@ export const deleteFile = async (url: string, bucket: BucketKey): Promise<void> 
     try {
       const fileNameMatch = url.split('/').pop()?.split('?')[0];
       if (fileNameMatch) {
-        const searchRes = await ikClient.assets.list({ name: fileNameMatch });
+        const searchRes = await ikClient.assets.list({ searchQuery: `name = "${fileNameMatch}"` });
         if (searchRes && Array.isArray(searchRes) && searchRes.length > 0) {
           const fileId = (searchRes[0] as any).id || (searchRes[0] as any).fileId;
           if (fileId) {
