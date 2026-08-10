@@ -131,7 +131,7 @@ export const uploadFile = async (
   }
 
   // 3. Fallback: Supabase Storage
-  if (env.supabase.url && env.supabase.serviceKey) {
+  if (env.supabase.url && env.supabase.serviceRoleKey) {
     const bucketName = env.supabase.buckets[bucket];
     const { error } = await supabase.storage.from(bucketName).upload(filePath, file.buffer, {
       contentType: file.mimetype,
