@@ -35,16 +35,22 @@ router.get('/me', authenticate, controller.getMe);
 router.post('/logout', authenticate, validate(LogoutSchema), controller.logout);
 router.post('/change-password', authenticate, validate(ChangePasswordSchema), controller.changePassword);
 
-// 2FA Authentication & Redis Caching Routes
+// ─── 2FA Routes (PUBLIC — used during login flow, no access token exists yet) ──
+// These endpoints are called BEFORE the user has a valid access token.
+// They validate the TOTP code using a temporary mfaToken issued at login.
+router.post('/2fa/login', authLimiter, controller.verify2FaLogin);
+router.post('/2fa/authenticate', authLimiter, controller.verify2FaLogin);
+
+// ─── 2FA Account Management Routes (PROTECTED — requires valid access token) ──
 router.post('/2fa/setup', authenticate, controller.setup2Fa);
 router.post('/2fa/generate', authenticate, controller.setup2Fa);
 router.post('/2fa/enable', authenticate, controller.enable2Fa);
 router.post('/2fa/verify', authenticate, controller.verify2Fa);
 router.post('/2fa/validate', authenticate, controller.verify2Fa);
-router.post('/2fa/authenticate', authenticate, controller.verify2Fa);
 router.post('/2fa/disable', authenticate, controller.disable2Fa);
 router.get('/2fa/status', authenticate, controller.get2FaStatus);
 router.get('/2fa/me', authenticate, controller.get2FaStatus);
 router.get('/2fa', authenticate, controller.get2FaStatus);
 
 export default router;
+
