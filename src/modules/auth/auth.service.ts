@@ -39,7 +39,7 @@ const generateOtp = (): string => {
 
 const getOtpExpiry = (): Date => new Date(Date.now() + env.auth.otpTtlSeconds * 1000);
 
-const buildTokenPair = async (userId: string, email: string, roleSlug: string) => {
+export const buildTokenPair = async (userId: string, email: string, roleSlug: string) => {
   const accessToken = generateAccessToken({ userId, email, roleSlug });
   const rawRefresh = generateRefreshToken();
   const expiresAt = getRefreshTokenExpiry();
@@ -47,7 +47,7 @@ const buildTokenPair = async (userId: string, email: string, roleSlug: string) =
   return { accessToken, refreshToken: rawRefresh };
 };
 
-const getPrimaryRoleSlug = (userRoles: Array<{ role: { slug: string } }>): string =>
+export const getPrimaryRoleSlug = (userRoles: Array<{ role: { slug: string } }>): string =>
   userRoles[0]?.role.slug ?? 'customer';
 
 export const register = async (input: RegisterInput) => {
