@@ -112,7 +112,7 @@ export const verify2FaLogin = async (req: Request, res: Response, next: NextFunc
       try {
         const jwt = await import('jsonwebtoken');
         const { env } = await import('../../config/env');
-        const decoded = jwt.default.verify(mfaToken, env.jwt.secret) as any;
+        const decoded = jwt.default.verify(mfaToken, env.jwt.accessSecret) as any;
         userId = decoded?.userId || decoded?.id || null;
       } catch {
         userId = null;
