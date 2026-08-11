@@ -7,11 +7,23 @@ import type {
   ListBannersQuery,
 } from './banners.schema';
 
+const POSITION_DIMENSIONS: Record<string, { width: number; height: number; aspectRatio: string; recommendedSize: string }> = {
+  HERO: { width: 1920, height: 600, aspectRatio: '16:5', recommendedSize: '1920x600 px' },
+  BESTSELLERS_TOP: { width: 1920, height: 600, aspectRatio: '16:5', recommendedSize: '1920x600 px' },
+  BESTSELLERS_MID: { width: 1920, height: 480, aspectRatio: '4:1', recommendedSize: '1920x480 px' },
+  NEW_ARRIVALS_TOP: { width: 1920, height: 600, aspectRatio: '16:5', recommendedSize: '1920x600 px' },
+  NEW_ARRIVALS_MID: { width: 1920, height: 480, aspectRatio: '4:1', recommendedSize: '1920x480 px' },
+  OFFERS_HERO: { width: 1920, height: 600, aspectRatio: '16:5', recommendedSize: '1920x600 px' },
+  OFFERS_MID: { width: 1920, height: 480, aspectRatio: '4:1', recommendedSize: '1920x480 px' },
+};
+
 const formatBanner = (banner: any) => {
   if (!banner) return null;
+  const dims = POSITION_DIMENSIONS[banner.position] || { width: 1920, height: 600, aspectRatio: '16:5', recommendedSize: '1920x600 px' };
   return {
     ...banner,
     displayOrder: banner.order,
+    targetDimensions: dims,
   };
 };
 

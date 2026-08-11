@@ -57,3 +57,12 @@ export const validateCoupon = async (req: Request, res: Response, next: NextFunc
     next(error);
   }
 };
+
+export const getPublicCoupons = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await couponsService.getPublicCoupons();
+    sendSuccess(res, data);
+  } catch (error) {
+    next(error);
+  }
+};

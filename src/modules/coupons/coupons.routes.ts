@@ -11,9 +11,12 @@ import {
   CouponCodeParamSchema,
 } from './coupons.schema';
 
+import { cacheResponse } from '../../middleware/cache.middleware';
+
 const router = Router();
 
-// Validation route (Public / Authenticated users)
+// Public listing & validation routes
+router.get('/public', cacheResponse(60), controller.getPublicCoupons);
 router.post('/validate', optionalAuthenticate, validate(ValidateCouponSchema), controller.validateCoupon);
 
 // Admin routes

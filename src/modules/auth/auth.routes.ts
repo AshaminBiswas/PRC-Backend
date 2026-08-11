@@ -35,4 +35,16 @@ router.get('/me', authenticate, controller.getMe);
 router.post('/logout', authenticate, validate(LogoutSchema), controller.logout);
 router.post('/change-password', authenticate, validate(ChangePasswordSchema), controller.changePassword);
 
+// 2FA Authentication & Redis Caching Routes
+router.post('/2fa/setup', authenticate, controller.setup2Fa);
+router.post('/2fa/generate', authenticate, controller.setup2Fa);
+router.post('/2fa/enable', authenticate, controller.enable2Fa);
+router.post('/2fa/verify', authenticate, controller.verify2Fa);
+router.post('/2fa/validate', authenticate, controller.verify2Fa);
+router.post('/2fa/authenticate', authenticate, controller.verify2Fa);
+router.post('/2fa/disable', authenticate, controller.disable2Fa);
+router.get('/2fa/status', authenticate, controller.get2FaStatus);
+router.get('/2fa/me', authenticate, controller.get2FaStatus);
+router.get('/2fa', authenticate, controller.get2FaStatus);
+
 export default router;

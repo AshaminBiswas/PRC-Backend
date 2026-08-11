@@ -84,6 +84,18 @@ export const ResendVerificationSchema = z.object({
   email: z.string().email('Invalid email format'),
 });
 
+export const Enable2faSchema = z.object({
+  code: z.string().min(1, '2FA Code is required'),
+});
+
+export const Verify2faSchema = z.object({
+  code: z.string().min(1, '2FA Code is required'),
+});
+
+export const Disable2faSchema = z.object({
+  code: z.string().optional(),
+});
+
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
 export type AdminLoginInput = z.infer<typeof AdminLoginSchema>;

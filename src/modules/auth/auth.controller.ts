@@ -85,3 +85,50 @@ export const resendVerification = async (req: Request, res: Response, next: Next
     sendMessage(res, 'Verification email sent');
   } catch (error) { next(error); }
 };
+
+// ─── 2FA CONTROLLER HANDLERS ──────────────────────────────────────────────────
+
+export const setup2Fa = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const twoFactorService = await import('./twoFactor.service');
+    const userEmail = (req.user as any)?.email || 'admin@prchardware.in';
+    const data = await twoFactorService.setup2Fa(req.user!.id, userEmail);
+    sendSuccess(res, data, '2FA setup generated successfully');
+  } catch (error) { next(error); }
+};
+
+export const enable2Fa = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const twoFactorService = await import('./twoFactor.service');
+    const data = await twoFactorService.enable2Fa(req.user!.id, req.body.code);
+    sendSuccess(res, data, '2FA enabled successfully');
+  } catch (error) { next(error); }
+};
+
+export const get2FaStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const twoFactorService = await import('./twoFactor.service');
+    const data = await twoFactorService.get2FaStatus(req.user!.id);
+    sendSuccess(res, data);
+  } catch (error) { next(error); }
+};
+
+export const verify2Fa = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const twoFactorService = await import('./twoFactor.service');
+    const isValid = await twoFactorService.verify2FaCode(req.user!.id, req.body.code);
+    if (!isValid) {
+      const { AppError } = await import('../../middleware/error.middleware');
+      throw new AppError('BAD_REQUEST', 'Invalid 2FA code', 400);
+    }
+    sendSuccess(res, { valid: true }, '2FA code verified successfully');
+  } catch (error) { next(error); }
+};
+
+export const disable2Fa = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const twoFactorService = await import('./twoFactor.service');
+    const data = await twoFactorService.disable2Fa(req.user!.id, req.body.code);
+    sendSuccess(res, data, '2FA disabled successfully');
+  } catch (error) { next(error); }
+};
