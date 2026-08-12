@@ -48,6 +48,15 @@ export const updateBanner = async (req: Request, res: Response, next: NextFuncti
   }
 };
 
+export const reorderBanners = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await bannersService.reorderBanners(req.body);
+    sendSuccess(res, data, 'Banners reordered successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const deleteBanner = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await bannersService.deleteBanner(req.params.id);

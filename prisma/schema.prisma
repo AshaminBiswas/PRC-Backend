@@ -1117,19 +1117,26 @@ model Faq {
 }
 
 model Banner {
-  id        String    @id @default(uuid())
-  title     String
-  subtitle  String?
-  image     String
-  link      String?
-  position  String    @default("HERO")
-  order     Int       @default(0)
-  isActive  Boolean   @default(true)
-  startDate DateTime?
-  endDate   DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id           String    @id @default(uuid())
+  title        String
+  subtitle     String?
+  badgeText    String?
+  desktopImage String    @default("")
+  tabletImage  String?
+  mobileImage  String?
+  image        String?
+  linkUrl      String?
+  link         String?
+  ctaText      String?   @default("Explore Now")
+  position     String    @default("HERO_SLIDER")
+  order        Int       @default(0)
+  isActive     Boolean   @default(true)
+  startDate    DateTime?
+  endDate      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
+  @@index([position, isActive, order])
   @@index([position])
   @@index([isActive])
   @@map("banners")
