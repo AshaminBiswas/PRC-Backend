@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as categoriesService from './categories.service';
 import { sendSuccess, sendPaginated, sendMessage } from '../../utils/response';
+import { clearResponseCache } from '../../middleware/cache.middleware';
 
 export const listCategories = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -19,6 +20,8 @@ export const getCategoryTree = async (req: Request, res: Response, next: NextFun
 export const createCategory = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await categoriesService.createCategory(req.body);
+    clearResponseCache('cache:*categories*');
+    clearResponseCache('cache:*products*');
     sendSuccess(res, data, 'Category created successfully', 201);
   } catch (error) { next(error); }
 };
@@ -33,6 +36,8 @@ export const getCategoryBySlug = async (req: Request, res: Response, next: NextF
 export const updateCategory = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await categoriesService.updateCategory(req.params.id, req.body);
+    clearResponseCache('cache:*categories*');
+    clearResponseCache('cache:*products*');
     sendMessage(res, 'Category updated successfully');
   } catch (error) { next(error); }
 };
@@ -40,6 +45,8 @@ export const updateCategory = async (req: Request, res: Response, next: NextFunc
 export const updateCategoryStatus = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await categoriesService.updateCategoryStatus(req.params.id, req.body.status);
+    clearResponseCache('cache:*categories*');
+    clearResponseCache('cache:*products*');
     sendMessage(res, 'Category status updated');
   } catch (error) { next(error); }
 };
@@ -47,6 +54,8 @@ export const updateCategoryStatus = async (req: Request, res: Response, next: Ne
 export const reorderCategories = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await categoriesService.reorderCategories(req.body.categories);
+    clearResponseCache('cache:*categories*');
+    clearResponseCache('cache:*products*');
     sendMessage(res, 'Categories reordered successfully');
   } catch (error) { next(error); }
 };
@@ -61,6 +70,8 @@ export const getCategoryProducts = async (req: Request, res: Response, next: Nex
 export const deleteCategory = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await categoriesService.deleteCategory(req.params.id);
+    clearResponseCache('cache:*categories*');
+    clearResponseCache('cache:*products*');
     sendMessage(res, 'Category deleted successfully');
   } catch (error) { next(error); }
 };
