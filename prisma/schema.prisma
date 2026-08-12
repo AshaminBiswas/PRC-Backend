@@ -325,6 +325,7 @@ model Product {
   sku             String        @unique
   price           Decimal       @db.Decimal(12, 2)
   salePrice       Decimal?      @db.Decimal(12, 2)
+  offerPrice      Decimal?      @db.Decimal(12, 2)
   thumbnail       String?
   images          String[]      @default([])
   categoryId      String?
@@ -385,6 +386,7 @@ model ProductVariant {
   name        String?
   price       Decimal  @db.Decimal(12, 2)
   salePrice   Decimal? @db.Decimal(12, 2)
+  offerPrice  Decimal? @db.Decimal(12, 2)
   stock       Int      @default(0)
   attributes  Json
   image       String?

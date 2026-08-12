@@ -24,6 +24,7 @@ export const CreateProductSchema = z.object({
   sku: z.string().min(1, 'SKU is required'),
   price: z.number().min(0, 'Price must be positive'),
   salePrice: z.number().min(0).optional(),
+  offerPrice: z.number().min(0).optional(),
   thumbnail: z.string().url().optional(),
   images: z.array(z.string().url()).optional(),
   categoryId: z.string().uuid().optional(),

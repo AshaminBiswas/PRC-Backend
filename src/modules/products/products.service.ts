@@ -15,6 +15,7 @@ const productSelect = {
   sku: true,
   price: true,
   salePrice: true,
+  offerPrice: true,
   thumbnail: true,
   images: true,
   categoryId: true,
@@ -47,24 +48,30 @@ const productSelect = {
 
 const formatProduct = (p: {
   price: Prisma.Decimal;
-  salePrice: Prisma.Decimal | null;
+  salePrice?: Prisma.Decimal | null;
+  offerPrice?: Prisma.Decimal | null;
   rating: Prisma.Decimal;
   weight: Prisma.Decimal | null;
   [key: string]: unknown;
-}) => ({
-  ...p,
-  price: Number(p.price),
-  salePrice: p.salePrice ? Number(p.salePrice) : null,
-  rating: Number(p.rating),
-  weight: p.weight ? Number(p.weight) : null,
-  inStock: (p.stock as number) > 0,
-  productSpecification: p.specification ?? null,
-  seo: {
-    metaTitle: p.metaTitle ?? null,
-    metaDescription: p.metaDescription ?? null,
-    metaKeywords: p.metaKeywords ?? null,
-  },
-});
+}) => {
+  const effectivePrice = p.offerPrice ?? p.salePrice;
+  const numOfferPrice = effectivePrice ? Number(effectivePrice) : null;
+  return {
+    ...p,
+    price: Number(p.price),
+    salePrice: numOfferPrice,
+    offerPrice: numOfferPrice,
+    rating: Number(p.rating),
+    weight: p.weight ? Number(p.weight) : null,
+    inStock: (p.stock as number) > 0,
+    productSpecification: p.specification ?? null,
+    seo: {
+      metaTitle: p.metaTitle ?? null,
+      metaDescription: p.metaDescription ?? null,
+      metaKeywords: p.metaKeywords ?? null,
+    },
+  };
+};
 
 // ─── List Products ────────────────────────────────────────────────────────────
 
@@ -168,6 +175,8 @@ export const createProduct = async (input: CreateProductInput) => {
 
   const slug = await generateUniqueSlug(input.name, 'product');
 
+  const effectiveOfferPrice = input.offerPrice ?? input.salePrice;
+
   const product = await prisma.product.create({
     data: {
       name: input.name,
@@ -176,7 +185,8 @@ export const createProduct = async (input: CreateProductInput) => {
       shortDesc: input.shortDesc,
       sku: input.sku,
       price: input.price,
-      salePrice: input.salePrice,
+      salePrice: effectiveOfferPrice,
+      offerPrice: effectiveOfferPrice,
       thumbnail: input.thumbnail,
       images: input.images ?? [],
       category: input.categoryId ? { connect: { id: input.categoryId } } : undefined,
@@ -230,7 +240,11 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
   if (input.shortDesc !== undefined) updateData.shortDesc = input.shortDesc;
   if (input.sku) updateData.sku = input.sku;
   if (input.price !== undefined) updateData.price = input.price;
-  if (input.salePrice !== undefined) updateData.salePrice = input.salePrice;
+  if (input.offerPrice !== undefined || input.salePrice !== undefined) {
+    const pVal = input.offerPrice ?? input.salePrice;
+    updateData.salePrice = pVal;
+    updateData.offerPrice = pVal;
+  }
   if (input.thumbnail !== undefined) updateData.thumbnail = input.thumbnail;
   if (input.images !== undefined) updateData.images = input.images;
   if (input.categoryId !== undefined) {
