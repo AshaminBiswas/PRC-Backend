@@ -3384,9 +3384,19 @@
     <div class="code-block">
       <div class="code-header"><span class="lbl-body">📥 Request Body ({ })</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
       <pre><code>{
-  "name": "string (required)",
-  "status": "ACTIVE | INACTIVE",
-  "notes": "string (optional)"
+  "title": "Bestselling Architectural Handles (string, required)",
+  "subtitle": "Handcrafted solid brass hardware range (string, optional)",
+  "badgeText": "HOT DEAL (string, optional)",
+  "desktopImage": "https://ik.imagekit.io/prchardware/banners/desktop.webp (string, url, required)",
+  "tabletImage": "https://ik.imagekit.io/prchardware/banners/tablet.webp (string, url, optional)",
+  "mobileImage": "https://ik.imagekit.io/prchardware/banners/mobile.webp (string, url, optional)",
+  "linkUrl": "/products?category=HANDLES (string, optional)",
+  "ctaText": "Explore Now (string, optional, default: Explore Now)",
+  "position": "HERO_SLIDER | HOME_UPCOMING | BESTSELLERS_TOP | BESTSELLERS_MID | NEW_ARRIVALS_TOP | NEW_ARRIVALS_MID | OFFERS_TOP | OFFERS_SIDE | SHOP_BY_AESTHETIC | CUBICLE_COLLECTION | LOCKER_COLLECTION | ABOUT_HERO | CONTACT_HERO | FAQ_HERO",
+  "order": 1,
+  "isActive": true,
+  "startDate": "2026-08-01T00:00:00Z (ISO string, optional)",
+  "endDate": "2026-08-31T23:59:59Z (ISO string, optional)"
 }</code></pre>
     </div>
     <div class="code-block success-block">
@@ -5193,9 +5203,24 @@
     <div class="code-block">
       <div class="code-header"><span class="lbl-body">📥 Request Body ({ })</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
       <pre><code>{
-  "name": "string (required)",
-  "status": "ACTIVE | INACTIVE",
-  "notes": "string (optional)"
+  "name": "Luxury Solid Brass Cabinet Handle - 128mm (string, required)",
+  "sku": "PRC-HDL-BRS-128 (string, required, unique)",
+  "price": 1499.00,
+  "offerPrice": 1199.00,
+  "salePrice": 1199.00,
+  "shortDesc": "Short product summary (string, optional)",
+  "description": "Full product description (string, optional)",
+  "categoryId": "c2a9a5f4-3b1d-4e89-a2c6-9f7e8d1a2b3c (uuid, optional)",
+  "stock": 100,
+  "reorderLevel": 10,
+  "status": "ACTIVE | INACTIVE | DRAFT",
+  "isVisible": true,
+  "isFeatured": true,
+  "isBestseller": false,
+  "isInOffer": true,
+  "isNewArrival": false,
+  "thumbnail": "https://ik.imagekit.io/prchardware/products/thumb.jpg (string, url, optional)",
+  "images": ["https://ik.imagekit.io/prchardware/products/img1.jpg"]
 }</code></pre>
     </div>
     <div class="code-block success-block">
