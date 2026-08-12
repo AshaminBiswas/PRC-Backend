@@ -136,6 +136,94 @@ export const listProducts = async (query: {
   };
 };
 
+// ─── Get Products By Category (ID or Slug) ────────────────────────────────────
+
+export const getProductsByCategory = async (
+  categoryIdentifier: string,
+  query: any
+) => {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(categoryIdentifier);
+
+  const category = await readPrisma.category.findFirst({
+    where: isUuid
+      ? { id: categoryIdentifier, deletedAt: null }
+      : { slug: categoryIdentifier, deletedAt: null },
+    include: {
+      children: { where: { deletedAt: null }, select: { id: true } },
+    },
+  });
+
+  if (!category) {
+    throw new AppError('NOT_FOUND', 'Category not found', 404);
+  }
+
+  const categoryIds = [category.id, ...category.children.map((c) => c.id)];
+
+  const { page, limit, skip } = getPaginationParams(query);
+
+  const where: Prisma.ProductWhereInput = {
+    categoryId: { in: categoryIds },
+    deletedAt: null,
+  };
+
+  if (query.search) {
+    where.OR = [
+      { name: { contains: query.search, mode: 'insensitive' } },
+      { sku: { contains: query.search, mode: 'insensitive' } },
+    ];
+  }
+  if (query.status) where.status = query.status as 'ACTIVE' | 'INACTIVE' | 'DRAFT';
+  if (query.inStock) where.stock = { gt: 0 };
+  if (query.isFeatured !== undefined) where.isFeatured = query.isFeatured;
+  if (query.isBestseller !== undefined) where.isBestseller = query.isBestseller;
+  if (query.isInOffer !== undefined) where.isInOffer = query.isInOffer;
+  if (query.isNewArrival !== undefined) where.isNewArrival = query.isNewArrival;
+  if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+    where.price = {
+      ...(query.minPrice !== undefined ? { gte: query.minPrice } : {}),
+      ...(query.maxPrice !== undefined ? { lte: query.maxPrice } : {}),
+    };
+  }
+
+  const validSortFields = ['price', 'name', 'createdAt', 'rating', 'stock'];
+  const sortBy = query.sortBy && validSortFields.includes(query.sortBy) ? query.sortBy : 'createdAt';
+  const sortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
+
+  const [products, totalItems, priceRange] = await Promise.all([
+    readPrisma.product.findMany({
+      where,
+      select: productSelect,
+      orderBy: { [sortBy]: sortOrder },
+      skip,
+      take: limit,
+    }),
+    readPrisma.product.count({ where }),
+    readPrisma.product.aggregate({
+      where: { categoryId: { in: categoryIds }, deletedAt: null },
+      _min: { price: true },
+      _max: { price: true },
+    }),
+  ]);
+
+  return {
+    category: {
+      id: category.id,
+      name: category.name,
+      slug: category.slug,
+      description: category.description,
+      image: category.image,
+    },
+    data: products.map(formatProduct),
+    pagination: buildPagination(page, limit, totalItems),
+    filters: {
+      priceRange: {
+        min: priceRange._min.price ? Number(priceRange._min.price) : 0,
+        max: priceRange._max.price ? Number(priceRange._max.price) : 0,
+      },
+    },
+  };
+};
+
 // ─── Get Product By Slug ──────────────────────────────────────────────────────
 
 export const getProductBySlug = async (slug: string) => {

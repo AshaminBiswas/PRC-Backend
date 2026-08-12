@@ -24,10 +24,19 @@ export const getProductById = async (req: Request, res: Response, next: NextFunc
   } catch (error) { next(error); }
 };
 
+export const getProductsByCategory = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const identifier = req.params.categoryId || req.params.slug || req.params.categoryIdentifier;
+    const result = await productsService.getProductsByCategory(identifier, req.query as any);
+    sendSuccess(res, result);
+  } catch (error) { next(error); }
+};
+
 export const createProduct = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await productsService.createProduct(req.body);
-    clearResponseCache('products');
+    clearResponseCache('cache:*products*');
+    clearResponseCache('cache:*categories*');
     sendSuccess(res, data, 'Product created successfully', 201);
   } catch (error) { next(error); }
 };
@@ -35,7 +44,8 @@ export const createProduct = async (req: Request, res: Response, next: NextFunct
 export const updateProduct = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await productsService.updateProduct(req.params.id, req.body);
-    clearResponseCache('products');
+    clearResponseCache('cache:*products*');
+    clearResponseCache('cache:*categories*');
     sendSuccess(res, data, 'Product updated successfully');
   } catch (error) { next(error); }
 };
@@ -43,7 +53,8 @@ export const updateProduct = async (req: Request, res: Response, next: NextFunct
 export const deleteProduct = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await productsService.deleteProduct(req.params.id);
-    clearResponseCache('products');
+    clearResponseCache('cache:*products*');
+    clearResponseCache('cache:*categories*');
     sendMessage(res, 'Product deleted successfully');
   } catch (error) { next(error); }
 };

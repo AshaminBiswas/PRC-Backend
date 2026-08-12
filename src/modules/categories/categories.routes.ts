@@ -18,6 +18,7 @@ const router = Router();
 
 // Public read routes
 router.get('/tree', cacheResponse(300), controller.getCategoryTree);
+router.get('/:id/products', cacheResponse(60), validate(UuidParamSchema, 'params'), validate(CategoryProductsQuerySchema, 'query'), controller.getCategoryProducts);
 router.get('/:slug', cacheResponse(300), validate(SlugParamSchema, 'params'), controller.getCategoryBySlug);
 
 // Mixed — public listing, admin can see inactive too
@@ -29,6 +30,5 @@ router.post('/', authenticate, authorize('categories.create'), validate(CreateCa
 router.patch('/:id/status', authenticate, authorize('categories.update'), validate(UuidParamSchema, 'params'), validate(UpdateCategoryStatusSchema), controller.updateCategoryStatus);
 router.patch('/:id', authenticate, authorize('categories.update'), validate(UuidParamSchema, 'params'), validate(UpdateCategorySchema), controller.updateCategory);
 router.delete('/:id', authenticate, authorize('categories.delete'), validate(UuidParamSchema, 'params'), controller.deleteCategory);
-router.get('/:id/products', cacheResponse(60), validate(UuidParamSchema, 'params'), validate(CategoryProductsQuerySchema, 'query'), controller.getCategoryProducts);
 
 export default router;
