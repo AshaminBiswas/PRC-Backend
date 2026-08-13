@@ -30,6 +30,16 @@ export const getEnquiryById = async (req: Request, res: Response, next: NextFunc
   }
 };
 
+export const trackEnquiry = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const identifier = req.params.id || (req.query.id as string) || (req.query.email as string);
+    const data = await enquiriesService.trackEnquiry(identifier);
+    sendSuccess(res, data, 'Ticket tracking details retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const updateEnquiry = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await enquiriesService.updateEnquiry(req.params.id, req.body);

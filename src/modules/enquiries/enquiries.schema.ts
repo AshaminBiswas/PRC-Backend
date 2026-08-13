@@ -12,7 +12,7 @@ export const CreateEnquirySchema = z.object({
 });
 
 export const UpdateEnquirySchema = z.object({
-  status: EnquiryStatusEnum.optional(),
+  status: z.union([EnquiryStatusEnum, z.string()]).optional(),
   notes: z.string().optional(),
   adminNotes: z.string().optional(),
 });
@@ -25,7 +25,7 @@ export const ListEnquiriesQuerySchema = z.object({
 });
 
 export const UuidParamSchema = z.object({
-  id: z.string().uuid('Invalid enquiry ID'),
+  id: z.string().min(1, 'Invalid enquiry ID'),
 });
 
 export type CreateEnquiryInput = z.infer<typeof CreateEnquirySchema>;

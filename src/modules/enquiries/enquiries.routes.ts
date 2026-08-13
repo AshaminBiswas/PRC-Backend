@@ -19,6 +19,17 @@ router.post(
   controller.submitEnquiry
 );
 
+// Public Ticket Tracking System routes (Lookup by Ticket ID or Email)
+router.get(
+  '/track/:id',
+  controller.trackEnquiry
+);
+
+router.get(
+  '/track',
+  controller.trackEnquiry
+);
+
 // Admin routes
 router.get(
   '/',
@@ -36,7 +47,17 @@ router.get(
   controller.getEnquiryById
 );
 
+// Admin update enquiry status & notes
 router.patch(
+  '/:id',
+  authenticate,
+  authorize('enquiries.update', 'enquiries.manage'),
+  validate(UuidParamSchema, 'params'),
+  validate(UpdateEnquirySchema),
+  controller.updateEnquiry
+);
+
+router.put(
   '/:id',
   authenticate,
   authorize('enquiries.update', 'enquiries.manage'),
