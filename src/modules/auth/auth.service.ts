@@ -195,7 +195,18 @@ export const login = async (input: LoginInput) => {
 
   return {
     accessToken, refreshToken, expiresIn: 3600, tokenType: 'Bearer',
-    user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: roleSlug, avatar: user.avatar, isVerified: user.isVerified },
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      companyName: user.companyName,
+      gstin: user.gstin,
+      role: roleSlug,
+      avatar: user.avatar,
+      isVerified: user.isVerified,
+      mustChangePassword: user.mustChangePassword ?? false,
+    },
   };
 };
 
@@ -221,7 +232,16 @@ export const adminLogin = async (input: AdminLoginInput) => {
 
   return {
     accessToken, refreshToken, expiresIn: 3600, tokenType: 'Bearer',
-    user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: roleSlug, permissions, avatar: user.avatar },
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: roleSlug,
+      permissions,
+      avatar: user.avatar,
+      mustChangePassword: user.mustChangePassword ?? false,
+    },
     requiresTwoFactor: false,
   };
 };
@@ -239,7 +259,8 @@ export const getMe = async (userId: string) => {
     id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName,
     phone: user.phone, companyName: user.companyName, gstin: user.gstin,
     role: getPrimaryRoleSlug(user.userRoles), permissions, avatar: user.avatar,
-    isVerified: user.isVerified, createdAt: user.createdAt, lastLoginAt: user.lastLoginAt,
+    isVerified: user.isVerified, mustChangePassword: user.mustChangePassword ?? false,
+    createdAt: user.createdAt, lastLoginAt: user.lastLoginAt,
   };
 };
 
@@ -308,7 +329,10 @@ export const changePassword = async (userId: string, input: ChangePasswordInput)
   const passwordHash = await bcrypt.hash(input.newPassword, SALT_ROUNDS);
 
   await prisma.$transaction([
-    prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, mustChangePassword: false },
+    }),
     prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } }),
   ]);
 

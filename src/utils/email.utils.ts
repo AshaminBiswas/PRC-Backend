@@ -294,3 +294,35 @@ export const sendAppointmentBookingEmail = async (params: {
     `),
   });
 };
+
+// ─── B2B Customer Account Created with Temporary Password Email ───────────────
+
+export const sendB2BCustomerWelcomeEmail = async (params: {
+  to: string;
+  firstName: string;
+  lastName?: string;
+  companyName?: string;
+  temporaryPassword: string;
+}): Promise<void> => {
+  const loginUrl = `${env.frontend.url}`;
+  await enqueueEmail({
+    to: params.to,
+    subject: 'Welcome to Pacific Hardware B2B Wholesale Portal - Your Account Details',
+    html: baseTemplate(`
+      <h2>Welcome to Pacific Hardware B2B, ${params.firstName}!</h2>
+      <p>An enterprise wholesale account has been provisioned for <strong>${params.companyName || `${params.firstName} ${params.lastName || ''}`}</strong> by our administration team.</p>
+      
+      <div style="background:#0f172a; color:#ffffff; padding:20px; border-radius:8px; margin:20px 0; border:1px solid #334155;">
+        <h3 style="margin-top:0; color:#f5a623; font-size:16px;">🔑 Your Temporary Login Credentials</h3>
+        <p style="margin:6px 0; color:#94a3b8;"><strong>Login Email:</strong> <span style="color:#ffffff;">${params.to}</span></p>
+        <p style="margin:6px 0; color:#94a3b8;"><strong>Temporary Password:</strong> <span style="color:#38bdf8; font-family:monospace; font-size:16px; font-weight:bold; background:#1e293b; padding:2px 8px; border-radius:4px;">${params.temporaryPassword}</span></p>
+      </div>
+
+      <p style="color:#fbbf24; font-weight:600;">⚠️ Security Note: Upon your first login, the portal will automatically prompt you to set your own permanent, secure password before accessing your custom pricing matrix and bulk ordering catalog.</p>
+
+      <a href="${loginUrl}" class="btn" style="margin-top:15px; display:inline-block;">Login to B2B Portal</a>
+      <p style="margin-top:20px; font-size:12px; color:#64748b;">If you have any questions or need custom contract volume quotes, contact your designated account representative or email support@pacifichardware.com.</p>
+    `),
+  });
+};
+

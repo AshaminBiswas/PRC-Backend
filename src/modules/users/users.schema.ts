@@ -20,6 +20,8 @@ export const CreateUserSchema = z.object({
   gstin: z.string().max(15).optional().or(z.literal('')),
   roleId: z.string().uuid('Invalid role ID'),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
+  mustChangePassword: z.boolean().optional().default(false),
+  sendWelcomeEmail: z.boolean().optional().default(true),
 });
 
 export const UpdateUserSchema = z.object({

@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 import { buildPagination, getPaginationParams } from '../../utils/response';
+import { sendB2BCustomerWelcomeEmail } from '../../utils/email.utils';
 import type {
   ListUsersQuery,
   CreateUserInput,
@@ -22,6 +23,7 @@ const userListSelect = {
   companyName: true,
   gstin: true,
   status: true,
+  mustChangePassword: true,
   lastLoginAt: true,
   createdAt: true,
   userRoles: { select: { role: { select: { id: true, name: true, slug: true } } } },
@@ -158,11 +160,32 @@ export const createUser = async (input: CreateUserInput) => {
       gstin: input.gstin || null,
       status: input.status,
       isVerified: true,
+      mustChangePassword: input.mustChangePassword ?? false,
       userRoles: { create: { roleId: input.roleId } },
     },
   });
 
-  return { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName };
+  if (input.sendWelcomeEmail !== false) {
+    sendB2BCustomerWelcomeEmail({
+      to: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      companyName: user.companyName || undefined,
+      temporaryPassword: input.password,
+    }).catch((err) =>
+      console.error('[CreateUser] Failed to dispatch welcome email:', err?.message || err)
+    );
+  }
+
+  return {
+    id: user.id,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    companyName: user.companyName,
+    temporaryPassword: input.password,
+    mustChangePassword: user.mustChangePassword,
+  };
 };
 
 // ─── Update User ──────────────────────────────────────────────────────────────
