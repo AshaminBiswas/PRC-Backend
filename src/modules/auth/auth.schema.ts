@@ -11,8 +11,10 @@ export const RegisterSchema = z
       .string({ required_error: 'Phone number is required' })
       .min(10, 'Phone number must be at least 10 digits')
       .max(15, 'Phone number cannot exceed 15 digits'),
+    accountType: z.enum(['B2C', 'B2B', 'CUSTOMER', 'B2B_CUSTOMER']).optional().default('B2C'),
+    roleSlug: z.string().optional(),
     companyName: z.string().optional(),
-    gstin: z.string().length(15, 'GSTIN must be exactly 15 characters').optional(),
+    gstin: z.string().max(15, 'GSTIN cannot exceed 15 characters').optional().or(z.literal('')),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match',

@@ -71,12 +71,19 @@ export const authenticate = async (
       return;
     }
 
-    // Flatten permissions
+    // Flatten permissions and detect roles
     const permissions: string[] = [];
-    let primaryRoleSlug = 'customer';
+    const roleSlugs = user.userRoles.map((ur) => (ur.role.slug || '').toLowerCase());
+    const hasSuperAdmin = roleSlugs.some((s) => ['super-admin', 'super_admin', 'superadmin'].includes(s));
+    const hasAdmin = roleSlugs.some((s) => ['admin'].includes(s));
+
+    let primaryRoleSlug = hasSuperAdmin
+      ? 'super_admin'
+      : hasAdmin
+      ? 'admin'
+      : (user.userRoles[0]?.role?.slug ?? 'customer');
 
     for (const ur of user.userRoles) {
-      primaryRoleSlug = ur.role.slug;
       for (const rp of ur.role.rolePermissions) {
         if (!permissions.includes(rp.permission.slug)) {
           permissions.push(rp.permission.slug);
@@ -167,9 +174,17 @@ export const optionalAuthenticate = async (
       });
       if (user && user.status === 'ACTIVE') {
         const permissions: string[] = [];
-        let primaryRoleSlug = 'customer';
+        const roleSlugs = user.userRoles.map((ur) => (ur.role.slug || '').toLowerCase());
+        const hasSuperAdmin = roleSlugs.some((s) => ['super-admin', 'super_admin', 'superadmin'].includes(s));
+        const hasAdmin = roleSlugs.some((s) => ['admin'].includes(s));
+
+        let primaryRoleSlug = hasSuperAdmin
+          ? 'super_admin'
+          : hasAdmin
+          ? 'admin'
+          : (user.userRoles[0]?.role?.slug ?? 'customer');
+
         for (const ur of user.userRoles) {
-          primaryRoleSlug = ur.role.slug;
           for (const rp of ur.role.rolePermissions) {
             if (!permissions.includes(rp.permission.slug)) permissions.push(rp.permission.slug);
           }

@@ -16,6 +16,8 @@ export const CreateUserSchema = z.object({
   firstName: z.string().min(1).max(50),
   lastName: z.string().min(1).max(50),
   phone: z.string().optional(),
+  companyName: z.string().optional(),
+  gstin: z.string().max(15).optional().or(z.literal('')),
   roleId: z.string().uuid('Invalid role ID'),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
 });
@@ -24,6 +26,8 @@ export const UpdateUserSchema = z.object({
   firstName: z.string().min(1).max(50).optional(),
   lastName: z.string().min(1).max(50).optional(),
   phone: z.string().optional(),
+  companyName: z.string().optional(),
+  gstin: z.string().max(15).optional().or(z.literal('')),
   roleId: z.string().uuid().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
 });

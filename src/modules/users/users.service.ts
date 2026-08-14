@@ -18,10 +18,13 @@ const userListSelect = {
   email: true,
   firstName: true,
   lastName: true,
+  phone: true,
+  companyName: true,
+  gstin: true,
   status: true,
   lastLoginAt: true,
   createdAt: true,
-  userRoles: { select: { role: { select: { id: true, name: true } } } },
+  userRoles: { select: { role: { select: { id: true, name: true, slug: true } } } },
 } as const;
 
 // ─── List Users ───────────────────────────────────────────────────────────────
@@ -36,6 +39,8 @@ export const listUsers = async (query: ListUsersQuery) => {
       { firstName: { contains: query.search, mode: 'insensitive' } },
       { lastName: { contains: query.search, mode: 'insensitive' } },
       { email: { contains: query.search, mode: 'insensitive' } },
+      { companyName: { contains: query.search, mode: 'insensitive' } },
+      { gstin: { contains: query.search, mode: 'insensitive' } },
     ];
   }
   if (query.status) where.status = query.status;
@@ -59,6 +64,9 @@ export const listUsers = async (query: ListUsersQuery) => {
     email: u.email,
     firstName: u.firstName,
     lastName: u.lastName,
+    phone: u.phone,
+    companyName: u.companyName,
+    gstin: u.gstin,
     role: u.userRoles[0]?.role ?? null,
     status: u.status,
     lastLoginAt: u.lastLoginAt,
@@ -146,6 +154,8 @@ export const createUser = async (input: CreateUserInput) => {
       firstName: input.firstName,
       lastName: input.lastName,
       phone: input.phone,
+      companyName: input.companyName || null,
+      gstin: input.gstin || null,
       status: input.status,
       isVerified: true,
       userRoles: { create: { roleId: input.roleId } },
@@ -168,6 +178,8 @@ export const updateUser = async (id: string, input: UpdateUserInput) => {
         firstName: input.firstName,
         lastName: input.lastName,
         phone: input.phone,
+        companyName: input.companyName !== undefined ? (input.companyName || null) : undefined,
+        gstin: input.gstin !== undefined ? (input.gstin || null) : undefined,
         status: input.status,
       },
     });

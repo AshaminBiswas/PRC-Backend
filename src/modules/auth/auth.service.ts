@@ -69,11 +69,34 @@ export const register = async (input: RegisterInput) => {
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
 
-  let customerRole = await prisma.role.findUnique({ where: { slug: 'customer' } });
-  if (!customerRole) {
-    customerRole = await prisma.role.create({
-      data: { name: 'Customer', slug: 'customer', description: 'Regular B2C customer', isSystem: true },
-    });
+  const isB2B = input.accountType === 'B2B' || input.accountType === 'B2B_CUSTOMER' || !!(input.companyName && input.gstin);
+  const targetSlug = input.roleSlug ?? (isB2B ? 'b2b-customer' : 'customer');
+
+  let assignedRole = await prisma.role.findFirst({
+    where: {
+      OR: [
+        { slug: targetSlug },
+        { slug: targetSlug.replace('_', '-') },
+        { slug: targetSlug.replace('-', '_') },
+      ],
+    },
+  });
+
+  if (!assignedRole) {
+    if (isB2B) {
+      assignedRole = await prisma.role.create({
+        data: {
+          name: 'B2B Customer',
+          slug: 'b2b-customer',
+          description: 'Business-to-business customer with custom pricing & quote access',
+          isSystem: true,
+        },
+      });
+    } else {
+      assignedRole = await prisma.role.create({
+        data: { name: 'Customer', slug: 'customer', description: 'Regular B2C customer', isSystem: true },
+      });
+    }
   }
 
   const user = await prisma.user.create({
@@ -83,9 +106,9 @@ export const register = async (input: RegisterInput) => {
       firstName: input.firstName,
       lastName: input.lastName,
       phone: input.phone,
-      companyName: input.companyName,
-      gstin: input.gstin,
-      userRoles: { create: { roleId: customerRole.id } },
+      companyName: input.companyName || null,
+      gstin: input.gstin || null,
+      userRoles: { create: { roleId: assignedRole.id } },
     },
   });
 
