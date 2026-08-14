@@ -821,8 +821,7 @@ export const serveDocsJson = (_req: Request, res: Response): void => {
   res.json(openApiSpec);
 };
 
-export const serveDocsUi = (_req: Request, res: Response): void => {
-  const html = `<!DOCTYPE html>
+const swaggerHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -861,6 +860,12 @@ export const serveDocsUi = (_req: Request, res: Response): void => {
 </body>
 </html>`;
 
+export const serveDocsUi = (_req: Request, res: Response): void => {
   res.setHeader('Content-Type', 'text/html');
-  res.send(html);
+  res.removeHeader('Content-Security-Policy');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; script-src-elem * 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; style-src * 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://fonts.googleapis.com; style-src-elem * 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://fonts.googleapis.com; connect-src * https: http:; font-src * data: https://fonts.gstatic.com;"
+  );
+  res.send(swaggerHtml);
 };

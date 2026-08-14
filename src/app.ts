@@ -65,8 +65,49 @@ app.use(
   })
 );
 
-// Security headers
-app.use(helmet());
+// Security headers with Swagger UI & CDN support in CSP
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'", 'https:'],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          'https://unpkg.com',
+          'https://cdn.jsdelivr.net',
+        ],
+        scriptSrcElem: [
+          "'self'",
+          "'unsafe-inline'",
+          'https://unpkg.com',
+          'https://cdn.jsdelivr.net',
+        ],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          'https://unpkg.com',
+          'https://cdn.jsdelivr.net',
+          'https://fonts.googleapis.com',
+        ],
+        styleSrcElem: [
+          "'self'",
+          "'unsafe-inline'",
+          'https://unpkg.com',
+          'https://cdn.jsdelivr.net',
+          'https://fonts.googleapis.com',
+        ],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        connectSrc: ["'self'", 'https:', 'http:'],
+        fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com', 'https://unpkg.com'],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: null,
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  })
+);
 
 // Horizontal Scaling & Load Balancing Instance Identification
 app.use((_req, res, next) => {
