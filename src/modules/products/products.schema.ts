@@ -47,7 +47,7 @@ export const CreateProductSchema = z.object({
       unit: z.string().default('cm'),
     })
     .optional(),
-  attributes: z.record(z.unknown()).optional(),
+  attributes: z.record(z.union([z.boolean(), z.string(), z.number(), z.unknown()])).optional(),
   specification: z.record(z.unknown()).optional(),
   productSpecification: z.record(z.unknown()).optional(),
   manufacturerInfo: z.record(z.unknown()).optional(),
