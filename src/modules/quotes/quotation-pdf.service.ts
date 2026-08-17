@@ -14,27 +14,25 @@
  * - Terms & Conditions
  */
 
-// pdfmake does not expose a proper ESM-compatible export — use require()
+import path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const PdfPrinter = require('pdfmake/build/pdfmake'); // runtime only
+const pdfmake = require('pdfmake');
 import type { TDocumentDefinitions, Content, StyleDictionary, TableCell } from 'pdfmake/interfaces';
 
-// We use the compiled VFS-less printer so we can supply our own fonts
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const PdfPrinterClass = require('pdfmake/build/printer');
-
-// ── pdfmake needs font files. We use the built-in Roboto shipped with pdfmake.
-const FONTS_PATH = `${__dirname}/../../node_modules/pdfmake/build/fonts/Roboto/`;
-
-const printer = new PdfPrinterClass({
-  Roboto: {
-    normal: `${FONTS_PATH}Roboto-Regular.ttf`,
-    bold: `${FONTS_PATH}Roboto-Medium.ttf`,
-    italics: `${FONTS_PATH}Roboto-Italic.ttf`,
-    bolditalics: `${FONTS_PATH}Roboto-MediumItalic.ttf`,
-  },
-});
-
+// ── Configure fonts from pdfmake package ──────────────────────────────────────
+try {
+  const pdfmakeDir = path.dirname(require.resolve('pdfmake/package.json'));
+  pdfmake.addFonts({
+    Roboto: {
+      normal: path.join(pdfmakeDir, 'fonts/Roboto/Roboto-Regular.ttf'),
+      bold: path.join(pdfmakeDir, 'fonts/Roboto/Roboto-Medium.ttf'),
+      italics: path.join(pdfmakeDir, 'fonts/Roboto/Roboto-Italic.ttf'),
+      bolditalics: path.join(pdfmakeDir, 'fonts/Roboto/Roboto-MediumItalic.ttf'),
+    },
+  });
+} catch (e: any) {
+  console.warn('[PDF Service] Font initialization warning:', e?.message || e);
+}
 
 // ── Brand Colours ──────────────────────────────────────────────────────────────
 const NAVY = '#0f172a';
@@ -43,7 +41,6 @@ const GREEN = '#065f46';
 const LIGHT_BG = '#f8fafc';
 const BORDER = '#e2e8f0';
 const GRAY = '#64748b';
-const RED = '#991b1b';
 const TABLE_HEADER_BG = '#1e293b';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -753,16 +750,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
     } as StyleDictionary,
   };
 
-  return new Promise<Buffer>((resolve, reject) => {
-    try {
-      const pdfDoc = printer.createPdfKitDocument(docDefinition);
-      const chunks: Buffer[] = [];
-      pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
-      pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-      pdfDoc.on('error', reject);
-      pdfDoc.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
+  const doc = pdfmake.createPdf(docDefinition);
+  const buffer = await doc.getBuffer();
+  return buffer;
 }
