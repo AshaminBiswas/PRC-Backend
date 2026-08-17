@@ -1,79 +1,118 @@
 import { Router } from 'express';
 import * as controller from './quotes.controller';
 import { validate } from '../../middleware/validate.middleware';
-import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { authenticate, authorize, optionalAuthenticate } from '../../middleware/auth.middleware';
 import {
+  CreateB2BQuoteSchema,
+  TrackQuoteQuerySchema,
+  CustomerResponseSchema,
+  AdminUpdateQuoteStatusSchema,
+  AdminUpdateQuoteItemsSchema,
+  SignQuoteSchema,
+  VerifySignatureSchema,
   ListQuotesQuerySchema,
-  CreateQuoteSchema,
   QuoteIdParamSchema,
-  UpdateQuoteStatusSchema,
-  ConvertQuoteSchema,
-  UpdateQuotePricingSchema,
+  TokenParamSchema,
 } from './quotes.schema';
 
 const router = Router();
 
-// GET / - Paginated list (Admin gets all, B2B customer gets own)
+// ─── Public & B2B Customer Endpoints ──────────────────────────────────────────
+
+// 1. Submit B2B quotation request
+router.post(
+  '/',
+  optionalAuthenticate,
+  validate(CreateB2BQuoteSchema),
+  controller.createQuote
+);
+
+// 2. Universal Tracking: Look up quotation by Reference No, Email, GSTIN, or Phone
+router.get(
+  '/track',
+  validate(TrackQuoteQuerySchema, 'query'),
+  controller.trackQuotes
+);
+
+// 3. View approved quotation via secure access token
+router.get(
+  '/public/:token',
+  validate(TokenParamSchema, 'params'),
+  controller.getQuoteByToken
+);
+
+// 4. Customer accept or decline quotation via token
+router.post(
+  '/public/:token/respond',
+  validate(TokenParamSchema, 'params'),
+  validate(CustomerResponseSchema),
+  controller.respondToQuote
+);
+
+// 5. Verify cryptographic digital signature & authenticity
+router.post(
+  '/verify-signature',
+  validate(VerifySignatureSchema),
+  controller.verifySignature
+);
+
+// ─── Admin Console Endpoints ──────────────────────────────────────────────────
+
+// 6. Admin paginated list with metrics & filters
 router.get(
   '/',
   authenticate,
+  authorize('quotes.read'),
   validate(ListQuotesQuerySchema, 'query'),
   controller.listQuotes
 );
 
-// POST / - Submit B2B quote request
-router.post(
-  '/',
-  authenticate,
-  validate(CreateQuoteSchema),
-  controller.createQuote
-);
-
-// GET /:id - Quote detail
+// 7. Admin quote detail by ID with full audit log
 router.get(
   '/:id',
   authenticate,
+  authorize('quotes.read'),
   validate(QuoteIdParamSchema, 'params'),
   controller.getQuoteById
 );
 
-// PUT /:id - Customer update their own PENDING quotation
-router.put(
-  '/:id',
-  authenticate,
-  validate(QuoteIdParamSchema, 'params'),
-  validate(CreateQuoteSchema),
-  controller.updateCustomerQuote
-);
-
-// PATCH /:id/status - Admin status transition
+// 8. Admin status transition with mandatory note for pending/rejected
 router.patch(
   '/:id/status',
   authenticate,
   authorize('quotes.approve'),
   validate(QuoteIdParamSchema, 'params'),
-  validate(UpdateQuoteStatusSchema),
+  validate(AdminUpdateQuoteStatusSchema),
   controller.updateQuoteStatus
 );
 
-// POST /:id/convert - Admin convert approved quote to order
-router.post(
-  '/:id/convert',
-  authenticate,
-  authorize('quotes.approve'),
-  validate(QuoteIdParamSchema, 'params'),
-  validate(ConvertQuoteSchema),
-  controller.convertQuote
-);
-
-// PATCH /:id - Admin update quote pricing / notes
+// 9. Admin edit line items, rates, quantities, and shipping cost
 router.patch(
-  '/:id',
+  '/:id/items',
   authenticate,
   authorize('quotes.update'),
   validate(QuoteIdParamSchema, 'params'),
-  validate(UpdateQuotePricingSchema),
-  controller.updateQuotePricing
+  validate(AdminUpdateQuoteItemsSchema),
+  controller.updateQuoteItems
+);
+
+// 10. Admin digitally sign, encode QR code, and approve
+router.post(
+  '/:id/sign',
+  authenticate,
+  authorize('quotes.approve'),
+  validate(QuoteIdParamSchema, 'params'),
+  validate(SignQuoteSchema),
+  controller.digitallySignQuote
+);
+
+// 11. Admin soft delete quotation
+router.delete(
+  '/:id',
+  authenticate,
+  authorize('quotes.delete'),
+  validate(QuoteIdParamSchema, 'params'),
+  controller.deleteQuote
 );
 
 export default router;

@@ -1,63 +1,109 @@
 import { z } from 'zod';
-import { QuoteStatus, PaymentMethod } from '@prisma/client';
+
+export const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+export const PHONE_REGEX = /^[6-9]\d{9}$/;
+
+export const QuoteItemInputSchema = z.object({
+  productId: z.string().uuid({ message: 'Invalid product ID format' }),
+  variantId: z.string().uuid().optional().nullable(),
+  productNameSnapshot: z.string().optional(),
+  unit: z.string().default('PCS'),
+  quantity: z.number().int().min(1, { message: 'Quantity must be at least 1' }),
+  rate: z.number().nonnegative().optional(),
+  requestedPrice: z.number().nonnegative().optional(),
+});
+
+export const CreateB2BQuoteSchema = z.object({
+  projectName: z.string().min(2, 'Project name is required').max(150, 'Project name is too long'),
+  firstName: z.string().min(2, 'First name is required').max(50, 'First name is too long'),
+  lastName: z.string().min(1, 'Last name is required').max(50, 'Last name is too long'),
+  companyName: z.string().min(2, 'Company name is required').max(150, 'Company name is too long'),
+  gstNo: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(GSTIN_REGEX, 'Please enter a valid 15-digit Indian GSTIN format (e.g. 27AAAAA0000A1Z5)'),
+  email: z.string().trim().email('Please enter a valid business email address'),
+  phone: z
+    .string()
+    .trim()
+    .regex(PHONE_REGEX, 'Please enter a valid 10-digit Indian mobile number (e.g. 9876543210)'),
+  notes: z.string().max(500, 'Notes cannot exceed 500 characters').optional().nullable(),
+  termsAccepted: z.literal(true, {
+    errorMap: () => ({ message: 'You must accept the terms and conditions to submit' }),
+  }),
+  items: z.array(QuoteItemInputSchema).min(1, 'Please select at least one product for the quotation'),
+});
+
+export const TrackQuoteQuerySchema = z.object({
+  query: z.string().min(2, 'Please enter a Reference No, Email, GSTIN, or Phone number to track'),
+});
+
+export const CustomerResponseSchema = z.object({
+  response: z.enum(['accepted', 'declined'], {
+    errorMap: () => ({ message: "Response must be either 'accepted' or 'declined'" }),
+  }),
+  notes: z.string().max(500, 'Response notes cannot exceed 500 characters').optional().nullable(),
+});
+
+export const AdminUpdateQuoteStatusSchema = z.object({
+  status: z.enum(['SUBMITTED', 'UNDER_REVIEW', 'PENDING', 'APPROVED', 'REJECTED', 'CONVERTED']),
+  statusReason: z.string().max(1000).optional().nullable(),
+});
+
+export const AdminUpdateQuoteItemsSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().uuid().optional(),
+        productId: z.string().uuid(),
+        variantId: z.string().uuid().optional().nullable(),
+        productNameSnapshot: z.string().optional(),
+        unit: z.string().default('PCS'),
+        quantity: z.number().int().min(1),
+        rate: z.number().nonnegative(),
+      })
+    )
+    .min(1, 'Quotation must have at least one line item'),
+  shippingCost: z.number().nonnegative().optional().nullable(),
+  notes: z.string().max(500).optional().nullable(),
+  adminNotes: z.string().max(1000).optional().nullable(),
+  validUntil: z.string().datetime().or(z.date()).optional().nullable(),
+});
+
+export const SignQuoteSchema = z.object({
+  adminNotes: z.string().max(1000).optional().nullable(),
+  shippingCost: z.number().nonnegative().optional().nullable(),
+});
+
+export const VerifySignatureSchema = z.object({
+  referenceNo: z.string().min(3, 'Reference number is required'),
+  digitalSignature: z.string().optional(),
+});
 
 export const ListQuotesQuerySchema = z.object({
   page: z.string().optional(),
   limit: z.string().optional(),
-  status: z.nativeEnum(QuoteStatus).optional(),
-  userId: z.string().uuid().optional(),
+  status: z.string().optional(),
   search: z.string().optional(),
-});
-
-export const QuoteItemInputSchema = z.object({
-  productId: z.string().uuid({ message: 'Invalid product ID format' }),
-  variantId: z.string().uuid().optional(),
-  quantity: z.number().int().positive({ message: 'Quantity must be at least 1' }),
-  requestedPrice: z.number().nonnegative().optional(),
-});
-
-export const CreateQuoteSchema = z.object({
-  items: z.array(QuoteItemInputSchema).min(1, 'At least one item is required in a quote request'),
-  notes: z.string().max(1000).optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+  includeDeleted: z.string().optional(),
 });
 
 export const QuoteIdParamSchema = z.object({
   id: z.string().uuid({ message: 'Invalid quote ID format' }),
 });
 
-export const UpdateQuoteStatusSchema = z.object({
-  status: z.nativeEnum(QuoteStatus, {
-    errorMap: () => ({ message: 'Invalid quote status' }),
-  }),
-  adminNotes: z.string().max(1000).optional(),
+export const TokenParamSchema = z.object({
+  token: z.string().min(10, 'Invalid token format'),
 });
 
-export const ConvertQuoteSchema = z.object({
-  shippingAddressId: z.string().uuid().optional(),
-  billingAddressId: z.string().uuid().optional(),
-  paymentMethod: z.nativeEnum(PaymentMethod).optional(),
-  notes: z.string().max(1000).optional(),
-});
-
-export const UpdateQuotePricingItemSchema = z.object({
-  id: z.string().uuid(),
-  offeredPrice: z.number().nonnegative({ message: 'Offered price cannot be negative' }),
-});
-
-export const UpdateQuotePricingSchema = z.object({
-  items: z.array(UpdateQuotePricingItemSchema).optional(),
-  subtotal: z.number().nonnegative().optional(),
-  discountTotal: z.number().nonnegative().optional(),
-  taxTotal: z.number().nonnegative().optional(),
-  grandTotal: z.number().nonnegative().optional(),
-  notes: z.string().max(1000).optional(),
-  adminNotes: z.string().max(1000).optional(),
-  validUntil: z.string().datetime().or(z.date()).optional(),
-});
-
+export type CreateB2BQuoteInput = z.infer<typeof CreateB2BQuoteSchema>;
+export type TrackQuoteQuery = z.infer<typeof TrackQuoteQuerySchema>;
+export type CustomerResponseInput = z.infer<typeof CustomerResponseSchema>;
+export type AdminUpdateQuoteStatusInput = z.infer<typeof AdminUpdateQuoteStatusSchema>;
+export type AdminUpdateQuoteItemsInput = z.infer<typeof AdminUpdateQuoteItemsSchema>;
+export type SignQuoteInput = z.infer<typeof SignQuoteSchema>;
+export type VerifySignatureInput = z.infer<typeof VerifySignatureSchema>;
 export type ListQuotesQuery = z.infer<typeof ListQuotesQuerySchema>;
-export type CreateQuoteInput = z.infer<typeof CreateQuoteSchema>;
-export type QuoteIdParam = z.infer<typeof QuoteIdParamSchema>;
-export type UpdateQuoteStatusInput = z.infer<typeof UpdateQuoteStatusSchema>;
-export type ConvertQuoteInput = z.infer<typeof ConvertQuoteSchema>;
-export type UpdateQuotePricingInput = z.infer<typeof UpdateQuotePricingSchema>;

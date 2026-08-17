@@ -1,584 +1,866 @@
+import crypto from 'crypto';
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 import { buildPagination, getPaginationParams } from '../../utils/response';
-import { QuoteStatus, OrderStatus, PaymentStatus, PaymentMethod, Prisma } from '@prisma/client';
+import { QuoteStatus, Prisma } from '@prisma/client';
+import { generateNextQuotationReferenceNo } from './quotation-numbering.service';
+import {
+  computeQuotationSignature,
+  generateQuotationQrCode,
+  verifyQuotationSignature,
+  VerificationResult,
+} from './quotation-signature.service';
+import {
+  sendQuotationSubmittedEmail,
+  sendQuotationUnderReviewEmail,
+  sendQuotationPendingEmail,
+  sendQuotationApprovedEmail,
+  sendQuotationRejectedEmail,
+  sendQuotationCustomerResponseNotification,
+} from './quotation-email.service';
+import { env } from '../../config/env';
 import type {
+  CreateB2BQuoteInput,
+  AdminUpdateQuoteStatusInput,
+  AdminUpdateQuoteItemsInput,
+  SignQuoteInput,
   ListQuotesQuery,
-  CreateQuoteInput,
-  UpdateQuoteStatusInput,
-  ConvertQuoteInput,
-  UpdateQuotePricingInput,
 } from './quotes.schema';
 
-interface UserContext {
+interface AdminContext {
   id: string;
-  roleSlug: string;
-  permissions: string[];
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  roleSlug?: string;
 }
 
-const quoteSelect = {
-  id: true,
-  quoteNumber: true,
-  userId: true,
-  status: true,
-  subtotal: true,
-  discountTotal: true,
-  taxTotal: true,
-  grandTotal: true,
-  notes: true,
-  adminNotes: true,
-  validUntil: true,
-  convertedOrderId: true,
-  createdAt: true,
-  updatedAt: true,
-  user: {
-    select: {
-      id: true,
-      email: true,
-      firstName: true,
-      lastName: true,
-      phone: true,
-      companyName: true,
-      gstin: true,
-    },
-  },
-  items: {
-    select: {
-      id: true,
-      quoteId: true,
-      productId: true,
-      variantId: true,
-      quantity: true,
-      requestedPrice: true,
-      offeredPrice: true,
-      total: true,
-      createdAt: true,
-      product: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          sku: true,
-          price: true,
-          thumbnail: true,
-        },
-      },
-      variant: {
-        select: {
-          id: true,
-          name: true,
-          sku: true,
-          price: true,
-          attributes: true,
-        },
-      },
-    },
-  },
-} as const;
+const formatQuoteItem = (item: any) => ({
+  id: item.id,
+  quoteId: item.quoteId,
+  slNo: item.slNo,
+  productId: item.productId,
+  productNameSnapshot: item.productNameSnapshot || item.product?.name || 'Hardware Product',
+  variantId: item.variantId,
+  unit: item.unit || 'PCS',
+  quantity: item.quantity,
+  rate: item.rate !== null ? Number(item.rate) : item.product?.price ? Number(item.product.price) : 0,
+  amount: item.amount !== null ? Number(item.amount) : 0,
+  product: item.product
+    ? {
+        id: item.product.id,
+        name: item.product.name,
+        slug: item.product.slug,
+        sku: item.product.sku,
+        price: Number(item.product.price),
+        salePrice: item.product.salePrice ? Number(item.product.salePrice) : null,
+        thumbnail: item.product.thumbnail,
+      }
+    : undefined,
+});
 
-export const formatQuote = (quote: any) => {
-  if (!quote) return null;
+export const formatQuote = (q: any) => {
+  if (!q) return null;
   return {
-    ...quote,
-    subtotal: quote.subtotal !== null ? Number(quote.subtotal) : null,
-    discountTotal: quote.discountTotal !== null ? Number(quote.discountTotal) : null,
-    taxTotal: quote.taxTotal !== null ? Number(quote.taxTotal) : null,
-    grandTotal: quote.grandTotal !== null ? Number(quote.grandTotal) : null,
-    items: quote.items?.map((item: any) => ({
-      ...item,
-      requestedPrice: item.requestedPrice !== null ? Number(item.requestedPrice) : null,
-      offeredPrice: item.offeredPrice !== null ? Number(item.offeredPrice) : null,
-      total: item.total !== null ? Number(item.total) : null,
-    })),
+    id: q.id,
+    quoteNumber: q.quoteNumber,
+    referenceNo: q.referenceNo || q.quoteNumber,
+    financialYear: q.financialYear,
+    sequenceNo: q.sequenceNo,
+    projectName: q.projectName || 'Commercial Hardware Project',
+    firstName: q.firstName || q.user?.firstName || '',
+    lastName: q.lastName || q.user?.lastName || '',
+    companyName: q.companyName || q.user?.companyName || '',
+    gstNo: q.gstNo || q.user?.gstin || '',
+    email: q.email || q.user?.email || '',
+    phone: q.phone || q.user?.phone || '',
+    userId: q.userId,
+    status: q.status,
+    statusReason: q.statusReason,
+    basicPrice: q.basicPrice !== null ? Number(q.basicPrice) : Number(q.subtotal || 0),
+    gstAmount: q.gstAmount !== null ? Number(q.gstAmount) : Number(q.taxTotal || 0),
+    shippingCost: q.shippingCost !== null ? Number(q.shippingCost) : null,
+    subtotal: q.subtotal !== null ? Number(q.subtotal) : Number(q.basicPrice || 0),
+    discountTotal: q.discountTotal !== null ? Number(q.discountTotal) : 0,
+    taxTotal: q.taxTotal !== null ? Number(q.taxTotal) : Number(q.gstAmount || 0),
+    grandTotal: q.grandTotal !== null ? Number(q.grandTotal) : 0,
+    notes: q.notes,
+    adminNotes: q.adminNotes,
+    termsAccepted: q.termsAccepted,
+    customerResponse: q.customerResponse || 'pending',
+    customerResponseNotes: q.customerResponseNotes,
+    customerResponseAt: q.customerResponseAt,
+    accessToken: q.accessToken,
+    digitalSignature: q.digitalSignature,
+    signedBy: q.signedBy,
+    signedAt: q.signedAt,
+    qrCodeData: q.qrCodeData,
+    validUntil: q.validUntil,
+    isDeleted: q.isDeleted,
+    createdAt: q.createdAt,
+    updatedAt: q.updatedAt,
+    items: q.items ? q.items.map(formatQuoteItem) : [],
+    activityLogs: q.activityLogs || [],
+    user: q.user
+      ? {
+          id: q.user.id,
+          email: q.user.email,
+          firstName: q.user.firstName,
+          lastName: q.user.lastName,
+          phone: q.user.phone,
+          companyName: q.user.companyName,
+          gstin: q.user.gstin,
+        }
+      : undefined,
   };
 };
 
-const isAdminUser = (user: UserContext): boolean => {
-  return (
-    user.roleSlug === 'admin' ||
-    user.roleSlug === 'super-admin' ||
-    user.permissions.includes('quotes.read') ||
-    user.permissions.includes('quotes.approve')
-  );
-};
+/**
+ * 1. Public / B2B Submission of an RFQ Quotation
+ */
+export const createB2BQuote = async (input: CreateB2BQuoteInput, userId?: string) => {
+  // 1. Validate line items products against database
+  const productIds = input.items.map((i) => i.productId);
+  const existingProducts = await prisma.product.findMany({
+    where: {
+      id: { in: productIds },
+      status: 'ACTIVE',
+      isVisible: true,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      name: true,
+      price: true,
+      salePrice: true,
+      offerPrice: true,
+      sku: true,
+    },
+  });
 
-export const listQuotes = async (query: ListQuotesQuery, user: UserContext) => {
-  const { page, limit, skip } = getPaginationParams(query);
-  const where: Prisma.QuoteWhereInput = {};
-
-  // Admin gets all quotes, B2B Customer gets own quotes
-  if (!isAdminUser(user)) {
-    where.userId = user.id;
-  } else if (query.userId) {
-    where.userId = query.userId;
+  if (existingProducts.length === 0) {
+    throw new AppError('BAD_REQUEST', 'No valid active products were found in your quotation request', 400);
   }
 
-  if (query.status) {
-    where.status = query.status;
-  }
+  const productMap = new Map(existingProducts.map((p) => [p.id, p]));
 
-  if (query.search) {
-    where.OR = [{ quoteNumber: { contains: query.search, mode: 'insensitive' } }];
-  }
+  // 2. Atomically generate Indian FY Reference Number (PRC-QT-2026-27/001)
+  const { referenceNo, financialYear, sequenceNo } = await generateNextQuotationReferenceNo();
+  const accessToken = crypto.randomBytes(24).toString('hex');
 
-  const [totalItems, quotes] = await Promise.all([
-    prisma.quote.count({ where }),
-    prisma.quote.findMany({
-      where,
-      select: quoteSelect,
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit,
-    }),
-  ]);
+  // 3. Server-side recalculate line items, basic price, GST (18%)
+  let calculatedBasicPrice = 0;
+  const itemsToCreate = input.items.map((item, idx) => {
+    const product = productMap.get(item.productId);
+    const unitPrice = item.rate !== undefined && item.rate >= 0
+      ? item.rate
+      : product?.salePrice
+      ? Number(product.salePrice)
+      : product?.price
+      ? Number(product.price)
+      : 0;
 
-  const formattedQuotes = quotes.map(formatQuote);
-  const pagination = buildPagination(page, limit, totalItems);
+    const lineAmount = Math.round(unitPrice * item.quantity * 100) / 100;
+    calculatedBasicPrice += lineAmount;
 
-  return { data: formattedQuotes, pagination };
-};
+    return {
+      slNo: idx + 1,
+      productId: item.productId,
+      variantId: item.variantId || null,
+      productNameSnapshot: product?.name || item.productNameSnapshot || 'Hardware Item',
+      unit: item.unit || 'PCS',
+      quantity: item.quantity,
+      rate: new Prisma.Decimal(unitPrice),
+      amount: new Prisma.Decimal(lineAmount),
+      requestedPrice: new Prisma.Decimal(unitPrice),
+      offeredPrice: new Prisma.Decimal(unitPrice),
+      total: new Prisma.Decimal(lineAmount),
+    };
+  });
 
-export const createQuote = async (userId: string, input: CreateQuoteInput) => {
-  const quoteNumber = `QT-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, '0')}`;
+  const basicPriceDecimal = Math.round(calculatedBasicPrice * 100) / 100;
+  const gstAmountDecimal = Math.round(basicPriceDecimal * 0.18 * 100) / 100;
+  const grandTotalDecimal = Math.round((basicPriceDecimal + gstAmountDecimal) * 100) / 100;
 
-  // Fetch product/variant details to validate existence and compute initial prices
-  let subtotal = 0;
-  const itemsToCreate = [];
-
-  for (const itemInput of input.items) {
-    let product: any = await prisma.product.findUnique({
-      where: { id: itemInput.productId },
-      include: { variants: true },
-    });
-
-    let targetProductId = itemInput.productId;
-    let targetVariantId: string | null = itemInput.variantId || null;
-    let unitPrice = product ? Number(product.price) : 0;
-
-    if (itemInput.variantId) {
-      let variant = product?.variants?.find((v: any) => v.id === itemInput.variantId);
-
-      if (!variant) {
-        // Search globally across productVariant table in case variantId belongs to another product
-        const globalVariant = await prisma.productVariant.findUnique({
-          where: { id: itemInput.variantId },
-          include: { product: true },
-        });
-
-        if (globalVariant) {
-          variant = globalVariant;
-          targetProductId = globalVariant.productId;
-          product = globalVariant.product;
-          unitPrice = Number(globalVariant.price);
-        } else if (product) {
-          // If variantId was invalid or not found, fallback to base product
-          targetVariantId = null;
-          unitPrice = Number(product.price);
-        } else {
-          throw new AppError('NOT_FOUND', `Variant with ID ${itemInput.variantId} not found`, 404);
-        }
-      } else {
-        unitPrice = Number(variant.price);
-      }
-    }
-
-    if (!product) {
-      throw new AppError('NOT_FOUND', `Product with ID ${itemInput.productId} not found`, 404);
-    }
-
-    const priceToUse = itemInput.requestedPrice !== undefined ? itemInput.requestedPrice : unitPrice;
-    const itemTotal = priceToUse * itemInput.quantity;
-    subtotal += itemTotal;
-
-    itemsToCreate.push({
-      productId: targetProductId,
-      variantId: targetVariantId,
-      quantity: itemInput.quantity,
-      requestedPrice: priceToUse,
-      total: itemTotal,
-    });
-  }
-
+  // 4. Create Quote Record
   const createdQuote = await prisma.quote.create({
     data: {
-      quoteNumber,
-      userId,
+      quoteNumber: referenceNo,
+      referenceNo,
+      financialYear,
+      sequenceNo,
+      projectName: input.projectName,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      companyName: input.companyName,
+      gstNo: input.gstNo.toUpperCase(),
+      email: input.email.toLowerCase(),
+      phone: input.phone,
+      userId: userId || null,
       status: QuoteStatus.PENDING,
-      subtotal,
-      grandTotal: subtotal,
-      notes: input.notes,
+      basicPrice: new Prisma.Decimal(basicPriceDecimal),
+      gstAmount: new Prisma.Decimal(gstAmountDecimal),
+      subtotal: new Prisma.Decimal(basicPriceDecimal),
+      taxTotal: new Prisma.Decimal(gstAmountDecimal),
+      grandTotal: new Prisma.Decimal(grandTotalDecimal),
+      notes: input.notes || null,
+      termsAccepted: true,
+      customerResponse: 'pending',
+      accessToken,
       items: {
         create: itemsToCreate,
       },
+      activityLogs: {
+        create: {
+          changeType: 'status_change',
+          note: `Quotation ${referenceNo} submitted by B2B customer ${input.firstName} ${input.lastName} (${input.companyName})`,
+          newValue: { status: 'PENDING', referenceNo, basicPrice: basicPriceDecimal, grandTotal: grandTotalDecimal },
+        },
+      },
     },
-    select: quoteSelect,
+    include: {
+      items: {
+        include: {
+          product: true,
+        },
+      },
+    },
+  });
+
+  // 5. Send Confirmation Email
+  sendQuotationSubmittedEmail({
+    to: input.email,
+    customerName: `${input.firstName} ${input.lastName}`,
+    companyName: input.companyName,
+    referenceNo,
+    projectName: input.projectName,
   });
 
   return formatQuote(createdQuote);
 };
 
-export const getQuoteById = async (id: string, user: UserContext) => {
-  const quote = await prisma.quote.findUnique({
-    where: { id },
-    select: quoteSelect,
+/**
+ * 2. Universal Tracking System: Lookup by Email, GSTIN, Phone, or Quotation Ref No
+ */
+export const trackQuotation = async (rawQuery: string) => {
+  const query = rawQuery.trim();
+  if (!query) {
+    throw new AppError('BAD_REQUEST', 'Tracking identifier is required', 400);
+  }
+
+  const quotes = await prisma.quote.findMany({
+    where: {
+      isDeleted: false,
+      OR: [
+        { referenceNo: { equals: query, mode: 'insensitive' } },
+        { quoteNumber: { equals: query, mode: 'insensitive' } },
+        { email: { equals: query, mode: 'insensitive' } },
+        { gstNo: { equals: query.toUpperCase() } },
+        { phone: { contains: query } },
+      ],
+    },
+    include: {
+      items: {
+        include: {
+          product: {
+            select: { id: true, name: true, sku: true, thumbnail: true },
+          },
+        },
+      },
+      activityLogs: {
+        orderBy: { createdAt: 'asc' },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return quotes.map((q) => ({
+    id: q.id,
+    referenceNo: q.referenceNo || q.quoteNumber,
+    financialYear: q.financialYear,
+    projectName: q.projectName,
+    companyName: q.companyName,
+    clientName: `${q.firstName || ''} ${q.lastName || ''}`.trim(),
+    emailMasked: q.email ? q.email.replace(/^(.)(.*)(@.*)$/, (_m, a, b, c) => a + '*'.repeat(Math.max(b.length, 3)) + c) : '',
+    phoneMasked: q.phone ? q.phone.replace(/(\d{2})\d+(\d{2})/, '$1******$2') : '',
+    gstNo: q.gstNo,
+    status: q.status,
+    statusReason: q.statusReason,
+    basicPrice: q.basicPrice !== null ? Number(q.basicPrice) : Number(q.subtotal || 0),
+    gstAmount: q.gstAmount !== null ? Number(q.gstAmount) : Number(q.taxTotal || 0),
+    shippingCost: q.shippingCost !== null ? Number(q.shippingCost) : null,
+    grandTotal: q.grandTotal !== null ? Number(q.grandTotal) : 0,
+    customerResponse: q.customerResponse,
+    hasDigitalSignature: !!q.digitalSignature,
+    accessToken: q.status === 'APPROVED' ? q.accessToken : undefined,
+    itemCount: q.items.length,
+    items: q.items.map(formatQuoteItem),
+    createdAt: q.createdAt,
+    updatedAt: q.updatedAt,
+    activityTimeline: q.activityLogs.map((log) => ({
+      changeType: log.changeType,
+      note: log.note,
+      createdAt: log.createdAt,
+    })),
+  }));
+};
+
+/**
+ * 3. Public Customer Token View
+ */
+export const getQuoteByAccessToken = async (token: string) => {
+  const quote = await prisma.quote.findFirst({
+    where: {
+      accessToken: token,
+      isDeleted: false,
+    },
+    include: {
+      items: {
+        include: {
+          product: {
+            select: { id: true, name: true, sku: true, thumbnail: true, price: true, salePrice: true },
+          },
+        },
+      },
+      activityLogs: {
+        orderBy: { createdAt: 'desc' },
+      },
+    },
   });
 
   if (!quote) {
-    throw new AppError('NOT_FOUND', 'Quote not found', 404);
-  }
-
-  if (!isAdminUser(user) && quote.userId !== user.id) {
-    throw new AppError('FORBIDDEN', 'Access denied to this quote', 403);
+    throw new AppError('NOT_FOUND', 'Quotation document not found or link has expired', 404);
   }
 
   return formatQuote(quote);
 };
 
-export const updateQuoteStatus = async (id: string, input: UpdateQuoteStatusInput, user: UserContext) => {
-  const quote = await prisma.quote.findUnique({
-    where: { id },
-    select: { id: true, status: true, quoteNumber: true },
+/**
+ * 4. Customer Respond: Accept or Decline
+ */
+export const respondToQuoteByCustomer = async (
+  token: string,
+  response: 'accepted' | 'declined',
+  notes?: string | null
+) => {
+  const quote = await prisma.quote.findFirst({
+    where: { accessToken: token, isDeleted: false },
+    include: { items: true },
   });
 
   if (!quote) {
-    throw new AppError('NOT_FOUND', 'Quote not found', 404);
+    throw new AppError('NOT_FOUND', 'Quotation not found', 404);
   }
 
-  const currentStatus = quote.status;
-  const targetStatus = input.status;
-
-  if (currentStatus === targetStatus) {
-    return getQuoteById(id, user);
+  if (quote.status !== QuoteStatus.APPROVED) {
+    throw new AppError('BAD_REQUEST', 'Only approved quotations can be accepted or declined', 400);
   }
 
-  // Guard invalid transitions:
-  // Cannot approve or modify an already REJECTED, EXPIRED, or CONVERTED quote
-  if (currentStatus === QuoteStatus.REJECTED && targetStatus === QuoteStatus.APPROVED) {
+  if (quote.customerResponse && quote.customerResponse !== 'pending') {
     throw new AppError(
       'BAD_REQUEST',
-      'Cannot approve a quote that has already been REJECTED',
-      400
-    );
-  }
-
-  if (currentStatus === QuoteStatus.EXPIRED && targetStatus === QuoteStatus.APPROVED) {
-    throw new AppError(
-      'BAD_REQUEST',
-      'Cannot approve a quote that has already EXPIRED',
-      400
-    );
-  }
-
-  if (currentStatus === QuoteStatus.CONVERTED) {
-    throw new AppError(
-      'BAD_REQUEST',
-      'Cannot change status of a quote that has already been CONVERTED to an order',
-      400
-    );
-  }
-
-  if (targetStatus === QuoteStatus.CONVERTED) {
-    throw new AppError(
-      'BAD_REQUEST',
-      'Use the /convert endpoint to convert an APPROVED quote into an order',
+      `You have already ${quote.customerResponse} this quotation on ${quote.customerResponseAt?.toLocaleDateString()}. Please contact support to request changes.`,
       400
     );
   }
 
   const updatedQuote = await prisma.quote.update({
-    where: { id },
+    where: { id: quote.id },
     data: {
-      status: targetStatus,
-      ...(input.adminNotes && { adminNotes: input.adminNotes }),
+      customerResponse: response,
+      customerResponseNotes: notes || null,
+      customerResponseAt: new Date(),
+      activityLogs: {
+        create: {
+          changeType: 'customer_response',
+          note: `Customer recorded decision: ${response.toUpperCase()}${notes ? ` (Notes: ${notes})` : ''}`,
+          newValue: { customerResponse: response, notes },
+        },
+      },
     },
-    select: quoteSelect,
+    include: {
+      items: {
+        include: { product: true },
+      },
+      activityLogs: true,
+    },
+  });
+
+  // Notify admin
+  sendQuotationCustomerResponseNotification({
+    to: '',
+    customerName: `${quote.firstName || ''} ${quote.lastName || ''}`.trim(),
+    companyName: quote.companyName || 'B2B Client',
+    referenceNo: quote.referenceNo || quote.quoteNumber,
+    projectName: quote.projectName || 'Project',
+    customerResponse: response,
+    customerResponseNotes: notes || undefined,
   });
 
   return formatQuote(updatedQuote);
 };
 
-export const convertQuoteToOrder = async (quoteId: string, user: UserContext, input: ConvertQuoteInput) => {
+/**
+ * 5. Admin: List All Quotes with Filters & Metrics
+ */
+export const listAdminQuotes = async (query: ListQuotesQuery) => {
+  const { skip, limit, page } = getPaginationParams(query as any);
+  const where: Prisma.QuoteWhereInput = {};
+
+  if (query.includeDeleted !== 'true') {
+    where.isDeleted = false;
+  }
+
+  if (query.status && query.status !== 'ALL') {
+    const statusMap: Record<string, QuoteStatus> = {
+      SUBMITTED: QuoteStatus.PENDING,
+      PENDING: QuoteStatus.PENDING,
+      UNDER_REVIEW: QuoteStatus.UNDER_REVIEW,
+      APPROVED: QuoteStatus.APPROVED,
+      REJECTED: QuoteStatus.REJECTED,
+      CONVERTED: QuoteStatus.CONVERTED,
+      EXPIRED: QuoteStatus.EXPIRED,
+    };
+    const targetStatus = statusMap[query.status.toUpperCase()] || (query.status as QuoteStatus);
+    where.status = targetStatus;
+  }
+
+  if (query.search) {
+    const s = query.search.trim();
+    where.OR = [
+      { referenceNo: { contains: s, mode: 'insensitive' } },
+      { quoteNumber: { contains: s, mode: 'insensitive' } },
+      { companyName: { contains: s, mode: 'insensitive' } },
+      { projectName: { contains: s, mode: 'insensitive' } },
+      { email: { contains: s, mode: 'insensitive' } },
+      { gstNo: { contains: s, mode: 'insensitive' } },
+      { firstName: { contains: s, mode: 'insensitive' } },
+      { lastName: { contains: s, mode: 'insensitive' } },
+      { phone: { contains: s } },
+    ];
+  }
+
+  if (query.fromDate || query.toDate) {
+    where.createdAt = {};
+    if (query.fromDate) where.createdAt.gte = new Date(query.fromDate);
+    if (query.toDate) where.createdAt.lte = new Date(query.toDate);
+  }
+
+  const [quotes, total, countPending, countUnderReview, countApproved, countRejected, countSigned] =
+    await Promise.all([
+      prisma.quote.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, sku: true, thumbnail: true },
+              },
+            },
+          },
+          user: {
+            select: { id: true, email: true, firstName: true, lastName: true, companyName: true, gstin: true },
+          },
+        },
+      }),
+      prisma.quote.count({ where }),
+      prisma.quote.count({ where: { status: QuoteStatus.PENDING, isDeleted: false } }),
+      prisma.quote.count({ where: { status: QuoteStatus.UNDER_REVIEW, isDeleted: false } }),
+      prisma.quote.count({ where: { status: QuoteStatus.APPROVED, isDeleted: false } }),
+      prisma.quote.count({ where: { status: QuoteStatus.REJECTED, isDeleted: false } }),
+      prisma.quote.count({ where: { digitalSignature: { not: null }, isDeleted: false } }),
+    ]);
+
+  return {
+    data: quotes.map(formatQuote),
+    pagination: buildPagination(page, limit, total),
+    metrics: {
+      total,
+      pending: countPending,
+      underReview: countUnderReview,
+      approved: countApproved,
+      rejected: countRejected,
+      digitallySigned: countSigned,
+    },
+  };
+};
+
+/**
+ * 6. Admin: Get Quote Detail by ID with Full Audit Trail
+ */
+export const getAdminQuoteById = async (id: string) => {
   const quote = await prisma.quote.findUnique({
-    where: { id: quoteId },
-    select: quoteSelect,
+    where: { id },
+    include: {
+      items: {
+        include: {
+          product: true,
+          variant: true,
+        },
+        orderBy: { slNo: 'asc' },
+      },
+      activityLogs: {
+        include: {
+          adminUser: {
+            select: { id: true, email: true, firstName: true, lastName: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      },
+      user: true,
+    },
   });
 
   if (!quote) {
-    throw new AppError('NOT_FOUND', 'Quote not found', 404);
+    throw new AppError('NOT_FOUND', 'Quotation not found', 404);
   }
 
-  // Guard: Allowed ONLY if status is APPROVED
-  if (quote.status !== QuoteStatus.APPROVED) {
-    throw new AppError(
-      'BAD_REQUEST',
-      `Only APPROVED quotes can be converted to an order. Current status: ${quote.status}`,
-      400
-    );
-  }
-
-  if (quote.convertedOrderId) {
-    throw new AppError('BAD_REQUEST', 'Quote has already been converted to an order', 400);
-  }
-
-  const orderNumber = `ORD-QT-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, '0')}`;
-
-  const subtotal = quote.subtotal !== null ? Number(quote.subtotal) : 0;
-  const discountTotal = quote.discountTotal !== null ? Number(quote.discountTotal) : 0;
-  const taxTotal = quote.taxTotal !== null ? Number(quote.taxTotal) : 0;
-  const grandTotal = quote.grandTotal !== null ? Number(quote.grandTotal) : Math.max(0, subtotal - discountTotal + taxTotal);
-
-  const order = await prisma.$transaction(async (tx) => {
-    // 1. Create order
-    const createdOrder = await tx.order.create({
-      data: {
-        orderNumber,
-        userId: quote.userId,
-        status: OrderStatus.PENDING,
-        paymentStatus: PaymentStatus.PENDING,
-        paymentMethod: input.paymentMethod || PaymentMethod.BANK_TRANSFER,
-        subtotal,
-        discountTotal,
-        taxTotal,
-        grandTotal,
-        shippingAddressId: input.shippingAddressId || null,
-        billingAddressId: input.billingAddressId || null,
-        notes: input.notes || quote.notes || `Converted from quote ${quote.quoteNumber}`,
-      },
-    });
-
-    // 2. Create order items from quote items
-    for (const item of quote.items) {
-      const itemPrice = item.offeredPrice !== null ? Number(item.offeredPrice) : (item.requestedPrice !== null ? Number(item.requestedPrice) : Number(item.product.price));
-      const itemTotal = item.total !== null ? Number(item.total) : itemPrice * item.quantity;
-      const sku = item.variant?.sku || item.product.sku;
-      const productName = item.variant ? `${item.product.name} (${item.variant.name || 'Variant'})` : item.product.name;
-
-      await tx.orderItem.create({
-        data: {
-          orderId: createdOrder.id,
-          productId: item.productId,
-          variantId: item.variantId || null,
-          productName,
-          sku,
-          price: itemPrice,
-          quantity: item.quantity,
-          total: itemTotal,
-        },
-      });
-
-      // Deduct stock
-      if (item.variantId) {
-        await tx.productVariant.update({
-          where: { id: item.variantId },
-          data: { stock: { decrement: item.quantity } },
-        });
-      } else {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
-        });
-      }
-    }
-
-    // 3. Record Order Status History
-    await tx.orderStatusHistory.create({
-      data: {
-        orderId: createdOrder.id,
-        status: OrderStatus.PENDING,
-        comment: `Order converted from quote ${quote.quoteNumber}`,
-        changedBy: user.id,
-      },
-    });
-
-    // 4. Update Quote status to CONVERTED
-    await tx.quote.update({
-      where: { id: quoteId },
-      data: {
-        status: QuoteStatus.CONVERTED,
-        convertedOrderId: createdOrder.id,
-      },
-    });
-
-    return createdOrder;
-  });
-
-  return prisma.order.findUnique({
-    where: { id: order.id },
-    include: { items: true, statusHistory: true, user: true },
-  });
+  return formatQuote(quote);
 };
 
-export const updateQuotePricing = async (id: string, input: UpdateQuotePricingInput, user: UserContext) => {
+/**
+ * 7. Admin: Update Status with Required Reason for Pending/Rejected
+ */
+export const updateQuoteStatusByAdmin = async (
+  id: string,
+  input: AdminUpdateQuoteStatusInput,
+  admin: AdminContext
+) => {
   const quote = await prisma.quote.findUnique({
     where: { id },
     include: { items: true },
   });
 
   if (!quote) {
-    throw new AppError('NOT_FOUND', 'Quote not found', 404);
+    throw new AppError('NOT_FOUND', 'Quotation not found', 404);
   }
 
-  if (quote.status === QuoteStatus.CONVERTED || quote.status === QuoteStatus.REJECTED) {
+  const targetStatus = input.status as QuoteStatus;
+
+  // Enforce mandatory reason for Pending or Rejected
+  if (
+    (targetStatus === QuoteStatus.PENDING || targetStatus === QuoteStatus.REJECTED) &&
+    (!input.statusReason || !input.statusReason.trim())
+  ) {
     throw new AppError(
       'BAD_REQUEST',
-      `Cannot update pricing for quote in ${quote.status} status`,
+      `Please provide a mandatory explanatory note/reason when moving quotation to ${targetStatus}`,
       400
     );
   }
 
-  await prisma.$transaction(async (tx) => {
-    // If item offered prices are provided, update each item
-    if (input.items && input.items.length > 0) {
-      for (const itemInput of input.items) {
-        const existingItem = quote.items.find((i) => i.id === itemInput.id);
-        if (existingItem) {
-          const itemTotal = itemInput.offeredPrice * existingItem.quantity;
-          await tx.quoteItem.update({
-            where: { id: itemInput.id },
-            data: {
-              offeredPrice: itemInput.offeredPrice,
-              total: itemTotal,
-            },
-          });
-        }
-      }
-    }
+  const adminName = [admin.firstName, admin.lastName].filter(Boolean).join(' ') || admin.email || 'Admin';
+
+  const updatedQuote = await prisma.quote.update({
+    where: { id },
+    data: {
+      status: targetStatus,
+      statusReason: input.statusReason || null,
+      activityLogs: {
+        create: {
+          changedBy: admin.id,
+          changeType: 'status_change',
+          note: `Status changed from ${quote.status} to ${targetStatus} by ${adminName}${input.statusReason ? ` (Reason: ${input.statusReason})` : ''}`,
+          oldValue: { status: quote.status, reason: quote.statusReason },
+          newValue: { status: targetStatus, reason: input.statusReason },
+        },
+      },
+    },
+    include: {
+      items: { include: { product: true } },
+      activityLogs: true,
+    },
   });
 
-  // Re-fetch updated items to compute subtotal
-  const updatedItems = await prisma.quoteItem.findMany({
-    where: { quoteId: id },
-  });
-
-  let calculatedSubtotal = 0;
-  for (const item of updatedItems) {
-    const itemPrice = item.offeredPrice !== null ? Number(item.offeredPrice) : (item.requestedPrice !== null ? Number(item.requestedPrice) : 0);
-    calculatedSubtotal += itemPrice * item.quantity;
-  }
-
-  const subtotal = input.subtotal !== undefined ? input.subtotal : calculatedSubtotal;
-  const discountTotal = input.discountTotal !== undefined ? input.discountTotal : (quote.discountTotal ? Number(quote.discountTotal) : 0);
-  const taxTotal = input.taxTotal !== undefined ? input.taxTotal : (quote.taxTotal ? Number(quote.taxTotal) : 0);
-  const grandTotal = input.grandTotal !== undefined ? input.grandTotal : Math.max(0, subtotal - discountTotal + taxTotal);
-
-  const updateData: Prisma.QuoteUpdateInput = {
-    subtotal,
-    discountTotal,
-    taxTotal,
-    grandTotal,
+  const emailContext = {
+    to: quote.email || '',
+    customerName: `${quote.firstName || ''} ${quote.lastName || ''}`.trim(),
+    companyName: quote.companyName || 'B2B Customer',
+    referenceNo: quote.referenceNo || quote.quoteNumber,
+    projectName: quote.projectName || 'Hardware Project',
+    grandTotal: Number(quote.grandTotal || 0),
+    statusReason: input.statusReason || undefined,
+    accessToken: quote.accessToken || undefined,
   };
 
-  if (input.adminNotes !== undefined) updateData.adminNotes = input.adminNotes;
-  if (input.notes !== undefined) updateData.notes = input.notes;
-  if (input.validUntil !== undefined) updateData.validUntil = input.validUntil ? new Date(input.validUntil) : null;
+  // Dispatch lifecycle notifications
+  if (targetStatus === QuoteStatus.UNDER_REVIEW) {
+    sendQuotationUnderReviewEmail(emailContext);
+  } else if (targetStatus === QuoteStatus.PENDING) {
+    sendQuotationPendingEmail(emailContext);
+  } else if (targetStatus === QuoteStatus.REJECTED) {
+    sendQuotationRejectedEmail(emailContext);
+  }
 
-  const finalQuote = await prisma.quote.update({
-    where: { id },
-    data: updateData,
-    select: quoteSelect,
-  });
-
-  return formatQuote(finalQuote);
+  return formatQuote(updatedQuote);
 };
 
-export const updateCustomerQuote = async (id: string, userId: string, input: CreateQuoteInput) => {
+/**
+ * 8. Admin: Revisions on Line Items & Shipping Cost
+ */
+export const updateQuoteItemsAndPricing = async (
+  id: string,
+  input: AdminUpdateQuoteItemsInput,
+  admin: AdminContext
+) => {
   const quote = await prisma.quote.findUnique({
     where: { id },
     include: { items: true },
   });
 
   if (!quote) {
-    throw new AppError('NOT_FOUND', 'Quote not found', 404);
+    throw new AppError('NOT_FOUND', 'Quotation not found', 404);
   }
 
-  if (quote.userId !== userId) {
-    throw new AppError('FORBIDDEN', 'You can only update your own quotations', 403);
-  }
+  // 1. Recalculate line items server-side
+  let calculatedBasicPrice = 0;
+  const newItemsData = input.items.map((item, idx) => {
+    const lineAmount = Math.round(item.rate * item.quantity * 100) / 100;
+    calculatedBasicPrice += lineAmount;
 
-  if (quote.status !== QuoteStatus.PENDING && quote.status !== QuoteStatus.UNDER_REVIEW) {
-    throw new AppError(
-      'BAD_REQUEST',
-      `Cannot modify quotation in ${quote.status} status. Only PENDING or UNDER_REVIEW quotations can be updated.`,
-      400
-    );
-  }
+    return {
+      slNo: idx + 1,
+      productId: item.productId,
+      variantId: item.variantId || null,
+      productNameSnapshot: item.productNameSnapshot || 'Hardware Item',
+      unit: item.unit || 'PCS',
+      quantity: item.quantity,
+      rate: new Prisma.Decimal(item.rate),
+      amount: new Prisma.Decimal(lineAmount),
+      requestedPrice: new Prisma.Decimal(item.rate),
+      offeredPrice: new Prisma.Decimal(item.rate),
+      total: new Prisma.Decimal(lineAmount),
+    };
+  });
 
-  return prisma.$transaction(async (tx) => {
+  const basicPriceDecimal = Math.round(calculatedBasicPrice * 100) / 100;
+  const gstAmountDecimal = Math.round(basicPriceDecimal * 0.18 * 100) / 100;
+  const shippingCostDecimal =
+    input.shippingCost !== undefined && input.shippingCost !== null
+      ? Math.round(input.shippingCost * 100) / 100
+      : quote.shippingCost !== null
+      ? Number(quote.shippingCost)
+      : null;
+
+  const grandTotalDecimal = Math.round((basicPriceDecimal + gstAmountDecimal + (shippingCostDecimal || 0)) * 100) / 100;
+
+  const adminName = [admin.firstName, admin.lastName].filter(Boolean).join(' ') || admin.email || 'Admin';
+
+  // 2. Perform Transaction: Replace items and update totals
+  const updatedQuote = await prisma.$transaction(async (tx) => {
+    // Delete existing items
     await tx.quoteItem.deleteMany({
       where: { quoteId: id },
     });
 
-    let subtotal = 0;
-    const itemsToCreate: any[] = [];
-
-    for (const itemInput of input.items) {
-      let product: any = await tx.product.findUnique({
-        where: { id: itemInput.productId },
-        include: { variants: true },
-      });
-
-      let targetProductId = itemInput.productId;
-      let targetVariantId: string | null = itemInput.variantId || null;
-      let unitPrice = product ? Number(product.price) : 0;
-
-      if (itemInput.variantId) {
-        let variant = product?.variants?.find((v: any) => v.id === itemInput.variantId);
-        if (!variant) {
-          const globalVariant = await tx.productVariant.findUnique({
-            where: { id: itemInput.variantId },
-            include: { product: true },
-          });
-          if (globalVariant) {
-            variant = globalVariant;
-            targetProductId = globalVariant.productId;
-            product = globalVariant.product;
-            unitPrice = Number(globalVariant.price);
-          } else if (product) {
-            targetVariantId = null;
-            unitPrice = Number(product.price);
-          }
-        } else {
-          unitPrice = Number(variant.price);
-        }
-      }
-
-      if (!product) {
-        throw new AppError('NOT_FOUND', `Product with ID ${itemInput.productId} not found`, 404);
-      }
-
-      const priceToUse = itemInput.requestedPrice !== undefined ? itemInput.requestedPrice : unitPrice;
-      const itemTotal = priceToUse * itemInput.quantity;
-      subtotal += itemTotal;
-
-      itemsToCreate.push({
-        quoteId: id,
-        productId: targetProductId,
-        variantId: targetVariantId,
-        quantity: itemInput.quantity,
-        requestedPrice: priceToUse,
-        total: itemTotal,
-      });
-    }
-
+    // Create new updated items
     await tx.quoteItem.createMany({
-      data: itemsToCreate,
+      data: newItemsData.map((it) => ({ ...it, quoteId: id })),
     });
 
-    const updatedQuote = await tx.quote.update({
+    // Update quote record
+    const q = await tx.quote.update({
       where: { id },
       data: {
-        subtotal,
-        grandTotal: subtotal,
+        basicPrice: new Prisma.Decimal(basicPriceDecimal),
+        gstAmount: new Prisma.Decimal(gstAmountDecimal),
+        shippingCost: shippingCostDecimal !== null ? new Prisma.Decimal(shippingCostDecimal) : null,
+        subtotal: new Prisma.Decimal(basicPriceDecimal),
+        taxTotal: new Prisma.Decimal(gstAmountDecimal),
+        grandTotal: new Prisma.Decimal(grandTotalDecimal),
         notes: input.notes !== undefined ? input.notes : quote.notes,
+        adminNotes: input.adminNotes !== undefined ? input.adminNotes : quote.adminNotes,
+        validUntil: input.validUntil ? new Date(input.validUntil) : quote.validUntil,
+        // Invalidate previous signature if amount changed
+        digitalSignature: null,
+        signedBy: null,
+        signedAt: null,
+        qrCodeData: null,
+        activityLogs: {
+          create: {
+            changedBy: admin.id,
+            changeType: 'item_edit',
+            note: `Line items and pricing updated by ${adminName}. New Basic: ₹${basicPriceDecimal}, Shipping: ${shippingCostDecimal !== null ? `₹${shippingCostDecimal}` : 'At actual'}, Grand Total: ₹${grandTotalDecimal}`,
+            oldValue: { basicPrice: quote.basicPrice, grandTotal: quote.grandTotal, shippingCost: quote.shippingCost },
+            newValue: { basicPrice: basicPriceDecimal, grandTotal: grandTotalDecimal, shippingCost: shippingCostDecimal },
+          },
+        },
       },
-      select: quoteSelect,
+      include: {
+        items: { include: { product: true } },
+        activityLogs: true,
+      },
     });
 
-    return formatQuote(updatedQuote);
+    return q;
   });
+
+  return formatQuote(updatedQuote);
 };
 
+/**
+ * 9. Admin: Digitally Sign, Generate QR Code, and Approve Quotation
+ */
+export const digitallySignAndApproveQuote = async (
+  id: string,
+  input: SignQuoteInput,
+  admin: AdminContext
+) => {
+  const quote = await prisma.quote.findUnique({
+    where: { id },
+    include: { items: { include: { product: true } } },
+  });
+
+  if (!quote) {
+    throw new AppError('NOT_FOUND', 'Quotation not found', 404);
+  }
+
+  if (quote.items.length === 0) {
+    throw new AppError('BAD_REQUEST', 'Cannot approve an empty quotation without line items', 400);
+  }
+
+  const adminName = [admin.firstName, admin.lastName].filter(Boolean).join(' ') || admin.email || 'Authorised Signatory';
+  const signedAt = new Date();
+
+  // Update shipping if provided
+  let shippingCostDecimal = quote.shippingCost !== null ? Number(quote.shippingCost) : 0;
+  if (input.shippingCost !== undefined && input.shippingCost !== null) {
+    shippingCostDecimal = Math.round(input.shippingCost * 100) / 100;
+  }
+
+  const basicPrice = Number(quote.basicPrice || quote.subtotal || 0);
+  const gstAmount = Math.round(basicPrice * 0.18 * 100) / 100;
+  const grandTotal = Math.round((basicPrice + gstAmount + shippingCostDecimal) * 100) / 100;
+
+  const accessToken = quote.accessToken || crypto.randomBytes(24).toString('hex');
+  const referenceNo = quote.referenceNo || quote.quoteNumber;
+
+  // 1. Generate Cryptographic HMAC-SHA256 Digital Signature
+  const digitalSignature = computeQuotationSignature({
+    referenceNo,
+    financialYear: quote.financialYear || '2026-27',
+    projectName: quote.projectName || 'Project',
+    companyName: quote.companyName || 'Client',
+    gstNo: quote.gstNo || 'GSTIN',
+    grandTotal,
+    signedBy: adminName,
+    signedAt,
+  });
+
+  // 2. Generate Verification QR Code
+  const verificationUrl = `${env.frontend.url}/quote/${accessToken}`;
+  const qrCodeData = await generateQuotationQrCode(verificationUrl);
+
+  // 3. Update Quote to APPROVED with signature and QR code
+  const updatedQuote = await prisma.quote.update({
+    where: { id },
+    data: {
+      status: QuoteStatus.APPROVED,
+      statusReason: null,
+      shippingCost: new Prisma.Decimal(shippingCostDecimal),
+      basicPrice: new Prisma.Decimal(basicPrice),
+      gstAmount: new Prisma.Decimal(gstAmount),
+      subtotal: new Prisma.Decimal(basicPrice),
+      taxTotal: new Prisma.Decimal(gstAmount),
+      grandTotal: new Prisma.Decimal(grandTotal),
+      accessToken,
+      digitalSignature,
+      signedBy: adminName,
+      signedAt,
+      qrCodeData,
+      adminNotes: input.adminNotes !== undefined ? input.adminNotes : quote.adminNotes,
+      activityLogs: {
+        create: {
+          changedBy: admin.id,
+          changeType: 'signed',
+          note: `Quotation digitally signed and approved by ${adminName}. Grand Total: ₹${grandTotal.toLocaleString('en-IN')}`,
+          newValue: { digitalSignature, signedBy: adminName, signedAt, grandTotal },
+        },
+      },
+    },
+    include: {
+      items: { include: { product: true } },
+      activityLogs: true,
+    },
+  });
+
+  // 4. Send Approval Email with secure token link & digital seal
+  sendQuotationApprovedEmail({
+    to: quote.email || '',
+    customerName: `${quote.firstName || ''} ${quote.lastName || ''}`.trim(),
+    companyName: quote.companyName || 'B2B Client',
+    referenceNo,
+    projectName: quote.projectName || 'Hardware Project',
+    grandTotal,
+    accessToken,
+  });
+
+  return formatQuote(updatedQuote);
+};
+
+/**
+ * 10. Digital Signature Verification Engine
+ */
+export const verifySignatureRecord = async (referenceNo: string, _providedSignature?: string): Promise<VerificationResult> => {
+  const quote = await prisma.quote.findFirst({
+    where: {
+      OR: [
+        { referenceNo: { equals: referenceNo.trim(), mode: 'insensitive' } },
+        { quoteNumber: { equals: referenceNo.trim(), mode: 'insensitive' } },
+      ],
+      isDeleted: false,
+    },
+  });
+
+  if (!quote) {
+    return {
+      isValid: false,
+      tamperDetected: false,
+      referenceNo,
+      companyName: 'Not Found',
+      gstNo: 'Not Found',
+      projectName: 'Not Found',
+      grandTotal: 0,
+      signedBy: 'None',
+      signedAt: 'N/A',
+      digitalSignature: '',
+      message: `No quotation found matching reference number "${referenceNo}" in Pacific Products & Solutions central registry.`,
+    };
+  }
+
+  return verifyQuotationSignature(quote);
+};
+
+/**
+ * 11. Admin: Soft Delete Quotation
+ */
+export const softDeleteQuote = async (id: string, admin: AdminContext) => {
+  const quote = await prisma.quote.findUnique({ where: { id } });
+  if (!quote) {
+    throw new AppError('NOT_FOUND', 'Quotation not found', 404);
+  }
+
+  const adminName = [admin.firstName, admin.lastName].filter(Boolean).join(' ') || admin.email || 'Admin';
+
+  const deletedQuote = await prisma.quote.update({
+    where: { id },
+    data: {
+      isDeleted: true,
+      deletedAt: new Date(),
+      activityLogs: {
+        create: {
+          changedBy: admin.id,
+          changeType: 'deleted',
+          note: `Quotation marked as deleted by ${adminName}`,
+          oldValue: { isDeleted: false },
+          newValue: { isDeleted: true, deletedAt: new Date() },
+        },
+      },
+    },
+  });
+
+  return { success: true, message: `Quotation ${quote.referenceNo || quote.quoteNumber} soft-deleted successfully.` };
+};
