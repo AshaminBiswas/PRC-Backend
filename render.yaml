@@ -6,7 +6,7 @@ services:
     region: singapore # or oregon, frankfurt, etc.
     plan: free # or starter / standard
     buildCommand: npm install && npm run db:generate && npm run build
-    startCommand: npm run db:migrate:prod && npm start
+    startCommand: node src/scripts/fix-db.js && npm run db:migrate:prod && npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
