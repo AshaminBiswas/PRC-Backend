@@ -15,13 +15,24 @@ const router = Router();
 // All B2B pricing endpoints require authentication
 router.use(authenticate);
 
+// Allow customer to view their own pricing, or staff with users.read/quotes.read
+const authorizeCustomerOrStaff = (req: any, res: any, next: any) => {
+  if (!req.user) {
+    return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } });
+  }
+  if (req.user.id === req.params.userId) {
+    return next();
+  }
+  return authorize('users.read', 'quotes.read')(req, res, next);
+};
+
 // ─── Customer Self-Service Route ─────────────────────────────────────────────
 router.get('/my-pricing', controller.getMyPricing);
 
-// ─── Admin / Staff Management Routes ─────────────────────────────────────────
+// ─── Admin / Staff / Customer Pricing Routes ─────────────────────────────────
 router.get(
   '/customer/:userId',
-  authorize('users.read', 'quotes.read'),
+  authorizeCustomerOrStaff,
   validate(UuidParamSchema, 'params'),
   controller.getCustomerPricingMatrix
 );

@@ -119,20 +119,12 @@ app.use((_req, res, next) => {
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (
-        !origin ||
-        env.cors.allowedOrigins.includes('*') ||
-        env.cors.allowedOrigins.includes(origin) ||
-        env.isDev
-      ) {
-        callback(null, true);
-      } else {
-        callback(null, true);
-      }
+      // Allow requests with no origin (like mobile apps, curl, postman) or any origin in dev/prod
+      callback(null, true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Access-Control-Request-Method', 'Access-Control-Request-Headers'],
   })
 );
 
