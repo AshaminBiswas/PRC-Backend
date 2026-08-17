@@ -79,6 +79,9 @@ BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quote_items' AND column_name = 'requestedPrice') THEN
         ALTER TABLE "quote_items" RENAME COLUMN "requestedPrice" TO "requested_price";
     END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'quote_items' AND column_name = 'createdAt') THEN
+        ALTER TABLE "quote_items" RENAME COLUMN "createdAt" TO "created_at";
+    END IF;
 END $$;
 
 -- ─── 3. ENSURE QUOTES TABLE HAS ALL COLUMNS ──────────────────────────────────
