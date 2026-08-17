@@ -99,7 +99,7 @@ export const verifyQuotationSignature = (
       signedBy: quote.signedBy || 'Unsigned',
       signedAt: quote.signedAt ? quote.signedAt.toISOString() : 'N/A',
       digitalSignature: quote.digitalSignature || '',
-      message: 'Quotation has not been digitally signed yet by Pacific Products & Solutions authority.',
+      message: 'Quotation has not been digitally signed yet by PRC Hardware authority.',
     };
   }
 
@@ -132,7 +132,7 @@ export const verifyQuotationSignature = (
     signedAt: quote.signedAt.toISOString(),
     digitalSignature: quote.digitalSignature,
     message: isValid
-      ? 'Authentic & Valid. Cryptographically verified by Pacific Products & Solutions Authority.'
+      ? 'Authentic & Valid. Cryptographically verified by PRC Hardware Authority.'
       : 'Tamper Detected! Digital signature does not match quotation record.',
   };
 };

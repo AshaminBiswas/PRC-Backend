@@ -217,7 +217,7 @@ const baseTemplate = (content: string): string => `
   <div class="container">
     <div class="header"><h1>PRC Hardware</h1></div>
     <div class="body">${content}</div>
-    <div class="footer">Pacific Hardware Enterprise &copy; ${new Date().getFullYear()} &bull; All rights reserved.</div>
+    <div class="footer">PRC Hardware &copy; ${new Date().getFullYear()} &bull; All rights reserved.</div>
   </div>
 </body>
 </html>`;
@@ -351,9 +351,9 @@ export const sendB2BCustomerWelcomeEmail = async (params: {
   const loginUrl = `${env.frontend.url}`;
   await enqueueEmail({
     to: params.to,
-    subject: 'Welcome to Pacific Hardware B2B Wholesale Portal - Your Account Details',
+    subject: 'Welcome to PRC Hardware B2B Wholesale Portal - Your Account Details',
     html: baseTemplate(`
-      <h2>Welcome to Pacific Hardware B2B, ${params.firstName}!</h2>
+      <h2>Welcome to PRC Hardware B2B, ${params.firstName}!</h2>
       <p>An enterprise wholesale account has been provisioned for <strong>${params.companyName || `${params.firstName} ${params.lastName || ''}`}</strong> by our administration team.</p>
       
       <div style="background:#0f172a; color:#ffffff; padding:20px; border-radius:8px; margin:20px 0; border:1px solid #334155;">

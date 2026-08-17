@@ -885,7 +885,7 @@ export const verifySignatureRecord = async (referenceNo: string, _providedSignat
       signedBy: 'None',
       signedAt: 'N/A',
       digitalSignature: '',
-      message: `No quotation found matching reference number "${referenceNo}" in Pacific Products & Solutions central registry.`,
+      message: `No quotation found matching reference number "${referenceNo}" in PRC Hardware central registry.`,
     };
   }
 

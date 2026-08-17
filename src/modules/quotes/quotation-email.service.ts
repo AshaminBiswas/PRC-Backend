@@ -21,31 +21,31 @@ const baseQuotationTemplate = (title: string, bodyContent: string): string => `
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>${title} - Pacific Products & Solutions</title>
+  <title>${title} - PRC Hardware</title>
   <style>
     body { font-family: 'Segoe UI', Helvetica, Arial, sans-serif; background: #f8fafc; margin: 0; padding: 0; }
     .container { max-width: 620px; margin: 30px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
     .header { background: #0f172a; padding: 28px; text-align: center; border-bottom: 3px solid #f59e0b; }
     .header h1 { color: #f59e0b; margin: 0; font-size: 22px; letter-spacing: 0.5px; font-weight: 800; }
-    .header p { color: #94a3b8; margin: 4px 0 0 0; font-size: 12px; }
+    .header p { color: #94a3b8; margin: 4px 0 0 0; font-size: 11px; }
     .body { padding: 32px 28px; color: #1e293b; line-height: 1.6; }
     .ref-badge { display: inline-block; background: #f1f5f9; color: #0f172a; padding: 6px 14px; border-radius: 6px; font-weight: 700; font-family: monospace; font-size: 14px; border: 1px solid #cbd5e1; }
     .info-card { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 18px; margin: 20px 0; }
     .btn-primary { display: inline-block; margin: 20px 0; padding: 14px 28px; background: #f59e0b; color: #0f172a; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 15px; text-align: center; }
-    .footer { background: #0f172a; padding: 20px; text-align: center; font-size: 12px; color: #64748b; }
+    .footer { background: #0f172a; padding: 20px; text-align: center; font-size: 11px; color: #64748b; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>Pacific Products & Solutions</h1>
-      <p>Architectural Hardware • Restroom Cubicles • Locker Systems</p>
+      <h1>PRC Hardware</h1>
+      <p>H -3, J.R. COMPLEX GATE NO 4, MELA RAM FARM, MANDOLI, DELHI 110093, INDIA</p>
     </div>
     <div class="body">
       ${bodyContent}
     </div>
     <div class="footer">
-      Pacific Products & Solutions &bull; Official B2B Quotation Notification &bull; support@pacifichardware.com
+      PRC Hardware &bull; Official B2B Quotation Notification &bull; support@pacifichardware.com
     </div>
   </div>
 </body>
@@ -68,7 +68,7 @@ export const sendQuotationSubmittedEmail = async (ctx: QuoteEmailContext): Promi
 
   await sendMail({
     to: ctx.to,
-    subject: `Quotation Request Received - [${ctx.referenceNo}] - Pacific Hardware`,
+    subject: `Quotation Request Received - [${ctx.referenceNo}] - PRC Hardware`,
     html: baseQuotationTemplate('Quotation Request Received', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
@@ -89,7 +89,7 @@ export const sendQuotationUnderReviewEmail = async (ctx: QuoteEmailContext): Pro
 
   await sendMail({
     to: ctx.to,
-    subject: `Quotation Under Review - [${ctx.referenceNo}] - Pacific Hardware`,
+    subject: `Quotation Under Review - [${ctx.referenceNo}] - PRC Hardware`,
     html: baseQuotationTemplate('Quotation Under Review', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
@@ -142,7 +142,7 @@ export const sendQuotationApprovedEmail = async (ctx: QuoteEmailContext): Promis
 
   await sendMail({
     to: ctx.to,
-    subject: `Official Quotation Approved & Signed - [${ctx.referenceNo}] - Pacific Hardware`,
+    subject: `Official Quotation Approved & Signed - [${ctx.referenceNo}] - PRC Hardware`,
     html: baseQuotationTemplate('Quotation Approved', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
@@ -185,7 +185,7 @@ export const sendQuotationApprovedEmailWithPdf = async (
   await sendMailWithAttachment(
     {
       to: ctx.to,
-      subject: `Official Quotation PDF - [${ctx.referenceNo}] - Pacific Hardware`,
+      subject: `Official Quotation PDF - [${ctx.referenceNo}] - PRC Hardware`,
       html: baseQuotationTemplate('Official Quotation Approved', content),
     },
     [
@@ -219,7 +219,7 @@ export const sendQuotationRejectedEmail = async (ctx: QuoteEmailContext): Promis
 
   await sendMail({
     to: ctx.to,
-    subject: `Quotation Status Update - [${ctx.referenceNo}] - Pacific Hardware`,
+    subject: `Quotation Status Update - [${ctx.referenceNo}] - PRC Hardware`,
     html: baseQuotationTemplate('Quotation Declined', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
