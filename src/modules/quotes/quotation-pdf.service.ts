@@ -239,7 +239,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
           stack: [
             { text: 'PRC Hardware', style: 'companyName' },
             {
-              text: 'Architectural Hardware  •  Restroom Cubicles  •  Locker Systems',
+              text: 'H -3, J.R. COMPLEX GATE NO 4, MELA RAM FARM, MANDOLI, DELHI 110093, INDIA',
               style: 'companyTagline',
             },
           ],
