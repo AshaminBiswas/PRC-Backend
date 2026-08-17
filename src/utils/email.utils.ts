@@ -6,10 +6,17 @@ import { enqueueJob } from '../jobs/asyncJob.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+}
+
 interface SendMailOptions {
   to: string;
   subject: string;
   html: string;
+  attachments?: EmailAttachment[];
 }
 
 // ─── Resend Official SDK Sender (primary modern choice — re_...) ───────────────
@@ -21,12 +28,21 @@ const sendViaResend = async (options: SendMailOptions, apiKey: string): Promise<
     resendClient = new Resend(apiKey);
   }
 
-  const { data, error } = await resendClient.emails.send({
+  const payload: any = {
     from: `${env.smtp.fromName} <onboarding@resend.dev>`,
     to: [options.to],
     subject: options.subject,
     html: options.html,
-  });
+  };
+
+  if (options.attachments?.length) {
+    payload.attachments = options.attachments.map((a) => ({
+      filename: a.filename,
+      content: a.content.toString('base64'),
+    }));
+  }
+
+  const { data, error } = await resendClient.emails.send(payload);
 
   if (error) {
     throw new Error(`Resend SDK error: ${error.message}`);
@@ -38,12 +54,19 @@ const sendViaResend = async (options: SendMailOptions, apiKey: string): Promise<
 // ─── Brevo HTTP API Sender (for xkeysib- API keys) ───────────────────────────
 
 const sendViaBrevoApi = async (options: SendMailOptions, apiKey: string): Promise<void> => {
-  const body = JSON.stringify({
+  const payload: any = {
     sender: { name: env.smtp.fromName, email: env.smtp.fromEmail },
     to: [{ email: options.to }],
     subject: options.subject,
     htmlContent: options.html,
-  });
+  };
+
+  if (options.attachments?.length) {
+    payload.attachment = options.attachments.map((a) => ({
+      name: a.filename,
+      content: a.content.toString('base64'),
+    }));
+  }
 
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
@@ -52,7 +75,7 @@ const sendViaBrevoApi = async (options: SendMailOptions, apiKey: string): Promis
       'api-key': apiKey,
       'content-type': 'application/json',
     },
-    body,
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -92,12 +115,22 @@ const getTransporter = (): Transporter => {
 
 const sendViaSmtp = async (options: SendMailOptions): Promise<void> => {
   const transport = getTransporter();
-  const info = await transport.sendMail({
+  const mailPayload: any = {
     from: `"${env.smtp.fromName}" <${env.smtp.fromEmail}>`,
     to: options.to,
     subject: options.subject,
     html: options.html,
-  });
+  };
+
+  if (options.attachments?.length) {
+    mailPayload.attachments = options.attachments.map((a) => ({
+      filename: a.filename,
+      content: a.content,
+      contentType: a.contentType,
+    }));
+  }
+
+  const info = await transport.sendMail(mailPayload);
   console.log(`[Email Success] Nodemailer SMTP → ${options.to} | Subject: "${options.subject}" | ID: ${info.messageId}`);
 };
 
@@ -137,6 +170,17 @@ export const sendMail = async (options: SendMailOptions): Promise<void> => {
   }
 
   throw new Error('[Email] No valid email provider configured. Set RESEND_API_KEY, BREVO_API_KEY, or SMTP credentials.');
+};
+
+/**
+ * Convenience wrapper — sends an email with one or more file attachments.
+ * Falls back gracefully: if sendMail fails the attachment route, throws the error.
+ */
+export const sendMailWithAttachment = async (
+  options: Omit<SendMailOptions, 'attachments'>,
+  attachments: EmailAttachment[]
+): Promise<void> => {
+  return sendMail({ ...options, attachments });
 };
 
 // ─── Email Dispatcher ─────────────────────────────────────────────────────────

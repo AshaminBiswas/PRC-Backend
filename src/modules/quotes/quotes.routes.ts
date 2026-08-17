@@ -76,6 +76,15 @@ router.get(
   controller.getQuoteById
 );
 
+// 7a. Admin: Download Quotation PDF (must be before /:id to avoid conflicts)
+router.get(
+  '/:id/pdf',
+  authenticate,
+  authorize('quotes.read'),
+  validate(QuoteIdParamSchema, 'params'),
+  controller.downloadQuotePdf
+);
+
 // 8. Admin status transition with mandatory note for pending/rejected
 router.patch(
   '/:id/status',

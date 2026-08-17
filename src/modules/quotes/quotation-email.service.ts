@@ -1,4 +1,4 @@
-import { sendMail } from '../../utils/email.utils';
+import { sendMail, sendMailWithAttachment } from '../../utils/email.utils';
 import { env } from '../../config/env';
 
 interface QuoteEmailContext {
@@ -12,6 +12,7 @@ interface QuoteEmailContext {
   accessToken?: string;
   customerResponse?: string;
   customerResponseNotes?: string;
+  quoteNumber?: string;
 }
 
 const baseQuotationTemplate = (title: string, bodyContent: string): string => `
@@ -144,6 +145,61 @@ export const sendQuotationApprovedEmail = async (ctx: QuoteEmailContext): Promis
     subject: `Official Quotation Approved & Signed - [${ctx.referenceNo}] - Pacific Hardware`,
     html: baseQuotationTemplate('Quotation Approved', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
+};
+
+/**
+ * Sends the approved quotation email WITH the PDF attached.
+ * Used automatically when admin signs/approves a quotation.
+ * Falls back to the non-attachment email if PDF fails.
+ */
+export const sendQuotationApprovedEmailWithPdf = async (
+  ctx: QuoteEmailContext,
+  pdfBuffer: Buffer
+): Promise<void> => {
+  const viewUrl = `${env.frontend.url}/quote/${ctx.accessToken}`;
+  const formattedTotal = ctx.grandTotal ? `₹${Number(ctx.grandTotal).toLocaleString('en-IN')}` : 'View in link';
+  const fileName = `Quotation-${ctx.referenceNo || ctx.quoteNumber || 'PRC'}.pdf`;
+
+  const content = `
+    <h2 style="margin-top:0; color:#0f172a;">🎉 Your Official Quotation is Ready!</h2>
+    <p>Dear <strong>${ctx.customerName}</strong> (${ctx.companyName}),</p>
+    <p>Your quotation for project <strong>"${ctx.projectName}"</strong> has been <strong>approved, finalized with B2B contract pricing, and digitally signed</strong>.</p>
+    <p>The official signed quotation PDF is attached to this email for your records.</p>
+    
+    <div class="info-card" style="border-left-color: #10b981; background:#f0fdf4;">
+      <p style="margin: 4px 0;"><strong>Quotation Ref No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+      <p style="margin: 4px 0;"><strong>Approved Grand Total:</strong> <span style="font-size:18px; font-weight:bold; color:#065f46;">${formattedTotal}</span></p>
+      <p style="margin: 4px 0;"><strong>Digital Signature:</strong> <span style="color:#059669; font-weight:bold;">&#x2714; Verified &amp; QR Code Encoded</span></p>
+      <p style="margin: 4px 0;"><strong>PDF Attached:</strong> <span style="color:#059669; font-weight:bold;">📎 ${fileName}</span></p>
+    </div>
+
+    <p>You can also view your quotation online, inspect all line items, and record your formal Acceptance or Rejection:</p>
+    
+    <p style="text-align:center;">
+      <a href="${viewUrl}" class="btn-primary" style="background:#10b981; color:#ffffff;">View & Respond to Quotation</a>
+    </p>
+
+    <p style="font-size:12px; color:#64748b;">Direct Link: <br/><a href="${viewUrl}" style="color:#0284c7;">${viewUrl}</a></p>
+  `;
+
+  await sendMailWithAttachment(
+    {
+      to: ctx.to,
+      subject: `Official Quotation PDF - [${ctx.referenceNo}] - Pacific Hardware`,
+      html: baseQuotationTemplate('Official Quotation Approved', content),
+    },
+    [
+      {
+        filename: fileName,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      },
+    ]
+  ).catch((err) => {
+    console.warn('[Email Warning] PDF email failed, falling back to text-only approval email:', err.message);
+    // Fallback to plain approval email (no PDF)
+    sendQuotationApprovedEmail(ctx).catch(() => {});
+  });
 };
 
 export const sendQuotationRejectedEmail = async (ctx: QuoteEmailContext): Promise<void> => {

@@ -15,9 +15,11 @@ import {
   sendQuotationUnderReviewEmail,
   sendQuotationPendingEmail,
   sendQuotationApprovedEmail,
+  sendQuotationApprovedEmailWithPdf,
   sendQuotationRejectedEmail,
   sendQuotationCustomerResponseNotification,
 } from './quotation-email.service';
+import { generateQuotationPdf } from './quotation-pdf.service';
 import { env } from '../../config/env';
 import type {
   CreateB2BQuoteInput,
@@ -829,16 +831,30 @@ export const digitallySignAndApproveQuote = async (
     newValue: { digitalSignature, signedBy: adminName, signedAt, grandTotal },
   });
 
-  // 4. Send Approval Email with secure token link & digital seal
-  sendQuotationApprovedEmail({
+  // 4. Generate PDF and send approval email with PDF attachment (non-blocking)
+  const emailCtx = {
     to: quote.email || '',
     customerName: `${quote.firstName || ''} ${quote.lastName || ''}`.trim(),
     companyName: quote.companyName || 'B2B Client',
     referenceNo,
+    quoteNumber: updatedQuote.quoteNumber || undefined,
     projectName: quote.projectName || 'Hardware Project',
     grandTotal,
     accessToken,
-  });
+  };
+
+  // Fire-and-forget: generate PDF then email it; fall back to plain email on any error
+  (async () => {
+    try {
+      const formattedQuote = formatQuote(updatedQuote);
+      const pdfBuffer = await generateQuotationPdf(formattedQuote as any);
+      await sendQuotationApprovedEmailWithPdf(emailCtx, pdfBuffer);
+      console.log(`[QuotesService] PDF generated and emailed for quote ${referenceNo}`);
+    } catch (pdfErr: any) {
+      console.warn(`[QuotesService] PDF generation failed for ${referenceNo}, sending text-only email:`, pdfErr?.message);
+      sendQuotationApprovedEmail(emailCtx).catch(() => {});
+    }
+  })();
 
   return formatQuote(updatedQuote);
 };

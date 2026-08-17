@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as quotesService from './quotes.service';
 import { sendSuccess, sendPaginated } from '../../utils/response';
 import { AppError } from '../../middleware/error.middleware';
+import { generateQuotationPdf } from './quotation-pdf.service';
 
 /**
  * Public/B2B Submit Quotation Request (RFQ)
@@ -151,6 +152,39 @@ export const deleteQuote = async (req: Request, res: Response, next: NextFunctio
     }
     const result = await quotesService.softDeleteQuote(req.params.id, req.user);
     sendSuccess(res, result, result.message);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Admin: Download Quotation as PDF
+ * Generates the PDF on-the-fly and streams it as a downloadable file.
+ */
+export const downloadQuotePdf = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+    }
+
+    // Fetch the full quote with all items
+    const quote = await quotesService.getAdminQuoteById(req.params.id);
+
+    if (!quote) {
+      throw new AppError('NOT_FOUND', 'Quotation not found', 404);
+    }
+
+    // Generate PDF buffer
+    const pdfBuffer = await generateQuotationPdf(quote as any);
+
+    const referenceNo = quote.referenceNo || quote.quoteNumber || quote.id.slice(0, 8);
+    const filename = `Quotation-${referenceNo}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(pdfBuffer);
   } catch (error) {
     next(error);
   }
