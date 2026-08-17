@@ -11136,464 +11136,207 @@
 </div>
 </section>
 <section id="sec-quotes" class="api-section">
-<h2>17. B2B Bulk Price Quotations</h2>
-<p class="sec-desc">B2B enterprise price quotation requests and admin price negotiation/approval.</p>
+<h2>17. B2B Bulk Price Quotations & RFQ Engine</h2>
+<p class="sec-desc">B2B enterprise price quotation requests, multi-field tracking, cryptographic digital signatures, QR codes, admin line-item revisions, and customer review portals.</p>
+
 <div id="ep-150" class="endpoint-card">
   <div class="ep-header">
     <span class="badge get">GET</span>
     <span class="ep-path">/api/v1/quotes</span>
-    <span class="ep-auth auth-yes">🔒 Auth Required</span>
+    <span class="ep-auth auth-yes">🔒 Admin Auth</span>
   </div>
   <div class="ep-body">
+    <p class="ep-info"><strong>Summary:</strong> List B2B RFQ Quotations with pagination, status tabs, search query, date ranges, and aggregated metrics.</p>
     <p class="ep-info"><strong>Source File:</strong> <code>quotes.routes.ts</code></p>
-    <p class="ep-info"><strong>Headers:</strong> <code>Content-Type: application/json</code> | <code>Authorization: Bearer &lt;accessToken&gt;</code></p>
-    <p class="no-body"><em>No Request Body required (GET request)</em></p>
+    <p class="ep-info"><strong>Headers:</strong> <code>Authorization: Bearer &lt;accessToken&gt;</code></p>
+    <p class="ep-info"><strong>Query Parameters:</strong> <code>page</code>, <code>limit</code>, <code>status</code> (PENDING | UNDER_REVIEW | APPROVED | REJECTED), <code>search</code>, <code>fromDate</code>, <code>toDate</code></p>
     <div class="code-block success-block">
       <div class="code-header"><span class="lbl-success">✅ Expected Outcome (200 OK)</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
       <pre><code class="code-success">{
   "success": true,
-  "data": [],
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "totalItems": 1
-  }
+  "data": [
+    {
+      "id": "quote-uuid-1",
+      "referenceNo": "PRC-QT-2026-27/001",
+      "projectName": "DLF CyberCity Restroom Project",
+      "companyName": "Apex Infrastructure Pvt Ltd",
+      "gstNo": "27AAPCA1234F1Z5",
+      "grandTotal": 147500,
+      "status": "APPROVED",
+      "customerResponse": "pending",
+      "digitalSignature": "a3f4c8e7...",
+      "items": []
+    }
+  ],
+  "metrics": {
+    "total": 12,
+    "pending": 3,
+    "underReview": 2,
+    "approved": 6,
+    "rejected": 1,
+    "digitallySigned": 6
+  },
+  "pagination": { "page": 1, "limit": 20, "totalItems": 12, "totalPages": 1 }
 }</code></pre>
-    </div>
-    <div class="code-block error-block">
-      <div class="code-header"><span class="lbl-error">⚠️ Possible Error Responses</span></div>
-      <pre><code class="code-error">[
-  {
-    "code": "400 Bad Request",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "VALIDATION_ERROR",
-        "message": "Invalid parameter or schema validation failed",
-        "details": [
-          "email must be a valid email address"
-        ]
-      }
-    }
-  },
-  {
-    "code": "401 Unauthorized",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "UNAUTHORIZED",
-        "message": "Access token is missing or invalid"
-      }
-    }
-  },
-  {
-    "code": "404 Not Found",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "NOT_FOUND",
-        "message": "Requested resource was not found"
-      }
-    }
-  },
-  {
-    "code": "500 Internal Server Error",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "INTERNAL_SERVER_ERROR",
-        "message": "An unexpected server error occurred"
-      }
-    }
-  }
-]</code></pre>
     </div>
   </div>
 </div>
+
 <div id="ep-151" class="endpoint-card">
   <div class="ep-header">
     <span class="badge post">POST</span>
     <span class="ep-path">/api/v1/quotes</span>
-    <span class="ep-auth auth-yes">🔒 Auth Required</span>
+    <span class="ep-auth auth-no">🔓 B2B Customer</span>
   </div>
   <div class="ep-body">
+    <p class="ep-info"><strong>Summary:</strong> Submit B2B Quotation / RFQ Request with line items, project details, and contact information.</p>
     <p class="ep-info"><strong>Source File:</strong> <code>quotes.routes.ts</code></p>
-    <p class="ep-info"><strong>Headers:</strong> <code>Content-Type: application/json</code> | <code>Authorization: Bearer &lt;accessToken&gt;</code></p>
     <div class="code-block">
-      <div class="code-header"><span class="lbl-body">📥 Request Body ({ })</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
+      <div class="code-header"><span class="lbl-body">📥 Request Body</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
       <pre><code>{
-  "name": "string (required)",
-  "status": "ACTIVE | INACTIVE",
-  "notes": "string (optional)"
+  "projectName": "DLF CyberCity Restroom Project",
+  "firstName": "Rahul",
+  "lastName": "Sharma",
+  "companyName": "Apex Infrastructure Pvt Ltd",
+  "gstNo": "27AAPCA1234F1Z5",
+  "email": "procurement@apexinfradev.com",
+  "phone": "9876543210",
+  "notes": "Require SS304 grade hardware with matte black finish.",
+  "items": [
+    { "productId": "prod-uuid-1", "quantity": 10, "rate": 1250, "unit": "PCS" }
+  ]
 }</code></pre>
     </div>
     <div class="code-block success-block">
-      <div class="code-header"><span class="lbl-success">✅ Expected Outcome (201 Created / 200 OK)</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
+      <div class="code-header"><span class="lbl-success">✅ Expected Outcome (201 Created)</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
       <pre><code class="code-success">{
   "success": true,
   "data": {
-    "id": "record-uuid-1",
-    "createdAt": "2026-08-11T07:39:36.156Z"
+    "id": "quote-uuid-1",
+    "referenceNo": "PRC-QT-2026-27/001",
+    "status": "PENDING",
+    "basicPrice": 12500,
+    "gstAmount": 2250,
+    "grandTotal": 14750,
+    "accessToken": "5f8a7e3d2..."
   },
-  "message": "Operation completed successfully"
+  "message": "Quotation submitted successfully. Reference No: PRC-QT-2026-27/001"
 }</code></pre>
-    </div>
-    <div class="code-block error-block">
-      <div class="code-header"><span class="lbl-error">⚠️ Possible Error Responses</span></div>
-      <pre><code class="code-error">[
-  {
-    "code": "400 Bad Request",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "VALIDATION_ERROR",
-        "message": "Invalid parameter or schema validation failed",
-        "details": [
-          "email must be a valid email address"
-        ]
-      }
-    }
-  },
-  {
-    "code": "401 Unauthorized",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "UNAUTHORIZED",
-        "message": "Access token is missing or invalid"
-      }
-    }
-  },
-  {
-    "code": "404 Not Found",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "NOT_FOUND",
-        "message": "Requested resource was not found"
-      }
-    }
-  },
-  {
-    "code": "500 Internal Server Error",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "INTERNAL_SERVER_ERROR",
-        "message": "An unexpected server error occurred"
-      }
-    }
-  }
-]</code></pre>
     </div>
   </div>
 </div>
+
 <div id="ep-152" class="endpoint-card">
   <div class="ep-header">
     <span class="badge get">GET</span>
-    <span class="ep-path">/api/v1/quotes/:id</span>
-    <span class="ep-auth auth-yes">🔒 Auth Required</span>
+    <span class="ep-path">/api/v1/quotes/track</span>
+    <span class="ep-auth auth-no">🔓 Public</span>
   </div>
   <div class="ep-body">
-    <p class="ep-info"><strong>Source File:</strong> <code>quotes.routes.ts</code></p>
-    <p class="ep-info"><strong>Headers:</strong> <code>Content-Type: application/json</code> | <code>Authorization: Bearer &lt;accessToken&gt;</code></p>
-    <p class="no-body"><em>No Request Body required (GET request)</em></p>
+    <p class="ep-info"><strong>Summary:</strong> Universal tracking by ANY ONE of: Reference No, Email, GSTIN, or Phone.</p>
+    <p class="ep-info"><strong>Query Parameter:</strong> <code>query=PRC-QT-2026-27/001</code> or <code>query=27AAPCA1234F1Z5</code></p>
     <div class="code-block success-block">
       <div class="code-header"><span class="lbl-success">✅ Expected Outcome (200 OK)</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
       <pre><code class="code-success">{
   "success": true,
-  "data": [],
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "totalItems": 1
-  }
+  "data": [
+    {
+      "id": "quote-uuid-1",
+      "referenceNo": "PRC-QT-2026-27/001",
+      "projectName": "DLF CyberCity Restroom Project",
+      "status": "APPROVED",
+      "grandTotal": 14750,
+      "hasDigitalSignature": true,
+      "accessToken": "5f8a7e3d2..."
+    }
+  ]
 }</code></pre>
-    </div>
-    <div class="code-block error-block">
-      <div class="code-header"><span class="lbl-error">⚠️ Possible Error Responses</span></div>
-      <pre><code class="code-error">[
-  {
-    "code": "400 Bad Request",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "VALIDATION_ERROR",
-        "message": "Invalid parameter or schema validation failed",
-        "details": [
-          "email must be a valid email address"
-        ]
-      }
-    }
-  },
-  {
-    "code": "401 Unauthorized",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "UNAUTHORIZED",
-        "message": "Access token is missing or invalid"
-      }
-    }
-  },
-  {
-    "code": "404 Not Found",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "NOT_FOUND",
-        "message": "Requested resource was not found"
-      }
-    }
-  },
-  {
-    "code": "500 Internal Server Error",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "INTERNAL_SERVER_ERROR",
-        "message": "An unexpected server error occurred"
-      }
-    }
-  }
-]</code></pre>
     </div>
   </div>
 </div>
+
 <div id="ep-153" class="endpoint-card">
   <div class="ep-header">
-    <span class="badge patch">PATCH</span>
-    <span class="ep-path">/api/v1/quotes/:id/status</span>
-    <span class="ep-auth auth-yes">🔒 Auth Required</span>
+    <span class="badge get">GET</span>
+    <span class="ep-path">/api/v1/quotes/public/:token</span>
+    <span class="ep-auth auth-no">🔓 Token Auth</span>
   </div>
   <div class="ep-body">
-    <p class="ep-info"><strong>Source File:</strong> <code>quotes.routes.ts</code></p>
-    <p class="ep-info"><strong>Headers:</strong> <code>Content-Type: application/json</code> | <code>Authorization: Bearer &lt;accessToken&gt;</code></p>
-    <div class="code-block">
-      <div class="code-header"><span class="lbl-body">📥 Request Body ({ })</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
-      <pre><code>{
-  "name": "string (required)",
-  "status": "ACTIVE | INACTIVE",
-  "notes": "string (optional)"
-}</code></pre>
-    </div>
-    <div class="code-block success-block">
-      <div class="code-header"><span class="lbl-success">✅ Expected Outcome (200 OK)</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
-      <pre><code class="code-success">{
-  "success": true,
-  "data": [],
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "totalItems": 1
-  }
-}</code></pre>
-    </div>
-    <div class="code-block error-block">
-      <div class="code-header"><span class="lbl-error">⚠️ Possible Error Responses</span></div>
-      <pre><code class="code-error">[
-  {
-    "code": "400 Bad Request",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "VALIDATION_ERROR",
-        "message": "Invalid parameter or schema validation failed",
-        "details": [
-          "email must be a valid email address"
-        ]
-      }
-    }
-  },
-  {
-    "code": "401 Unauthorized",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "UNAUTHORIZED",
-        "message": "Access token is missing or invalid"
-      }
-    }
-  },
-  {
-    "code": "404 Not Found",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "NOT_FOUND",
-        "message": "Requested resource was not found"
-      }
-    }
-  },
-  {
-    "code": "500 Internal Server Error",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "INTERNAL_SERVER_ERROR",
-        "message": "An unexpected server error occurred"
-      }
-    }
-  }
-]</code></pre>
-    </div>
+    <p class="ep-info"><strong>Summary:</strong> Retrieve customer-facing quotation document, embedded QR code data, and digital signature seal.</p>
   </div>
 </div>
+
 <div id="ep-154" class="endpoint-card">
   <div class="ep-header">
     <span class="badge post">POST</span>
-    <span class="ep-path">/api/v1/quotes/:id/convert</span>
-    <span class="ep-auth auth-yes">🔒 Auth Required</span>
+    <span class="ep-path">/api/v1/quotes/public/:token/respond</span>
+    <span class="ep-auth auth-no">🔓 Token Auth</span>
   </div>
   <div class="ep-body">
-    <p class="ep-info"><strong>Source File:</strong> <code>quotes.routes.ts</code></p>
-    <p class="ep-info"><strong>Headers:</strong> <code>Content-Type: application/json</code> | <code>Authorization: Bearer &lt;accessToken&gt;</code></p>
+    <p class="ep-info"><strong>Summary:</strong> Customer Accept / Decline Decision. Locks further responses once submitted.</p>
     <div class="code-block">
-      <div class="code-header"><span class="lbl-body">📥 Request Body ({ })</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
+      <div class="code-header"><span class="lbl-body">📥 Request Body</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
       <pre><code>{
-  "name": "string (required)",
-  "status": "ACTIVE | INACTIVE",
-  "notes": "string (optional)"
+  "decision": "accepted",
+  "notes": "Approved for purchase order dispatch."
 }</code></pre>
-    </div>
-    <div class="code-block success-block">
-      <div class="code-header"><span class="lbl-success">✅ Expected Outcome (201 Created / 200 OK)</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
-      <pre><code class="code-success">{
-  "success": true,
-  "data": {
-    "id": "record-uuid-1",
-    "createdAt": "2026-08-11T07:39:36.156Z"
-  },
-  "message": "Operation completed successfully"
-}</code></pre>
-    </div>
-    <div class="code-block error-block">
-      <div class="code-header"><span class="lbl-error">⚠️ Possible Error Responses</span></div>
-      <pre><code class="code-error">[
-  {
-    "code": "400 Bad Request",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "VALIDATION_ERROR",
-        "message": "Invalid parameter or schema validation failed",
-        "details": [
-          "email must be a valid email address"
-        ]
-      }
-    }
-  },
-  {
-    "code": "401 Unauthorized",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "UNAUTHORIZED",
-        "message": "Access token is missing or invalid"
-      }
-    }
-  },
-  {
-    "code": "404 Not Found",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "NOT_FOUND",
-        "message": "Requested resource was not found"
-      }
-    }
-  },
-  {
-    "code": "500 Internal Server Error",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "INTERNAL_SERVER_ERROR",
-        "message": "An unexpected server error occurred"
-      }
-    }
-  }
-]</code></pre>
     </div>
   </div>
 </div>
+
 <div id="ep-155" class="endpoint-card">
   <div class="ep-header">
-    <span class="badge patch">PATCH</span>
-    <span class="ep-path">/api/v1/quotes/:id</span>
-    <span class="ep-auth auth-yes">🔒 Auth Required</span>
+    <span class="badge post">POST</span>
+    <span class="ep-path">/api/v1/quotes/verify-signature</span>
+    <span class="ep-auth auth-no">🔓 Public</span>
   </div>
   <div class="ep-body">
-    <p class="ep-info"><strong>Source File:</strong> <code>quotes.routes.ts</code></p>
-    <p class="ep-info"><strong>Headers:</strong> <code>Content-Type: application/json</code> | <code>Authorization: Bearer &lt;accessToken&gt;</code></p>
+    <p class="ep-info"><strong>Summary:</strong> Cryptographically verify HMAC-SHA256 digital signature and QR integrity against Pacific Central Registry.</p>
     <div class="code-block">
-      <div class="code-header"><span class="lbl-body">📥 Request Body ({ })</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
+      <div class="code-header"><span class="lbl-body">📥 Request Body</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
       <pre><code>{
-  "name": "string (required)",
-  "status": "ACTIVE | INACTIVE",
-  "notes": "string (optional)"
+  "referenceNo": "PRC-QT-2026-27/001",
+  "digitalSignature": "optional-signature-hash"
 }</code></pre>
     </div>
     <div class="code-block success-block">
       <div class="code-header"><span class="lbl-success">✅ Expected Outcome (200 OK)</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
       <pre><code class="code-success">{
   "success": true,
-  "data": [],
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "totalItems": 1
+  "data": {
+    "isValid": true,
+    "tamperDetected": false,
+    "referenceNo": "PRC-QT-2026-27/001",
+    "companyName": "Apex Infrastructure Pvt Ltd",
+    "gstNo": "27AAPCA1234F1Z5",
+    "grandTotal": 14750,
+    "signedBy": "Pacific Commercial Authority",
+    "message": "Quotation is authentic and matches cryptographic HMAC-SHA256 signature."
   }
 }</code></pre>
     </div>
-    <div class="code-block error-block">
-      <div class="code-header"><span class="lbl-error">⚠️ Possible Error Responses</span></div>
-      <pre><code class="code-error">[
-  {
-    "code": "400 Bad Request",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "VALIDATION_ERROR",
-        "message": "Invalid parameter or schema validation failed",
-        "details": [
-          "email must be a valid email address"
-        ]
-      }
-    }
-  },
-  {
-    "code": "401 Unauthorized",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "UNAUTHORIZED",
-        "message": "Access token is missing or invalid"
-      }
-    }
-  },
-  {
-    "code": "404 Not Found",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "NOT_FOUND",
-        "message": "Requested resource was not found"
-      }
-    }
-  },
-  {
-    "code": "500 Internal Server Error",
-    "body": {
-      "success": false,
-      "error": {
-        "code": "INTERNAL_SERVER_ERROR",
-        "message": "An unexpected server error occurred"
-      }
-    }
-  }
-]</code></pre>
-    </div>
+  </div>
+</div>
+
+<div id="ep-156" class="endpoint-card">
+  <div class="ep-header">
+    <span class="badge patch">PATCH</span>
+    <span class="ep-path">/api/v1/quotes/:id/items</span>
+    <span class="ep-auth auth-yes">🔒 Admin Auth</span>
+  </div>
+  <div class="ep-body">
+    <p class="ep-info"><strong>Summary:</strong> Admin revision of line items, unit rates, quantities, and transport/shipping costs.</p>
+  </div>
+</div>
+
+<div id="ep-157" class="endpoint-card">
+  <div class="ep-header">
+    <span class="badge post">POST</span>
+    <span class="ep-path">/api/v1/quotes/:id/sign</span>
+    <span class="ep-auth auth-yes">🔒 Admin Auth</span>
+  </div>
+  <div class="ep-body">
+    <p class="ep-info"><strong>Summary:</strong> Digitally sign quotation with HMAC-SHA256, generate QR verification seal, mark as APPROVED, and email customer secure review link.</p>
   </div>
 </div>
 </section>

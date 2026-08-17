@@ -2935,180 +2935,306 @@ export const openApiSpec = {
   },
   "/quotes": {
     "get": {
-      "summary": "List B2B RFQ Quotations",
+      "summary": "List B2B RFQ Quotations (Admin)",
+      "description": "Retrieve quotations with pagination, status tabs, search query, date ranges, and aggregated metrics.",
       "tags": [
         "14. B2B Quotes & RFQs"
       ],
+      "parameters": [
+        { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 }, "description": "Page number" },
+        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 }, "description": "Page size" },
+        { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["PENDING", "UNDER_REVIEW", "APPROVED", "REJECTED", "CONVERTED", "EXPIRED"] }, "description": "Filter by status" },
+        { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Search by reference number, company, email, or client" },
+        { "name": "fromDate", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter start date (YYYY-MM-DD)" },
+        { "name": "toDate", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Filter end date (YYYY-MM-DD)" }
+      ],
       "responses": {
-        "200": {
-          "description": "Successful response"
-        },
-        "400": {
-          "description": "Validation or client error"
-        },
-        "401": {
-          "description": "Unauthorized access"
-        }
+        "200": { "description": "Paginated list of quotations and metrics summary" },
+        "401": { "description": "Unauthorized access" }
       },
       "security": [
-        {
-          "BearerAuth": []
-        }
+        { "BearerAuth": [] }
       ]
     },
     "post": {
-      "summary": "Submit B2B Bulk Price RFQ Request",
+      "summary": "Submit B2B Quotation / RFQ Request",
+      "description": "Submit a new commercial quotation request with line items, project details, and contact information. Only verified B2B accounts can submit.",
       "tags": [
         "14. B2B Quotes & RFQs"
       ],
-      "responses": {
-        "200": {
-          "description": "Successful response"
-        },
-        "400": {
-          "description": "Validation or client error"
-        },
-        "401": {
-          "description": "Unauthorized access"
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["projectName", "firstName", "lastName", "companyName", "gstNo", "email", "phone", "items"],
+              "properties": {
+                "projectName": { "type": "string", "example": "DLF CyberCity Restroom Project" },
+                "firstName": { "type": "string", "example": "Rahul" },
+                "lastName": { "type": "string", "example": "Sharma" },
+                "companyName": { "type": "string", "example": "Apex Infrastructure Pvt Ltd" },
+                "gstNo": { "type": "string", "example": "27AAPCA1234F1Z5" },
+                "email": { "type": "string", "example": "procurement@apexinfradev.com" },
+                "phone": { "type": "string", "example": "9876543210" },
+                "notes": { "type": "string", "example": "Require SS304 grade with matte black PVD finish." },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["productId", "quantity"],
+                    "properties": {
+                      "productId": { "type": "string" },
+                      "quantity": { "type": "integer", "minimum": 1 },
+                      "rate": { "type": "number", "minimum": 0 },
+                      "unit": { "type": "string", "default": "PCS" }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
+      },
+      "responses": {
+        "201": { "description": "Quotation submitted successfully with Indian FY reference number" },
+        "400": { "description": "Validation error" }
+      }
+    }
+  },
+  "/quotes/track": {
+    "get": {
+      "summary": "Universal Quotation Tracking",
+      "description": "Track quotation progress by ANY ONE of: Quotation Reference No (e.g. PRC-QT-2026-27/001), B2B Customer Email, GSTIN, or Phone.",
+      "tags": [
+        "14. B2B Quotes & RFQs"
+      ],
+      "parameters": [
+        { "name": "query", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Search identifier (Ref No, Email, GST, or Phone)" }
+      ],
+      "responses": {
+        "200": { "description": "List of matching quotations with status, totals, and access tokens" },
+        "400": { "description": "Missing search query parameter" }
+      }
+    }
+  },
+  "/quotes/public/{token}": {
+    "get": {
+      "summary": "Get Public Quotation for Customer Review",
+      "description": "Retrieve official formatted quotation details, QR code seal, and cryptographic digital signature via secure token.",
+      "tags": [
+        "14. B2B Quotes & RFQs"
+      ],
+      "parameters": [
+        { "name": "token", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Secure access token" }
+      ],
+      "responses": {
+        "200": { "description": "Formatted quotation document" },
+        "404": { "description": "Quotation not found or invalid token" }
+      }
+    }
+  },
+  "/quotes/public/{token}/respond": {
+    "post": {
+      "summary": "Customer Accept / Decline Quotation",
+      "description": "Record customer acceptance or declination for an approved quotation. Locks further responses once submitted.",
+      "tags": [
+        "14. B2B Quotes & RFQs"
+      ],
+      "parameters": [
+        { "name": "token", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Secure access token" }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["decision"],
+              "properties": {
+                "decision": { "type": "string", "enum": ["accepted", "declined"] },
+                "notes": { "type": "string", "description": "Optional feedback or reason" }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": { "description": "Response recorded successfully" },
+        "400": { "description": "Quote already responded or not approved" }
+      }
+    }
+  },
+  "/quotes/verify-signature": {
+    "post": {
+      "summary": "Verify Quotation Digital Signature & QR Authenticity",
+      "description": "Cryptographically verify the HMAC-SHA256 digital signature of any quotation issued by Pacific Products & Solutions.",
+      "tags": [
+        "14. B2B Quotes & RFQs"
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["referenceNo"],
+              "properties": {
+                "referenceNo": { "type": "string", "example": "PRC-QT-2026-27/001" },
+                "digitalSignature": { "type": "string", "description": "Optional SHA256 hash" }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": { "description": "Signature verification result with signer metadata and tamper flag" }
       }
     }
   },
   "/quotes/{id}": {
     "get": {
-      "summary": "Get RFQ Details by ID",
+      "summary": "Get RFQ Details by ID (Admin)",
+      "description": "Retrieve complete quotation details including line items, client profile, and chronological activity audit trail.",
       "tags": [
         "14. B2B Quotes & RFQs"
       ],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Quotation UUID" }
+      ],
       "responses": {
-        "200": {
-          "description": "Successful response"
-        },
-        "400": {
-          "description": "Validation or client error"
-        },
-        "401": {
-          "description": "Unauthorized access"
-        }
+        "200": { "description": "Detailed quotation record with audit logs" },
+        "404": { "description": "Quotation not found" }
       },
       "security": [
-        {
-          "BearerAuth": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          },
-          "description": "Path parameter id"
-        }
+        { "BearerAuth": [] }
       ]
     },
+    "delete": {
+      "summary": "Soft-Delete Quotation (Admin)",
+      "description": "Mark quotation as deleted while preserving history in compliance audit trail.",
+      "tags": [
+        "14. B2B Quotes & RFQs"
+      ],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Quotation UUID" }
+      ],
+      "responses": {
+        "200": { "description": "Quotation soft-deleted successfully" }
+      },
+      "security": [
+        { "BearerAuth": [] }
+      ]
+    }
+  },
+  "/quotes/{id}/status": {
     "patch": {
-      "summary": "Update RFQ Status & Notes",
+      "summary": "Update RFQ Status (Admin)",
+      "description": "Transition quotation status (UNDER_REVIEW, PENDING, REJECTED). Requires mandatory reason for PENDING and REJECTED.",
       "tags": [
         "14. B2B Quotes & RFQs"
       ],
-      "responses": {
-        "200": {
-          "description": "Successful response"
-        },
-        "400": {
-          "description": "Validation or client error"
-        },
-        "401": {
-          "description": "Unauthorized access"
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Quotation UUID" }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["status"],
+              "properties": {
+                "status": { "type": "string", "enum": ["UNDER_REVIEW", "PENDING", "APPROVED", "REJECTED"] },
+                "statusReason": { "type": "string", "description": "Mandatory explanation for PENDING and REJECTED" }
+              }
+            }
+          }
         }
       },
+      "responses": {
+        "200": { "description": "Quotation status updated" }
+      },
       "security": [
-        {
-          "BearerAuth": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          },
-          "description": "Path parameter id"
-        }
+        { "BearerAuth": [] }
       ]
     }
   },
-  "/quotes/{id}/approve": {
-    "post": {
-      "summary": "Approve Quotation and Issue Contract Rate",
+  "/quotes/{id}/items": {
+    "patch": {
+      "summary": "Revise Quotation Line Items & Shipping (Admin)",
+      "description": "Edit quantities, unit rates, add/remove items, and set shipping cost with server-recalculated basic price, GST (18%), and grand total.",
       "tags": [
         "14. B2B Quotes & RFQs"
       ],
-      "responses": {
-        "200": {
-          "description": "Successful response"
-        },
-        "400": {
-          "description": "Validation or client error"
-        },
-        "401": {
-          "description": "Unauthorized access"
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Quotation UUID" }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["items"],
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["productId", "quantity", "rate"],
+                    "properties": {
+                      "productId": { "type": "string" },
+                      "productNameSnapshot": { "type": "string" },
+                      "unit": { "type": "string" },
+                      "quantity": { "type": "integer" },
+                      "rate": { "type": "number" }
+                    }
+                  }
+                },
+                "shippingCost": { "type": "number", "nullable": true },
+                "adminNotes": { "type": "string" }
+              }
+            }
+          }
         }
       },
+      "responses": {
+        "200": { "description": "Line items and pricing revised successfully" }
+      },
       "security": [
-        {
-          "BearerAuth": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          },
-          "description": "Path parameter id"
-        }
+        { "BearerAuth": [] }
       ]
     }
   },
-  "/quotes/{id}/reject": {
+  "/quotes/{id}/sign": {
     "post": {
-      "summary": "Reject Quotation Request",
+      "summary": "Digitally Sign & Approve Quotation (Admin)",
+      "description": "Generates HMAC-SHA256 digital signature seal, creates QR code data URI, updates status to APPROVED, and emails customer secure review link.",
       "tags": [
         "14. B2B Quotes & RFQs"
       ],
-      "responses": {
-        "200": {
-          "description": "Successful response"
-        },
-        "400": {
-          "description": "Validation or client error"
-        },
-        "401": {
-          "description": "Unauthorized access"
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Quotation UUID" }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "shippingCost": { "type": "number", "nullable": true },
+                "adminNotes": { "type": "string" }
+              }
+            }
+          }
         }
       },
+      "responses": {
+        "200": { "description": "Quotation digitally signed with HMAC-SHA256 and QR code generated" }
+      },
       "security": [
-        {
-          "BearerAuth": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          },
-          "description": "Path parameter id"
-        }
+        { "BearerAuth": [] }
       ]
     }
   },
