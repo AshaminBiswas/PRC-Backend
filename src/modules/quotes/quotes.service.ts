@@ -35,6 +35,32 @@ interface AdminContext {
   roleSlug?: string;
 }
 
+const safeLogActivity = async (data: {
+  quoteId: string;
+  changedBy?: string | null;
+  changeType: string;
+  note: string;
+  oldValue?: any;
+  newValue?: any;
+}) => {
+  try {
+    if ((prisma as any).quoteActivityLog) {
+      await (prisma as any).quoteActivityLog.create({
+        data: {
+          quoteId: data.quoteId,
+          changedBy: data.changedBy || null,
+          changeType: data.changeType,
+          note: data.note,
+          oldValue: data.oldValue || undefined,
+          newValue: data.newValue || undefined,
+        },
+      });
+    }
+  } catch (err) {
+    console.warn(`[QuotesService] Non-critical activity log not recorded: ${err}`);
+  }
+};
+
 const formatQuoteItem = (item: any) => ({
   id: item.id,
   quoteId: item.quoteId,
@@ -210,13 +236,6 @@ export const createB2BQuote = async (input: CreateB2BQuoteInput, userId?: string
       items: {
         create: itemsToCreate,
       },
-      activityLogs: {
-        create: {
-          changeType: 'status_change',
-          note: `Quotation ${referenceNo} submitted by B2B customer ${input.firstName} ${input.lastName} (${input.companyName})`,
-          newValue: { status: 'PENDING', referenceNo, basicPrice: basicPriceDecimal, grandTotal: grandTotalDecimal },
-        },
-      },
     },
     include: {
       items: {
@@ -225,6 +244,15 @@ export const createB2BQuote = async (input: CreateB2BQuoteInput, userId?: string
         },
       },
     },
+  });
+
+  // Log activity safely in background
+  safeLogActivity({
+    quoteId: createdQuote.id,
+    changedBy: userId || null,
+    changeType: 'status_change',
+    note: `Quotation ${referenceNo} submitted by B2B customer ${input.firstName} ${input.lastName} (${input.companyName})`,
+    newValue: { status: 'PENDING', referenceNo, basicPrice: basicPriceDecimal, grandTotal: grandTotalDecimal },
   });
 
   // 5. Send Confirmation Email
@@ -492,27 +520,44 @@ export const listAdminQuotes = async (query: ListQuotesQuery) => {
  * 6. Admin: Get Quote Detail by ID with Full Audit Trail
  */
 export const getAdminQuoteById = async (id: string) => {
-  const quote = await prisma.quote.findUnique({
-    where: { id },
-    include: {
-      items: {
-        include: {
-          product: true,
-          variant: true,
-        },
-        orderBy: { slNo: 'asc' },
-      },
-      activityLogs: {
-        include: {
-          adminUser: {
-            select: { id: true, email: true, firstName: true, lastName: true },
+  let quote: any;
+  try {
+    quote = await prisma.quote.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            product: true,
+            variant: true,
           },
+          orderBy: { slNo: 'asc' },
         },
-        orderBy: { createdAt: 'desc' },
+        activityLogs: {
+          include: {
+            adminUser: {
+              select: { id: true, email: true, firstName: true, lastName: true },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        user: true,
       },
-      user: true,
-    },
-  });
+    });
+  } catch {
+    quote = await prisma.quote.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            product: true,
+            variant: true,
+          },
+          orderBy: { slNo: 'asc' },
+        },
+        user: true,
+      },
+    });
+  }
 
   if (!quote) {
     throw new AppError('NOT_FOUND', 'Quotation not found', 404);
@@ -559,20 +604,19 @@ export const updateQuoteStatusByAdmin = async (
     data: {
       status: targetStatus,
       statusReason: input.statusReason || null,
-      activityLogs: {
-        create: {
-          changedBy: admin.id,
-          changeType: 'status_change',
-          note: `Status changed from ${quote.status} to ${targetStatus} by ${adminName}${input.statusReason ? ` (Reason: ${input.statusReason})` : ''}`,
-          oldValue: { status: quote.status, reason: quote.statusReason },
-          newValue: { status: targetStatus, reason: input.statusReason },
-        },
-      },
     },
     include: {
       items: { include: { product: true } },
-      activityLogs: true,
     },
+  });
+
+  safeLogActivity({
+    quoteId: id,
+    changedBy: admin.id,
+    changeType: 'status_change',
+    note: `Status changed from ${quote.status} to ${targetStatus} by ${adminName}${input.statusReason ? ` (Reason: ${input.statusReason})` : ''}`,
+    oldValue: { status: quote.status, reason: quote.statusReason },
+    newValue: { status: targetStatus, reason: input.statusReason },
   });
 
   const emailContext = {
@@ -679,23 +723,22 @@ export const updateQuoteItemsAndPricing = async (
         signedBy: null,
         signedAt: null,
         qrCodeData: null,
-        activityLogs: {
-          create: {
-            changedBy: admin.id,
-            changeType: 'item_edit',
-            note: `Line items and pricing updated by ${adminName}. New Basic: ₹${basicPriceDecimal}, Shipping: ${shippingCostDecimal !== null ? `₹${shippingCostDecimal}` : 'At actual'}, Grand Total: ₹${grandTotalDecimal}`,
-            oldValue: { basicPrice: quote.basicPrice, grandTotal: quote.grandTotal, shippingCost: quote.shippingCost },
-            newValue: { basicPrice: basicPriceDecimal, grandTotal: grandTotalDecimal, shippingCost: shippingCostDecimal },
-          },
-        },
       },
       include: {
         items: { include: { product: true } },
-        activityLogs: true,
       },
     });
 
     return q;
+  });
+
+  safeLogActivity({
+    quoteId: id,
+    changedBy: admin.id,
+    changeType: 'item_edit',
+    note: `Line items and pricing updated by ${adminName}. New Basic: ₹${basicPriceDecimal}, Shipping: ${shippingCostDecimal !== null ? `₹${shippingCostDecimal}` : 'At actual'}, Grand Total: ₹${grandTotalDecimal}`,
+    oldValue: { basicPrice: quote.basicPrice, grandTotal: quote.grandTotal, shippingCost: quote.shippingCost },
+    newValue: { basicPrice: basicPriceDecimal, grandTotal: grandTotalDecimal, shippingCost: shippingCostDecimal },
   });
 
   return formatQuote(updatedQuote);
@@ -772,19 +815,18 @@ export const digitallySignAndApproveQuote = async (
       signedAt,
       qrCodeData,
       adminNotes: input.adminNotes !== undefined ? input.adminNotes : quote.adminNotes,
-      activityLogs: {
-        create: {
-          changedBy: admin.id,
-          changeType: 'signed',
-          note: `Quotation digitally signed and approved by ${adminName}. Grand Total: ₹${grandTotal.toLocaleString('en-IN')}`,
-          newValue: { digitalSignature, signedBy: adminName, signedAt, grandTotal },
-        },
-      },
     },
     include: {
       items: { include: { product: true } },
-      activityLogs: true,
     },
+  });
+
+  safeLogActivity({
+    quoteId: id,
+    changedBy: admin.id,
+    changeType: 'signed',
+    note: `Quotation digitally signed and approved by ${adminName}. Grand Total: ₹${grandTotal.toLocaleString('en-IN')}`,
+    newValue: { digitalSignature, signedBy: adminName, signedAt, grandTotal },
   });
 
   // 4. Send Approval Email with secure token link & digital seal
@@ -850,16 +892,16 @@ export const softDeleteQuote = async (id: string, admin: AdminContext) => {
     data: {
       isDeleted: true,
       deletedAt: new Date(),
-      activityLogs: {
-        create: {
-          changedBy: admin.id,
-          changeType: 'deleted',
-          note: `Quotation marked as deleted by ${adminName}`,
-          oldValue: { isDeleted: false },
-          newValue: { isDeleted: true, deletedAt: new Date() },
-        },
-      },
     },
+  });
+
+  safeLogActivity({
+    quoteId: id,
+    changedBy: admin.id,
+    changeType: 'deleted',
+    note: `Quotation marked as deleted by ${adminName}`,
+    oldValue: { isDeleted: false },
+    newValue: { isDeleted: true, deletedAt: new Date() },
   });
 
   return { success: true, message: `Quotation ${quote.referenceNo || quote.quoteNumber} soft-deleted successfully.` };
