@@ -74,3 +74,16 @@ export const updateQuotePricing = async (req: Request, res: Response, next: Next
     next(error);
   }
 };
+
+export const updateCustomerQuote = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+    }
+    const data = await quotesService.updateCustomerQuote(req.params.id, req.user.id, req.body);
+    sendSuccess(res, data, 'Quotation updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+

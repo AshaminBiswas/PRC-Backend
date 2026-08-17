@@ -37,6 +37,15 @@ router.get(
   controller.getQuoteById
 );
 
+// PUT /:id - Customer update their own PENDING quotation
+router.put(
+  '/:id',
+  authenticate,
+  validate(QuoteIdParamSchema, 'params'),
+  validate(CreateQuoteSchema),
+  controller.updateCustomerQuote
+);
+
 // PATCH /:id/status - Admin status transition
 router.patch(
   '/:id/status',

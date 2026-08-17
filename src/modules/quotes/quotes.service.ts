@@ -484,3 +484,101 @@ export const updateQuotePricing = async (id: string, input: UpdateQuotePricingIn
 
   return formatQuote(finalQuote);
 };
+
+export const updateCustomerQuote = async (id: string, userId: string, input: CreateQuoteInput) => {
+  const quote = await prisma.quote.findUnique({
+    where: { id },
+    include: { items: true },
+  });
+
+  if (!quote) {
+    throw new AppError('NOT_FOUND', 'Quote not found', 404);
+  }
+
+  if (quote.userId !== userId) {
+    throw new AppError('FORBIDDEN', 'You can only update your own quotations', 403);
+  }
+
+  if (quote.status !== QuoteStatus.PENDING && quote.status !== QuoteStatus.UNDER_REVIEW) {
+    throw new AppError(
+      'BAD_REQUEST',
+      `Cannot modify quotation in ${quote.status} status. Only PENDING or UNDER_REVIEW quotations can be updated.`,
+      400
+    );
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.quoteItem.deleteMany({
+      where: { quoteId: id },
+    });
+
+    let subtotal = 0;
+    const itemsToCreate: any[] = [];
+
+    for (const itemInput of input.items) {
+      let product: any = await tx.product.findUnique({
+        where: { id: itemInput.productId },
+        include: { variants: true },
+      });
+
+      let targetProductId = itemInput.productId;
+      let targetVariantId: string | null = itemInput.variantId || null;
+      let unitPrice = product ? Number(product.price) : 0;
+
+      if (itemInput.variantId) {
+        let variant = product?.variants?.find((v: any) => v.id === itemInput.variantId);
+        if (!variant) {
+          const globalVariant = await tx.productVariant.findUnique({
+            where: { id: itemInput.variantId },
+            include: { product: true },
+          });
+          if (globalVariant) {
+            variant = globalVariant;
+            targetProductId = globalVariant.productId;
+            product = globalVariant.product;
+            unitPrice = Number(globalVariant.price);
+          } else if (product) {
+            targetVariantId = null;
+            unitPrice = Number(product.price);
+          }
+        } else {
+          unitPrice = Number(variant.price);
+        }
+      }
+
+      if (!product) {
+        throw new AppError('NOT_FOUND', `Product with ID ${itemInput.productId} not found`, 404);
+      }
+
+      const priceToUse = itemInput.requestedPrice !== undefined ? itemInput.requestedPrice : unitPrice;
+      const itemTotal = priceToUse * itemInput.quantity;
+      subtotal += itemTotal;
+
+      itemsToCreate.push({
+        quoteId: id,
+        productId: targetProductId,
+        variantId: targetVariantId,
+        quantity: itemInput.quantity,
+        requestedPrice: priceToUse,
+        total: itemTotal,
+      });
+    }
+
+    await tx.quoteItem.createMany({
+      data: itemsToCreate,
+    });
+
+    const updatedQuote = await tx.quote.update({
+      where: { id },
+      data: {
+        subtotal,
+        grandTotal: subtotal,
+        notes: input.notes !== undefined ? input.notes : quote.notes,
+      },
+      select: quoteSelect,
+    });
+
+    return formatQuote(updatedQuote);
+  });
+};
+
