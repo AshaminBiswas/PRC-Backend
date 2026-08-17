@@ -178,7 +178,8 @@ export const downloadQuotePdf = async (req: Request, res: Response, next: NextFu
     const pdfBuffer = await generateQuotationPdf(quote as any);
 
     const referenceNo = quote.referenceNo || quote.quoteNumber || quote.id.slice(0, 8);
-    const filename = `Quotation-${referenceNo}.pdf`;
+    const safeRef = String(referenceNo).replace(/[\/\\]/g, '-');
+    const filename = `Quotation-${safeRef}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -189,3 +190,31 @@ export const downloadQuotePdf = async (req: Request, res: Response, next: NextFu
     next(error);
   }
 };
+
+/**
+ * Public: Customer Download Quotation as PDF via Secure Access Token
+ */
+export const downloadQuotePdfByToken = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const quote = await quotesService.getQuoteByAccessToken(req.params.token);
+
+    if (!quote) {
+      throw new AppError('NOT_FOUND', 'Quotation not found or link has expired', 404);
+    }
+
+    const pdfBuffer = await generateQuotationPdf(quote as any);
+
+    const referenceNo = quote.referenceNo || quote.quoteNumber || quote.id.slice(0, 8);
+    const safeRef = String(referenceNo).replace(/[\/\\]/g, '-');
+    const filename = `Quotation-${safeRef}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(pdfBuffer);
+  } catch (error) {
+    next(error);
+  }
+};
+

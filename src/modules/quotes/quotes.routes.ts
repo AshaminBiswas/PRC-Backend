@@ -41,6 +41,13 @@ router.get(
   controller.getQuoteByToken
 );
 
+// 3a. Customer download quotation PDF via secure access token
+router.get(
+  '/public/:token/pdf',
+  validate(TokenParamSchema, 'params'),
+  controller.downloadQuotePdfByToken
+);
+
 // 4. Customer accept or decline quotation via token
 router.post(
   '/public/:token/respond',
