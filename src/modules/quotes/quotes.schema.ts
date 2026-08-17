@@ -27,7 +27,18 @@ export const CreateB2BQuoteSchema = z.object({
   phone: z
     .string()
     .trim()
-    .regex(PHONE_REGEX, 'Please enter a valid 10-digit Indian mobile number (e.g. 9876543210)'),
+    .transform((val) => {
+      let digits = val.replace(/\D/g, '');
+      if (digits.length === 12 && digits.startsWith('91')) {
+        digits = digits.slice(2);
+      } else if (digits.length === 11 && digits.startsWith('0')) {
+        digits = digits.slice(1);
+      }
+      return digits;
+    })
+    .refine((val) => PHONE_REGEX.test(val), {
+      message: 'Please enter a valid 10-digit Indian mobile number (e.g. 9876543210)',
+    }),
   notes: z.string().max(500, 'Notes cannot exceed 500 characters').optional().nullable(),
   termsAccepted: z.literal(true, {
     errorMap: () => ({ message: 'You must accept the terms and conditions to submit' }),

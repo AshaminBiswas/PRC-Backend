@@ -229,7 +229,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
   // ── Document Definition ──────────────────────────────────────────────────────
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A4',
-    pageMargins: [40, 75, 40, 75],
+    pageMargins: [40, 86, 40, 75],
     defaultStyle: { font: 'Roboto', fontSize: 9.5, color: NAVY },
 
     // ── Header (with Top-Right Logo and PRC Hardware heading only) ─────────────
@@ -247,12 +247,12 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         },
         {
           image: PRC_LOGO_DATA_URL,
-          width: 44,
-          height: 44,
+          width: 58,
+          height: 58,
           alignment: 'right',
         },
       ],
-      margin: [40, 18, 40, 0],
+      margin: [40, 16, 40, 0],
     }),
 
     // ── Footer ─────────────────────────────────────────────────────────────────
