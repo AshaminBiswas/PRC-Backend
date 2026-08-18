@@ -50,11 +50,26 @@ export const AcknowledgeReceiptSchema = z.object({
 
 // ─── Admin Receipt Verification Schema ────────────────────────────────────────
 
-export const VerifyReceiptSchema = z.object({
-  verificationNotes: z.string().max(500).optional(),
-  confirmVerifiedAgainstBank: z.boolean().refine((v) => v === true, {
+export const VerifyReceiptSchema = z
+  .object({
+    confirmedAmount: z.coerce.number().optional(),
+    verificationNotes: z.string().max(500).optional(),
+    confirmBankCredit: z.boolean().optional(),
+    confirmVerifiedAgainstBank: z.boolean().optional(),
+  })
+  .refine((d) => d.confirmBankCredit === true || d.confirmVerifiedAgainstBank === true, {
     message: 'You must explicitly confirm verification against the bank statement',
-  }),
+    path: ['confirmBankCredit'],
+  });
+
+export const AdminUpdatePurchaseOrderSchema = z.object({
+  customerPoReferenceNumber: z.string().max(100).optional(),
+  requestedDeliveryDate: z.string().optional().nullable(),
+  deliveryInstructions: z.string().max(500).optional().nullable(),
+  deliveryAddress: PoAddressSchema.partial().optional(),
+  billingAddress: PoAddressSchema.partial().optional(),
+  advancePercentage: z.coerce.number().min(1).max(100).optional(),
+  adminNotes: z.string().max(500).optional(),
 });
 
 // ─── Admin Reject Receipt Schema ──────────────────────────────────────────────

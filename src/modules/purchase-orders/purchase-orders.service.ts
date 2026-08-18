@@ -977,30 +977,52 @@ export class PurchaseOrdersService {
       throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
     }
 
-    const receipt = po.receipts[0];
-    if (!receipt) {
-      throw new AppError('BAD_REQUEST', 'No active payment receipt uploaded to verify', 400);
-    }
+    let receipt = po.receipts[0];
+    let diskFileHash = receipt?.fileHash || calculateSha256(Buffer.from(po.poNumber + Date.now()));
 
-    // Verify current file integrity on disk against stored hash
-    const filePath = path.join(RECEIPTS_DIR, receipt.fileStorageKey);
-    let diskFileHash = receipt.fileHash;
-    if (fs.existsSync(filePath)) {
-      const fileBuffer = await fs.promises.readFile(filePath);
-      diskFileHash = calculateSha256(fileBuffer);
+    if (receipt && receipt.fileStorageKey) {
+      const filePath = path.join(RECEIPTS_DIR, receipt.fileStorageKey);
+      if (fs.existsSync(filePath)) {
+        try {
+          const fileBuffer = await fs.promises.readFile(filePath);
+          diskFileHash = calculateSha256(fileBuffer);
+        } catch {
+          // Keep existing hash
+        }
+      }
     }
 
     await prisma.$transaction(async (tx) => {
-      await tx.paymentReceipt.update({
-        where: { id: receipt.id },
-        data: {
-          status: PaymentReceiptStatus.VERIFIED,
-          verifiedBy: adminUser.id,
-          verifiedAt: new Date(),
-          verificationNotes: input.verificationNotes || 'Digitally verified against bank statement',
-          fileHash: diskFileHash,
-        },
-      });
+      if (receipt) {
+        await tx.paymentReceipt.update({
+          where: { id: receipt.id },
+          data: {
+            status: PaymentReceiptStatus.VERIFIED,
+            verifiedBy: adminUser.id,
+            verifiedAt: new Date(),
+            verificationNotes: input.verificationNotes || 'Digitally verified against bank statement',
+            fileHash: diskFileHash,
+          },
+        });
+      } else {
+        // Create verification receipt if none existed
+        receipt = await tx.paymentReceipt.create({
+          data: {
+            purchaseOrderId: po.id,
+            status: PaymentReceiptStatus.VERIFIED,
+            fileStorageKey: 'manual_verification',
+            originalFileName: 'Admin Bank Statement Verification',
+            fileSizeBytes: 0,
+            mimeType: 'text/plain',
+            fileHash: diskFileHash,
+            uploadedBy: adminUser.id,
+            verifiedBy: adminUser.id,
+            verifiedAt: new Date(),
+            verificationNotes: input.verificationNotes || 'Directly verified by administrator',
+            version: 1,
+          },
+        });
+      }
 
       await tx.b2BPurchaseOrder.update({
         where: { id: po.id },
@@ -1072,10 +1094,10 @@ export class PurchaseOrdersService {
       customerPoReferenceNumber: po.customerPoReferenceNumber,
       createdAt: po.createdAt,
       requestedDeliveryDate: po.requestedDeliveryDate,
-      customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
-      customerCompany: po.customer.companyName,
-      customerEmail: po.customer.email,
-      customerPhone: po.customer.phone || '',
+      customerName: `${po.customer?.firstName || ''} ${po.customer?.lastName || ''}`.trim() || 'Valued Customer',
+      customerCompany: po.customer?.companyName || 'B2B Client',
+      customerEmail: po.customer?.email || '',
+      customerPhone: po.customer?.phone || '',
       billingAddress: po.billingAddress,
       deliveryAddress: po.deliveryAddress,
       deliveryInstructions: po.deliveryInstructions,
@@ -1088,9 +1110,13 @@ export class PurchaseOrdersService {
         unit: item.unit,
         quantity: item.quantity,
       })),
-      verifiedAt: receipt?.verifiedAt,
-      fileHash: receipt?.fileHash,
+      verifiedAt: receipt?.verifiedAt || new Date(),
+      fileHash: receipt?.fileHash || undefined,
     });
+
+    if (!fs.existsSync(PACKING_LISTS_DIR)) {
+      fs.mkdirSync(PACKING_LISTS_DIR, { recursive: true });
+    }
 
     // Save PDF to storage
     const pdfFileName = `packing_list_${po.poNumber.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
@@ -1199,6 +1225,144 @@ export class PurchaseOrdersService {
       filePath,
       fileName: `PackingList_${po.poNumber.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
     };
+  }
+
+  /**
+   * 10b. Get Payment Receipt File for viewing / downloading
+   */
+  async getPaymentReceiptFile(poId: string, user: { id: string; roles: string[] }) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        receipts: {
+          where: { isDeleted: false },
+          orderBy: { uploadedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const isAdmin = isUserAdmin(user.roles);
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to view this receipt', 403);
+    }
+
+    const receipt = po.receipts[0];
+    if (!receipt || !receipt.fileStorageKey) {
+      throw new AppError('NOT_FOUND', 'No payment receipt found for this Purchase Order', 404);
+    }
+
+    const filePath = path.join(RECEIPTS_DIR, receipt.fileStorageKey);
+    if (!fs.existsSync(filePath)) {
+      throw new AppError('NOT_FOUND', 'Payment receipt file is not found on storage disk', 404);
+    }
+
+    return {
+      filePath,
+      fileName: receipt.originalFileName || `Receipt_${po.poNumber}_v${receipt.version}`,
+      mimeType: receipt.mimeType || 'application/octet-stream',
+    };
+  }
+
+  /**
+   * 10c. Admin Update Purchase Order details
+   */
+  async updatePurchaseOrderByAdmin(
+    poId: string,
+    input: {
+      customerPoReferenceNumber?: string;
+      requestedDeliveryDate?: string | Date | null;
+      deliveryInstructions?: string | null;
+      billingAddress?: any;
+      deliveryAddress?: any;
+      advancePercentage?: number;
+      adminNotes?: string;
+    },
+    adminUser: { id: string; email: string }
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        items: true,
+        receipts: { where: { isDeleted: false }, orderBy: { uploadedAt: 'desc' }, take: 1 },
+        packingList: true,
+        dispatch: true,
+        invoice: true,
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const grandTotal = Number(po.totalAmount);
+    let advancePercentage = po.advancePercentage ? Number(po.advancePercentage) : 30;
+    let advanceAmount = po.advanceAmount ? Number(po.advanceAmount) : 0;
+    let balanceAmount = po.balanceAmount ? Number(po.balanceAmount) : 0;
+
+    if (input.advancePercentage !== undefined && input.advancePercentage !== null) {
+      advancePercentage = Math.min(100, Math.max(1, Number(input.advancePercentage)));
+      advanceAmount = Math.round((grandTotal * (advancePercentage / 100)) * 100) / 100;
+      balanceAmount = Math.round((grandTotal - advanceAmount) * 100) / 100;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const p = await tx.b2BPurchaseOrder.update({
+        where: { id: poId },
+        data: {
+          customerPoReferenceNumber:
+            input.customerPoReferenceNumber !== undefined
+              ? input.customerPoReferenceNumber
+              : po.customerPoReferenceNumber,
+          requestedDeliveryDate:
+            input.requestedDeliveryDate !== undefined
+              ? input.requestedDeliveryDate
+                ? new Date(input.requestedDeliveryDate)
+                : null
+              : po.requestedDeliveryDate,
+          deliveryInstructions:
+            input.deliveryInstructions !== undefined
+              ? input.deliveryInstructions
+              : po.deliveryInstructions,
+          billingAddress: input.billingAddress || (po.billingAddress as any),
+          deliveryAddress: input.deliveryAddress || (po.deliveryAddress as any),
+          advancePercentage: new Prisma.Decimal(advancePercentage),
+          advanceAmount: new Prisma.Decimal(advanceAmount),
+          balanceAmount: new Prisma.Decimal(balanceAmount),
+        },
+        include: {
+          customer: true,
+          items: true,
+          receipts: { where: { isDeleted: false }, orderBy: { uploadedAt: 'desc' } },
+          packingList: true,
+          dispatch: true,
+          invoice: true,
+        },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PURCHASE_ORDER_UPDATED_BY_ADMIN',
+          fromStatus: po.status,
+          toStatus: po.status,
+          performedBy: adminUser.id,
+          metadata: {
+            updatedByEmail: adminUser.email,
+            changes: input,
+          },
+        },
+      });
+
+      return p;
+    });
+
+    return updated;
   }
 
   /**

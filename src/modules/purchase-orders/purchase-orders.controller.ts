@@ -8,6 +8,7 @@ import {
   RejectReceiptSchema,
   ReopenReceiptSchema,
   RejectPurchaseOrderSchema,
+  AdminUpdatePurchaseOrderSchema,
   AdvancePaymentSettingSchema,
   BankAccountSettingSchema,
   SavedAddressSchema,
@@ -138,6 +139,34 @@ export class PurchaseOrdersController {
       );
 
       sendSuccess(res, receipt, 'Payment receipt uploaded successfully. Status: Awaiting Admin Review');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/purchase-orders/:id/payment-receipt/download or /view
+   */
+  async downloadPaymentReceipt(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = (req as any).user;
+      if (!user?.id) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+      const roles = user.roles || (user.roleSlug ? [user.roleSlug] : ['customer']);
+      const { filePath, fileName, mimeType } = await purchaseOrdersService.getPaymentReceiptFile(
+        req.params.id,
+        { id: user.id, roles }
+      );
+
+      res.setHeader('Content-Type', mimeType);
+      const isInline = req.query.inline === 'true' || req.path.endsWith('/view');
+      res.setHeader(
+        'Content-Disposition',
+        `${isInline ? 'inline' : 'attachment'}; filename="${fileName}"`
+      );
+
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
     } catch (error) {
       next(error);
     }
@@ -320,6 +349,26 @@ export class PurchaseOrdersController {
       );
 
       sendSuccess(res, updated, 'Purchase Order rejected successfully.');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH or PUT /api/v1/admin/purchase-orders/:id
+   */
+  async adminUpdatePurchaseOrder(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const adminUser = (req as any).user;
+      const validated = AdminUpdatePurchaseOrderSchema.parse(req.body);
+
+      const updated = await purchaseOrdersService.updatePurchaseOrderByAdmin(
+        req.params.id,
+        validated,
+        { id: adminUser.id, email: adminUser.email }
+      );
+
+      sendSuccess(res, updated, 'Purchase Order details updated successfully.');
     } catch (error) {
       next(error);
     }

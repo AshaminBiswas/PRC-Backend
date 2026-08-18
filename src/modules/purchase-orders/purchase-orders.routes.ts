@@ -76,6 +76,15 @@ router.put('/:id/payment-receipt', upload.single('receipt'), (req, res, next) =>
   purchaseOrdersController.uploadPaymentReceipt(req, res, next)
 );
 
+// View / Download Payment Receipt
+router.get('/:id/payment-receipt/download', (req, res, next) =>
+  purchaseOrdersController.downloadPaymentReceipt(req, res, next)
+);
+
+router.get('/:id/payment-receipt/view', (req, res, next) =>
+  purchaseOrdersController.downloadPaymentReceipt(req, res, next)
+);
+
 // Download Packing List PDF
 router.get('/:id/packing-list', (req, res, next) =>
   purchaseOrdersController.downloadPackingList(req, res, next)
@@ -110,9 +119,27 @@ adminPurchaseOrdersRouter.get('/:id', (req, res, next) =>
   purchaseOrdersController.getPurchaseOrderById(req, res, next)
 );
 
+// Update PO by Admin (shipping address, delivery date, notes, advance %)
+adminPurchaseOrdersRouter.patch('/:id', (req, res, next) =>
+  purchaseOrdersController.adminUpdatePurchaseOrder(req, res, next)
+);
+
+adminPurchaseOrdersRouter.put('/:id', (req, res, next) =>
+  purchaseOrdersController.adminUpdatePurchaseOrder(req, res, next)
+);
+
 // Reject PO at validation stage
 adminPurchaseOrdersRouter.put('/:id/reject', (req, res, next) =>
   purchaseOrdersController.adminRejectPurchaseOrder(req, res, next)
+);
+
+// View / Download Payment Receipt (Admin)
+adminPurchaseOrdersRouter.get('/:id/payment-receipt/download', (req, res, next) =>
+  purchaseOrdersController.downloadPaymentReceipt(req, res, next)
+);
+
+adminPurchaseOrdersRouter.get('/:id/payment-receipt/view', (req, res, next) =>
+  purchaseOrdersController.downloadPaymentReceipt(req, res, next)
 );
 
 // Acknowledge payment receipt and dispatch confirmation email
