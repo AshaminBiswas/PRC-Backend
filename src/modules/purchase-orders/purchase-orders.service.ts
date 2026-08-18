@@ -6,6 +6,7 @@ import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 import { generateNextPoNumber } from './po-numbering.service';
 import { generatePackingListPdfBuffer } from './packing-list-pdf.service';
+import { generatePurchaseOrderPdfBuffer } from './po-pdf.service';
 import {
   sendAdvancePaymentRequestEmail,
   sendPaymentAcknowledgedEmail,
@@ -27,9 +28,10 @@ import { invoiceServiceAdapter } from './invoice-adapter.service';
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 const RECEIPTS_DIR = path.join(UPLOADS_DIR, 'receipts');
 const PACKING_LISTS_DIR = path.join(UPLOADS_DIR, 'packing-lists');
+const PO_DOCS_DIR = path.join(UPLOADS_DIR, 'purchase-orders');
 
 // Ensure directories exist
-[UPLOADS_DIR, RECEIPTS_DIR, PACKING_LISTS_DIR].forEach((dir) => {
+[UPLOADS_DIR, RECEIPTS_DIR, PACKING_LISTS_DIR, PO_DOCS_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -1363,6 +1365,87 @@ export class PurchaseOrdersService {
     });
 
     return updated;
+  }
+
+  /**
+   * 10d. Generate & Download Official Purchase Order PDF
+   */
+  async getPurchaseOrderPdf(poId: string, user: { id: string; roles: string[] }) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        items: true,
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const isAdmin = isUserAdmin(user.roles);
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to download this Purchase Order', 403);
+    }
+
+    const bankSettings = await this.getBankAccountSettings();
+    const bank = bankSettings.find((b) => b.isActive) || bankSettings[0] || DEFAULT_BANK_SETTINGS;
+
+    const pdfBuffer = await generatePurchaseOrderPdfBuffer({
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber,
+      customerPoReferenceNumber: po.customerPoReferenceNumber,
+      status: po.status,
+      createdAt: po.createdAt,
+      requestedDeliveryDate: po.requestedDeliveryDate,
+      customerName: `${po.customer?.firstName || ''} ${po.customer?.lastName || ''}`.trim() || 'Valued Client',
+      customerCompany: po.customer?.companyName || null,
+      customerEmail: po.customer?.email || '',
+      customerPhone: po.customer?.phone || '',
+      customerGstin: po.customer?.gstin || null,
+      billingAddress: po.billingAddress,
+      deliveryAddress: po.deliveryAddress,
+      deliveryInstructions: po.deliveryInstructions,
+      items: po.items.map((item) => ({
+        slNo: item.slNo,
+        productName: item.productName,
+        sku: item.sku,
+        unit: item.unit,
+        quantity: item.quantity,
+        rate: Number(item.rate),
+        taxRate: item.taxRate ? Number(item.taxRate) : undefined,
+        taxAmount: item.taxAmount ? Number(item.taxAmount) : undefined,
+        total: Number(item.total || item.amount),
+      })),
+      subtotal: Number(po.subtotal),
+      taxTotal: Number(po.taxTotal),
+      discountTotal: Number(po.discountTotal || 0),
+      shippingCost: Number(po.shippingCost || 0),
+      grandTotal: Number(po.totalAmount),
+      advancePercentage: Number(po.advancePercentage || 30),
+      advanceAmount: Number(po.advanceAmount || 0),
+      balanceAmount: Number(po.balanceAmount || 0),
+      bankDetails: {
+        accountHolderName: bank.accountHolderName,
+        bankName: bank.bankName,
+        accountNumber: bank.accountNumber,
+        ifscOrRoutingNumber: bank.ifscOrRoutingNumber,
+        branch: bank.branch,
+      },
+    });
+
+    if (!fs.existsSync(PO_DOCS_DIR)) {
+      fs.mkdirSync(PO_DOCS_DIR, { recursive: true });
+    }
+
+    const pdfFileName = `PurchaseOrder_${po.poNumber.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    const pdfPath = path.join(PO_DOCS_DIR, pdfFileName);
+    await fs.promises.writeFile(pdfPath, pdfBuffer);
+
+    return {
+      filePath: pdfPath,
+      fileName: pdfFileName,
+    };
   }
 
   /**

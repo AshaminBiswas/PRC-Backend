@@ -173,6 +173,34 @@ export class PurchaseOrdersController {
   }
 
   /**
+   * GET /api/v1/purchase-orders/:id/download or /view
+   */
+  async downloadPurchaseOrderPdf(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = (req as any).user;
+      if (!user?.id) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+      const roles = user.roles || (user.roleSlug ? [user.roleSlug] : ['customer']);
+      const { filePath, fileName } = await purchaseOrdersService.getPurchaseOrderPdf(req.params.id, {
+        id: user.id,
+        roles,
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      const isInline = req.query.inline === 'true' || req.path.endsWith('/view');
+      res.setHeader(
+        'Content-Disposition',
+        `${isInline ? 'inline' : 'attachment'}; filename="${fileName}"`
+      );
+
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/v1/purchase-orders/:id/packing-list
    */
   async downloadPackingList(req: Request, res: Response, next: NextFunction): Promise<void> {

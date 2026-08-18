@@ -67,6 +67,15 @@ router.get('/:id', (req, res, next) =>
   purchaseOrdersController.getPurchaseOrderById(req, res, next)
 );
 
+// Download Purchase Order PDF (Customer)
+router.get('/:id/download', (req, res, next) =>
+  purchaseOrdersController.downloadPurchaseOrderPdf(req, res, next)
+);
+
+router.get('/:id/pdf', (req, res, next) =>
+  purchaseOrdersController.downloadPurchaseOrderPdf(req, res, next)
+);
+
 // Upload / Update Payment Receipt (2MB, PDF/PNG/JPEG)
 router.post('/:id/payment-receipt', upload.single('receipt'), (req, res, next) =>
   purchaseOrdersController.uploadPaymentReceipt(req, res, next)
@@ -117,6 +126,15 @@ adminPurchaseOrdersRouter.get('/invoices/all', (req, res, next) =>
 // Get single PO by ID
 adminPurchaseOrdersRouter.get('/:id', (req, res, next) =>
   purchaseOrdersController.getPurchaseOrderById(req, res, next)
+);
+
+// Download Purchase Order PDF (Admin)
+adminPurchaseOrdersRouter.get('/:id/download', (req, res, next) =>
+  purchaseOrdersController.downloadPurchaseOrderPdf(req, res, next)
+);
+
+adminPurchaseOrdersRouter.get('/:id/pdf', (req, res, next) =>
+  purchaseOrdersController.downloadPurchaseOrderPdf(req, res, next)
 );
 
 // Update PO by Admin (shipping address, delivery date, notes, advance %)
