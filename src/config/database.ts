@@ -28,6 +28,364 @@ if (env.isDev) {
 
 export const prisma = writePrisma;
 
+const PO_AUTO_HEAL_STATEMENTS = [
+  // ─── PO MODULE ENUMS ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'B2BPoStatus') THEN
+      CREATE TYPE "B2BPoStatus" AS ENUM (
+        'DRAFT', 'SUBMITTED', 'VALIDATION_FAILED', 'AWAITING_ADVANCE_PAYMENT',
+        'PAYMENT_RECEIPT_SUBMITTED', 'PAYMENT_ACKNOWLEDGED', 'PAYMENT_VERIFIED',
+        'PACKING_LIST_GENERATED', 'DISPATCHED', 'INVOICE_GENERATION_FAILED', 'INVOICED',
+        'REJECTED', 'CANCELLED'
+      );
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PaymentReceiptStatus') THEN
+      CREATE TYPE "PaymentReceiptStatus" AS ENUM ('PENDING_REVIEW', 'REJECTED', 'ACKNOWLEDGED', 'VERIFIED');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PoNotificationType') THEN
+      CREATE TYPE "PoNotificationType" AS ENUM (
+        'PO_SUBMITTED', 'ADVANCE_PAYMENT_REQUESTED', 'RECEIPT_UPLOADED',
+        'PAYMENT_ACKNOWLEDGED', 'PAYMENT_VERIFIED', 'PACKING_LIST_READY', 'INVOICE_READY',
+        'PO_REJECTED', 'RECEIPT_REJECTED'
+      );
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PoNotificationStatus') THEN
+      CREATE TYPE "PoNotificationStatus" AS ENUM ('QUEUED', 'SENT', 'FAILED');
+    END IF;
+  END $$`,
+
+  // ─── B2B PURCHASE ORDERS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='b2b_purchase_orders') THEN
+      CREATE TABLE "b2b_purchase_orders" (
+        "id"                           TEXT NOT NULL,
+        "po_number"                    TEXT NOT NULL,
+        "quotation_id"                 TEXT NOT NULL,
+        "quotation_number"             TEXT NOT NULL,
+        "customer_id"                  TEXT NOT NULL,
+        "status"                       "B2BPoStatus" NOT NULL DEFAULT 'SUBMITTED',
+        "customer_po_reference_number" TEXT,
+        "billing_address"              JSONB NOT NULL,
+        "delivery_address"             JSONB NOT NULL,
+        "delivery_instructions"        TEXT,
+        "requested_delivery_date"      TIMESTAMP(3),
+        "subtotal"                     DECIMAL(12,2) NOT NULL,
+        "tax_total"                    DECIMAL(12,2) NOT NULL,
+        "discount_total"               DECIMAL(12,2) NOT NULL DEFAULT 0,
+        "shipping_cost"                DECIMAL(12,2) NOT NULL DEFAULT 0,
+        "total_amount"                 DECIMAL(12,2) NOT NULL,
+        "currency"                     TEXT NOT NULL DEFAULT 'INR',
+        "advance_percentage"           DECIMAL(5,2) NOT NULL DEFAULT 30,
+        "advance_amount"               DECIMAL(12,2) NOT NULL,
+        "balance_amount"               DECIMAL(12,2) NOT NULL,
+        "validation_errors"            JSONB,
+        "submitted_at"                 TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "validated_at"                 TIMESTAMP(3),
+        "rejected_at"                  TIMESTAMP(3),
+        "rejection_reason"             TEXT,
+        "created_by"                   TEXT,
+        "created_at"                   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"                   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "b2b_purchase_orders_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "b2b_purchase_orders_po_number_key" ON "b2b_purchase_orders"("po_number");
+      CREATE UNIQUE INDEX "b2b_purchase_orders_quotation_id_key" ON "b2b_purchase_orders"("quotation_id");
+      CREATE INDEX "b2b_purchase_orders_customer_id_idx" ON "b2b_purchase_orders"("customer_id");
+      CREATE INDEX "b2b_purchase_orders_status_idx" ON "b2b_purchase_orders"("status");
+      CREATE INDEX "b2b_purchase_orders_created_at_idx" ON "b2b_purchase_orders"("created_at");
+    END IF;
+  END $$`,
+
+  // ─── B2B PURCHASE ORDER ITEMS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='b2b_purchase_order_items') THEN
+      CREATE TABLE "b2b_purchase_order_items" (
+        "id"                 TEXT NOT NULL,
+        "purchase_order_id"  TEXT NOT NULL,
+        "sl_no"              INTEGER NOT NULL DEFAULT 1,
+        "product_id"         TEXT NOT NULL,
+        "product_name"       TEXT NOT NULL,
+        "sku"                TEXT,
+        "variant_id"         TEXT,
+        "unit"               TEXT NOT NULL DEFAULT 'PCS',
+        "quantity"           INTEGER NOT NULL,
+        "rate"               DECIMAL(12,2) NOT NULL,
+        "amount"             DECIMAL(12,2) NOT NULL,
+        "tax_rate"           DECIMAL(5,2),
+        "tax_amount"         DECIMAL(12,2),
+        "total"              DECIMAL(12,2) NOT NULL,
+        "created_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "b2b_purchase_order_items_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "b2b_purchase_order_items_purchase_order_id_idx" ON "b2b_purchase_order_items"("purchase_order_id");
+      CREATE INDEX "b2b_purchase_order_items_product_id_idx" ON "b2b_purchase_order_items"("product_id");
+    END IF;
+  END $$`,
+
+  // ─── PAYMENT RECEIPTS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='payment_receipts') THEN
+      CREATE TABLE "payment_receipts" (
+        "id"                 TEXT NOT NULL,
+        "purchase_order_id"  TEXT NOT NULL,
+        "status"             "PaymentReceiptStatus" NOT NULL DEFAULT 'PENDING_REVIEW',
+        "file_storage_key"   TEXT NOT NULL,
+        "original_file_name" TEXT NOT NULL,
+        "file_size_bytes"    INTEGER NOT NULL,
+        "mime_type"          TEXT NOT NULL,
+        "file_hash"          TEXT NOT NULL,
+        "uploaded_by"        TEXT NOT NULL,
+        "uploaded_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "version"            INTEGER NOT NULL DEFAULT 1,
+        "amount_received"    DECIMAL(12,2),
+        "payment_date"       TIMESTAMP(3),
+        "payment_reference"  TEXT,
+        "payment_method"     TEXT,
+        "remarks"            TEXT,
+        "acknowledged_by"    TEXT,
+        "acknowledged_at"    TIMESTAMP(3),
+        "verified_by"        TEXT,
+        "verified_at"        TIMESTAMP(3),
+        "verification_notes" TEXT,
+        "rejected_by"        TEXT,
+        "rejected_at"        TIMESTAMP(3),
+        "rejection_reason"   TEXT,
+        "is_deleted"         BOOLEAN NOT NULL DEFAULT false,
+        "created_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "payment_receipts_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "payment_receipts_purchase_order_id_idx" ON "payment_receipts"("purchase_order_id");
+      CREATE INDEX "payment_receipts_status_idx" ON "payment_receipts"("status");
+    END IF;
+  END $$`,
+
+  // ─── PAYMENT RECEIPT HISTORIES TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='payment_receipt_histories') THEN
+      CREATE TABLE "payment_receipt_histories" (
+        "id"                 TEXT NOT NULL,
+        "receipt_id"         TEXT NOT NULL,
+        "purchase_order_id"  TEXT NOT NULL,
+        "file_storage_key"   TEXT NOT NULL,
+        "original_file_name" TEXT NOT NULL,
+        "file_size_bytes"    INTEGER NOT NULL,
+        "mime_type"          TEXT NOT NULL,
+        "file_hash"          TEXT NOT NULL,
+        "version"            INTEGER NOT NULL,
+        "uploaded_by"        TEXT NOT NULL,
+        "uploaded_at"        TIMESTAMP(3) NOT NULL,
+        "archived_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "payment_receipt_histories_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "payment_receipt_histories_receipt_id_idx" ON "payment_receipt_histories"("receipt_id");
+      CREATE INDEX "payment_receipt_histories_purchase_order_id_idx" ON "payment_receipt_histories"("purchase_order_id");
+    END IF;
+  END $$`,
+
+  // ─── PACKING LISTS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='packing_lists') THEN
+      CREATE TABLE "packing_lists" (
+        "id"                TEXT NOT NULL,
+        "purchase_order_id" TEXT NOT NULL,
+        "quotation_number"  TEXT NOT NULL,
+        "po_number"         TEXT NOT NULL,
+        "file_storage_key"  TEXT NOT NULL,
+        "file_hash"         TEXT,
+        "total_packages"    INTEGER NOT NULL DEFAULT 1,
+        "total_quantity"    INTEGER NOT NULL DEFAULT 0,
+        "qr_code_data"      TEXT,
+        "notes"             TEXT,
+        "generated_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "created_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "packing_lists_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "packing_lists_purchase_order_id_key" ON "packing_lists"("purchase_order_id");
+      CREATE INDEX "packing_lists_po_number_idx" ON "packing_lists"("po_number");
+    END IF;
+  END $$`,
+
+  // ─── PO DISPATCHES TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='po_dispatches') THEN
+      CREATE TABLE "po_dispatches" (
+        "id"                 TEXT NOT NULL,
+        "purchase_order_id"  TEXT NOT NULL,
+        "dispatched_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "dispatched_by"      TEXT NOT NULL,
+        "dispatched_by_name" TEXT,
+        "carrier_name"       TEXT NOT NULL,
+        "tracking_number"    TEXT,
+        "dispatch_notes"     TEXT,
+        "created_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "po_dispatches_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "po_dispatches_purchase_order_id_key" ON "po_dispatches"("purchase_order_id");
+    END IF;
+  END $$`,
+
+  // ─── B2B PO INVOICES TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='b2b_po_invoices') THEN
+      CREATE TABLE "b2b_po_invoices" (
+        "id"                     TEXT NOT NULL,
+        "purchase_order_id"      TEXT NOT NULL,
+        "quotation_number"       TEXT NOT NULL,
+        "po_number"              TEXT NOT NULL,
+        "invoice_number"         TEXT NOT NULL,
+        "source"                 TEXT NOT NULL DEFAULT 'INTERNAL_ADAPTER',
+        "external_invoice_id"    TEXT,
+        "pdf_storage_key_or_url" TEXT,
+        "amount_invoiced"        DECIMAL(12,2) NOT NULL,
+        "amount_paid_advance"    DECIMAL(12,2) NOT NULL,
+        "balance_due"            DECIMAL(12,2) NOT NULL,
+        "status"                 TEXT NOT NULL DEFAULT 'GENERATED',
+        "error_details"          JSONB,
+        "file_hash"              TEXT,
+        "verification_token"     TEXT,
+        "generated_at"           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "created_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "b2b_po_invoices_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "b2b_po_invoices_purchase_order_id_key" ON "b2b_po_invoices"("purchase_order_id");
+      CREATE UNIQUE INDEX "b2b_po_invoices_invoice_number_key" ON "b2b_po_invoices"("invoice_number");
+    END IF;
+  END $$`,
+
+  // ─── PO AUDIT LOGS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='po_audit_logs') THEN
+      CREATE TABLE "po_audit_logs" (
+        "id"                TEXT NOT NULL,
+        "purchase_order_id" TEXT NOT NULL,
+        "entity_type"       TEXT NOT NULL DEFAULT 'PURCHASE_ORDER',
+        "action"            TEXT NOT NULL,
+        "from_status"       TEXT,
+        "to_status"         TEXT,
+        "performed_by"      TEXT,
+        "performed_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "metadata"          JSONB,
+        "ip_address"        TEXT,
+        CONSTRAINT "po_audit_logs_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "po_audit_logs_purchase_order_id_idx" ON "po_audit_logs"("purchase_order_id");
+    END IF;
+  END $$`,
+
+  // ─── PO NOTIFICATION LOGS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='po_notification_logs') THEN
+      CREATE TABLE "po_notification_logs" (
+        "id"                  TEXT NOT NULL,
+        "purchase_order_id"   TEXT NOT NULL,
+        "type"                "PoNotificationType" NOT NULL,
+        "recipient"           TEXT NOT NULL,
+        "status"              "PoNotificationStatus" NOT NULL DEFAULT 'QUEUED',
+        "provider_message_id" TEXT,
+        "error"               TEXT,
+        "attempts"            INTEGER NOT NULL DEFAULT 1,
+        "sent_at"             TIMESTAMP(3),
+        "created_at"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "po_notification_logs_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "po_notification_logs_purchase_order_id_idx" ON "po_notification_logs"("purchase_order_id");
+    END IF;
+  END $$`,
+
+  // ─── SAVED ADDRESSES TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='saved_addresses') THEN
+      CREATE TABLE "saved_addresses" (
+        "id"                  TEXT NOT NULL,
+        "customer_id"         TEXT NOT NULL,
+        "label"               TEXT DEFAULT 'Default',
+        "attention_to"        TEXT NOT NULL,
+        "company_name"        TEXT,
+        "address_line1"       TEXT NOT NULL,
+        "address_line2"       TEXT,
+        "city"                TEXT NOT NULL,
+        "state"               TEXT NOT NULL,
+        "postal_code"         TEXT NOT NULL,
+        "country"             TEXT NOT NULL DEFAULT 'IN',
+        "phone"               TEXT NOT NULL,
+        "email"               TEXT NOT NULL,
+        "is_default_billing"  BOOLEAN NOT NULL DEFAULT false,
+        "is_default_delivery" BOOLEAN NOT NULL DEFAULT false,
+        "created_at"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "saved_addresses_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "saved_addresses_customer_id_idx" ON "saved_addresses"("customer_id");
+    END IF;
+  END $$`,
+
+  // ─── B2B PO SEQUENCES TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='b2b_po_sequences') THEN
+      CREATE TABLE "b2b_po_sequences" (
+        "id"             TEXT NOT NULL,
+        "financial_year" TEXT NOT NULL,
+        "next_number"    INTEGER NOT NULL DEFAULT 1,
+        "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "b2b_po_sequences_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "b2b_po_sequences_financial_year_key" ON "b2b_po_sequences"("financial_year");
+    END IF;
+  END $$`,
+
+  // ─── ADVANCE PAYMENT SETTINGS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='advance_payment_settings') THEN
+      CREATE TABLE "advance_payment_settings" (
+        "id"                    TEXT NOT NULL,
+        "default_percentage"    DECIMAL(5,2) NOT NULL DEFAULT 30,
+        "min_percentage"        DECIMAL(5,2) NOT NULL DEFAULT 10,
+        "max_percentage"        DECIMAL(5,2) NOT NULL DEFAULT 100,
+        "allow_per_po_override" BOOLEAN NOT NULL DEFAULT true,
+        "updated_by"            TEXT,
+        "updated_at"            TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "advance_payment_settings_pkey" PRIMARY KEY ("id")
+      );
+    END IF;
+  END $$`,
+
+  `ALTER TABLE "advance_payment_settings" ADD COLUMN IF NOT EXISTS "allow_per_po_override" BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE "advance_payment_settings" ADD COLUMN IF NOT EXISTS "default_percentage"    DECIMAL(5,2) NOT NULL DEFAULT 30`,
+  `ALTER TABLE "advance_payment_settings" ADD COLUMN IF NOT EXISTS "min_percentage"        DECIMAL(5,2) NOT NULL DEFAULT 10`,
+  `ALTER TABLE "advance_payment_settings" ADD COLUMN IF NOT EXISTS "max_percentage"        DECIMAL(5,2) NOT NULL DEFAULT 100`,
+
+  // ─── BANK ACCOUNT SETTINGS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='bank_account_settings') THEN
+      CREATE TABLE "bank_account_settings" (
+        "id"                     TEXT NOT NULL,
+        "account_holder_name"    TEXT NOT NULL,
+        "bank_name"              TEXT NOT NULL,
+        "account_number"         TEXT NOT NULL,
+        "ifsc_or_routing_number" TEXT NOT NULL,
+        "swift_code"             TEXT,
+        "branch"                 TEXT,
+        "currency"               TEXT NOT NULL DEFAULT 'INR',
+        "is_active"              BOOLEAN NOT NULL DEFAULT true,
+        "updated_by"             TEXT,
+        "updated_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "bank_account_settings_pkey" PRIMARY KEY ("id")
+      );
+    END IF;
+  END $$`,
+
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "account_holder_name"    TEXT`,
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "bank_name"              TEXT`,
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "account_number"         TEXT`,
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "ifsc_or_routing_number" TEXT`,
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "is_active"              BOOLEAN NOT NULL DEFAULT true`,
+];
+
 export const autoHealDatabaseSchema = async () => {
   try {
     // 1. Ensure mustChangePassword column exists on users table
@@ -60,6 +418,16 @@ export const autoHealDatabaseSchema = async () => {
     await writePrisma.$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS "b2b_customer_prices_productId_idx" ON "b2b_customer_prices"("productId");
     `);
+
+    // 4. Run PO module schema auto-healing statements
+    for (const sql of PO_AUTO_HEAL_STATEMENTS) {
+      try {
+        await writePrisma.$executeRawUnsafe(sql);
+      } catch (e: any) {
+        // Non-fatal warning
+      }
+    }
+
     console.log('[Database] Schema auto-heal completed successfully.');
   } catch (err: any) {
     console.warn('[Database] Schema auto-heal notice:', err?.message || err);

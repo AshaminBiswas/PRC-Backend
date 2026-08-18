@@ -13,6 +13,9 @@ const startWorker = async () => {
   try {
     const port = env.PORT || 3000;
 
+    await connectDatabases();
+    console.log(`Database connected and schema auto-healed on ${env.INSTANCE_ID}`);
+
     server = app.listen(port, '0.0.0.0', () => {
       console.log(`PRC Hardware API listening on http://0.0.0.0:${port}${env.API_PREFIX} (${env.INSTANCE_ID})`);
     });
@@ -20,14 +23,6 @@ const startWorker = async () => {
     // Configure Node.js HTTP Keep-Alive timeouts for ALB / Reverse Proxy compatibility
     server.keepAliveTimeout = 65000; // 65 seconds (exceeds AWS ALB 60s idle timeout)
     server.headersTimeout = 66000;   // 66 seconds (must exceed keepAliveTimeout)
-
-    connectDatabases()
-      .then(() => {
-        console.log(`Database connected on ${env.INSTANCE_ID}`);
-      })
-      .catch((error) => {
-        console.error(`Database connection error on ${env.INSTANCE_ID}:`, error.message || error);
-      });
   } catch (error) {
     console.error('Failed to start server:', error);
     await disconnectDatabases();
