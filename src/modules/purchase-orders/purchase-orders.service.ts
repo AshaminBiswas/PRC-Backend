@@ -10,6 +10,7 @@ import {
   sendAdvancePaymentRequestEmail,
   sendPaymentAcknowledgedEmail,
   sendPackingListReadyEmail,
+  sendInvoiceReadyEmail,
 } from './po-email.service';
 import {
   CreatePurchaseOrderInput,
@@ -19,7 +20,9 @@ import {
   AdvancePaymentSettingInput,
   BankAccountSettingInput,
   SavedAddressInput,
+  RecordDispatchInput,
 } from './purchase-orders.schema';
+import { invoiceServiceAdapter } from './invoice-adapter.service';
 
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 const RECEIPTS_DIR = path.join(UPLOADS_DIR, 'receipts');
@@ -503,6 +506,8 @@ export class PurchaseOrdersService {
           },
         },
         packingList: true,
+        dispatch: true,
+        invoice: true,
         auditLogs: {
           orderBy: { performedAt: 'desc' },
           include: {
@@ -1346,6 +1351,465 @@ export class PurchaseOrdersService {
       },
     });
   }
+
+  // ─── Dispatch & Invoice Generation Extension ─────────────────────────────────
+
+  /**
+   * 15. Record PO Dispatch
+   * Only allowed from PACKING_LIST_GENERATED. Idempotent: re-hitting returns existing dispatch.
+   * Asynchronously triggers non-blocking invoice generation.
+   */
+  async recordDispatch(
+    poId: string,
+    adminUser: { id: string; email?: string; name?: string },
+    input: RecordDispatchInput,
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        dispatch: true,
+        invoice: true,
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    // Idempotency: If already dispatched, return existing record
+    if (po.dispatch) {
+      return {
+        po,
+        dispatch: po.dispatch,
+        invoice: po.invoice,
+        message: 'Purchase Order was already dispatched',
+      };
+    }
+
+    // Only allowed from PACKING_LIST_GENERATED
+    if (po.status !== B2BPoStatus.PACKING_LIST_GENERATED && po.status !== B2BPoStatus.PAYMENT_VERIFIED) {
+      throw new AppError(
+        'INVALID_STATUS_TRANSITION',
+        `Cannot dispatch Purchase Order in ${po.status} status. Packing list must be generated first.`,
+        400
+      );
+    }
+
+    const dispatchedAt = input.dispatchedAt ? new Date(input.dispatchedAt) : new Date();
+
+    const result = await prisma.$transaction(async (tx) => {
+      const dispatchRecord = await tx.poDispatch.create({
+        data: {
+          purchaseOrderId: po.id,
+          dispatchedAt,
+          dispatchedBy: adminUser.id,
+          dispatchedByName: adminUser.name || adminUser.email || 'Admin',
+          carrierName: input.carrierName,
+          trackingNumber: input.trackingNumber || null,
+          dispatchNotes: input.dispatchNotes || null,
+        },
+      });
+
+      const updatedPo = await tx.b2BPurchaseOrder.update({
+        where: { id: po.id },
+        data: {
+          status: B2BPoStatus.DISPATCHED,
+        },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PO_DISPATCHED',
+          fromStatus: po.status,
+          toStatus: B2BPoStatus.DISPATCHED,
+          performedBy: adminUser.id,
+          metadata: {
+            carrierName: input.carrierName,
+            trackingNumber: input.trackingNumber,
+            dispatchedAt,
+            dispatchNotes: input.dispatchNotes,
+          },
+          ipAddress,
+        },
+      });
+
+      return { updatedPo, dispatchRecord };
+    });
+
+    // Asynchronously trigger non-blocking Invoice generation in background
+    setImmediate(() => {
+      this.triggerBackgroundInvoiceGeneration(po.id, adminUser).catch((err) => {
+        console.error(`[Async Invoice Job] Background generation failed for PO ${po.poNumber}:`, err.message);
+      });
+    });
+
+    return {
+      po: result.updatedPo,
+      dispatch: result.dispatchRecord,
+      message: 'Purchase Order marked as dispatched. Invoice generation initiated.',
+    };
+  }
+
+  /**
+   * Background Invoice Generation Job with Retry Backoff
+   */
+  async triggerBackgroundInvoiceGeneration(
+    poId: string,
+    adminUser?: { id: string; email?: string; name?: string }
+  ) {
+    const MAX_RETRIES = 3;
+    let attempt = 0;
+    let lastError: any = null;
+
+    while (attempt < MAX_RETRIES) {
+      attempt++;
+      try {
+        const po = await prisma.b2BPurchaseOrder.findUnique({
+          where: { id: poId },
+          include: {
+            customer: true,
+            items: true,
+            dispatch: true,
+            invoice: true,
+          },
+        });
+
+        if (!po) return;
+
+        // Idempotency: If invoice already created, ensure status is INVOICED and return
+        if (po.invoice) {
+          if (po.status !== B2BPoStatus.INVOICED) {
+            await prisma.b2BPurchaseOrder.update({
+              where: { id: po.id },
+              data: { status: B2BPoStatus.INVOICED },
+            });
+          }
+          return;
+        }
+
+        const billingAddr = po.billingAddress as any;
+        const deliveryAddr = (po.deliveryAddress as any) || billingAddr;
+
+        // Assemble invoice payload
+        const invoiceResult = await invoiceServiceAdapter.createInvoice({
+          purchaseOrderId: po.id,
+          poNumber: po.poNumber,
+          quotationNumber: po.quotationNumber,
+          customerPoReferenceNumber: po.customerPoReferenceNumber,
+          customer: {
+            id: po.customerId,
+            name: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim() || 'Commercial Client',
+            companyName: po.customer.companyName,
+            email: po.customer.email,
+            phone: po.customer.phone || billingAddr.phone || '',
+            gstin: po.customer.gstin,
+          },
+          billingAddress: billingAddr,
+          deliveryAddress: deliveryAddr,
+          dispatchInfo: po.dispatch
+            ? {
+                carrierName: po.dispatch.carrierName,
+                trackingNumber: po.dispatch.trackingNumber,
+                dispatchedAt: po.dispatch.dispatchedAt,
+                dispatchNotes: po.dispatch.dispatchNotes,
+              }
+            : undefined,
+          items: po.items.map((item) => ({
+            slNo: item.slNo,
+            productId: item.productId,
+            sku: item.sku,
+            productName: item.productName,
+            unit: item.unit,
+            quantity: item.quantity,
+            rate: Number(item.rate),
+            amount: Number(item.amount),
+            taxRate: Number(item.taxRate || 18),
+            taxAmount: Number(item.taxAmount || 0),
+            total: Number(item.total),
+          })),
+          subtotal: Number(po.subtotal),
+          taxTotal: Number(po.taxTotal),
+          discountTotal: Number(po.discountTotal),
+          shippingCost: Number(po.shippingCost),
+          grandTotal: Number(po.totalAmount),
+          advanceAmountPaid: Number(po.advanceAmount),
+          balanceDue: Number(po.balanceAmount),
+          issuedAt: new Date(),
+        });
+
+        // Update PO status to INVOICED
+        await prisma.b2BPurchaseOrder.update({
+          where: { id: po.id },
+          data: { status: B2BPoStatus.INVOICED },
+        });
+
+        // Audit Log
+        await prisma.poAuditLog.create({
+          data: {
+            purchaseOrderId: po.id,
+            action: 'INVOICE_GENERATED',
+            fromStatus: po.status,
+            toStatus: B2BPoStatus.INVOICED,
+            performedBy: adminUser?.id || null,
+            metadata: {
+              invoiceNumber: invoiceResult.invoiceNumber,
+              invoiceId: invoiceResult.invoiceId,
+              amountInvoiced: invoiceResult.amountInvoiced,
+              advancePaid: invoiceResult.amountPaidAdvance,
+              balanceDue: invoiceResult.balanceDue,
+              fileHash: invoiceResult.fileHash,
+              attempt,
+            },
+          },
+        });
+
+        // Send Email to Customer
+        await sendInvoiceReadyEmail({
+          poId: po.id,
+          poNumber: po.poNumber,
+          quotationNumber: po.quotationNumber,
+          invoiceNumber: invoiceResult.invoiceNumber,
+          customerEmail: po.customer.email,
+          customerName: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim() || 'Valued Client',
+          totalAmount: invoiceResult.amountInvoiced,
+          amountPaidAdvance: invoiceResult.amountPaidAdvance,
+          balanceDue: invoiceResult.balanceDue,
+          carrierName: po.dispatch?.carrierName,
+          trackingNumber: po.dispatch?.trackingNumber,
+        });
+
+        return; // Success
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`[Invoice Job] Attempt ${attempt} failed for PO ${poId}:`, err.message);
+        // Exponential backoff wait (100ms, 300ms)
+        if (attempt < MAX_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 200));
+        }
+      }
+    }
+
+    // If all retries failed, update PO status to INVOICE_GENERATION_FAILED and log
+    await prisma.b2BPurchaseOrder.update({
+      where: { id: poId },
+      data: { status: B2BPoStatus.INVOICE_GENERATION_FAILED },
+    }).catch(() => {});
+
+    await prisma.poAuditLog.create({
+      data: {
+        purchaseOrderId: poId,
+        action: 'INVOICE_GENERATION_FAILED',
+        fromStatus: B2BPoStatus.DISPATCHED,
+        toStatus: B2BPoStatus.INVOICE_GENERATION_FAILED,
+        performedBy: adminUser?.id || null,
+        metadata: {
+          error: lastError?.message || 'Invoice generation job failed after max attempts',
+          attempts: MAX_RETRIES,
+        },
+      },
+    }).catch(() => {});
+  }
+
+  /**
+   * 16. Admin manual re-trigger for failed invoice generation
+   */
+  async regenerateInvoice(
+    poId: string,
+    adminUser: { id: string; email?: string; name?: string },
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: { invoice: true },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    if (po.invoice && po.status === B2BPoStatus.INVOICED) {
+      return {
+        message: 'Invoice is already generated and active for this Purchase Order',
+        invoice: po.invoice,
+      };
+    }
+
+    // Trigger generation job
+    await this.triggerBackgroundInvoiceGeneration(po.id, adminUser);
+
+    const updated = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: { invoice: true },
+    });
+
+    return {
+      message: 'Invoice generation job executed',
+      status: updated?.status,
+      invoice: updated?.invoice,
+    };
+  }
+
+  /**
+   * 17. Get PO Invoice metadata
+   */
+  async getPoInvoice(poId: string, user: { id: string; roles: string[] }) {
+    const isAdmin = user.roles.some((r) =>
+      ['admin', 'sales_admin', 'finance_admin', 'super_admin'].includes(r.toLowerCase())
+    );
+
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        invoice: true,
+        dispatch: true,
+        customer: {
+          select: { id: true, firstName: true, lastName: true, email: true, companyName: true, gstin: true },
+        },
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to this Invoice', 403);
+    }
+
+    if (!po.invoice) {
+      throw new AppError('NOT_FOUND', 'Invoice has not been generated for this Purchase Order yet', 404);
+    }
+
+    return {
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber,
+      status: po.status,
+      customer: po.customer,
+      dispatch: po.dispatch,
+      invoice: po.invoice,
+    };
+  }
+
+  /**
+   * 18. Download PO Invoice PDF File
+   */
+  async getInvoicePdf(poId: string, user: { id: string; roles: string[] }) {
+    const isAdmin = user.roles.some((r) =>
+      ['admin', 'sales_admin', 'finance_admin', 'super_admin'].includes(r.toLowerCase())
+    );
+
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: { invoice: true },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to this Invoice', 403);
+    }
+
+    if (!po.invoice || !po.invoice.pdfStorageKeyOrUrl) {
+      throw new AppError('NOT_FOUND', 'Invoice PDF not available for download', 404);
+    }
+
+    const filePath = po.invoice.pdfStorageKeyOrUrl;
+    if (!fs.existsSync(filePath)) {
+      // Re-render and save if file was purged
+      await this.triggerBackgroundInvoiceGeneration(poId);
+      const rechecked = await prisma.b2BPoInvoice.findUnique({ where: { purchaseOrderId: poId } });
+      if (!rechecked || !fs.existsSync(rechecked.pdfStorageKeyOrUrl)) {
+        throw new AppError('NOT_FOUND', 'Invoice PDF file could not be located on disk', 404);
+      }
+      return {
+        filePath: rechecked.pdfStorageKeyOrUrl,
+        fileName: `TaxInvoice_${po.invoice.invoiceNumber.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+      };
+    }
+
+    return {
+      filePath,
+      fileName: `TaxInvoice_${po.invoice.invoiceNumber.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+    };
+  }
+
+  /**
+   * 19. Admin List all Invoices across POs
+   */
+  async listAllInvoices(query: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.limit || 20));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.B2BPoInvoiceWhereInput = {};
+
+    if (query.status && query.status !== 'ALL') {
+      where.status = query.status;
+    }
+
+    if (query.search) {
+      const term = query.search.trim();
+      where.OR = [
+        { invoiceNumber: { contains: term, mode: 'insensitive' } },
+        { poNumber: { contains: term, mode: 'insensitive' } },
+        { quotationNumber: { contains: term, mode: 'insensitive' } },
+        {
+          purchaseOrder: {
+            customer: {
+              OR: [
+                { email: { contains: term, mode: 'insensitive' } },
+                { companyName: { contains: term, mode: 'insensitive' } },
+                { firstName: { contains: term, mode: 'insensitive' } },
+                { lastName: { contains: term, mode: 'insensitive' } },
+              ],
+            },
+          },
+        },
+      ];
+    }
+
+    const [total, items] = await Promise.all([
+      prisma.b2BPoInvoice.count({ where }),
+      prisma.b2BPoInvoice.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { generatedAt: 'desc' },
+        include: {
+          purchaseOrder: {
+            include: {
+              customer: {
+                select: { id: true, firstName: true, lastName: true, email: true, companyName: true, gstin: true },
+              },
+              dispatch: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
 }
 
 export const purchaseOrdersService = new PurchaseOrdersService();
+

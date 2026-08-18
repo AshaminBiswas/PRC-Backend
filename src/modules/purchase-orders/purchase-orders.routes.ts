@@ -68,6 +68,15 @@ router.get('/:id/packing-list', (req, res, next) =>
   purchaseOrdersController.downloadPackingList(req, res, next)
 );
 
+// Get Invoice metadata & download
+router.get('/:id/invoice', (req, res, next) =>
+  purchaseOrdersController.getPoInvoice(req, res, next)
+);
+
+router.get('/:id/invoice/download', (req, res, next) =>
+  purchaseOrdersController.downloadPoInvoice(req, res, next)
+);
+
 // Address Book routes
 router.get('/addresses/all', (req, res, next) =>
   purchaseOrdersController.getSavedAddresses(req, res, next)
@@ -89,6 +98,11 @@ adminPurchaseOrdersRouter.use(authenticate);
 // List all POs across customers
 adminPurchaseOrdersRouter.get('/', (req, res, next) =>
   purchaseOrdersController.getPurchaseOrders(req, res, next)
+);
+
+// List all Invoices across POs
+adminPurchaseOrdersRouter.get('/invoices/all', (req, res, next) =>
+  purchaseOrdersController.adminListInvoices(req, res, next)
 );
 
 // Get single PO by ID
@@ -124,6 +138,26 @@ adminPurchaseOrdersRouter.post('/:id/payment-receipt/reopen', (req, res, next) =
 // Download Packing List PDF (Admin)
 adminPurchaseOrdersRouter.get('/:id/packing-list', (req, res, next) =>
   purchaseOrdersController.downloadPackingList(req, res, next)
+);
+
+// Record PO Dispatch (triggers automatic invoice generation background job)
+adminPurchaseOrdersRouter.post('/:id/dispatch', (req, res, next) =>
+  purchaseOrdersController.adminRecordDispatch(req, res, next)
+);
+
+// Get PO Invoice metadata (Admin)
+adminPurchaseOrdersRouter.get('/:id/invoice', (req, res, next) =>
+  purchaseOrdersController.getPoInvoice(req, res, next)
+);
+
+// Download PO Invoice PDF (Admin)
+adminPurchaseOrdersRouter.get('/:id/invoice/download', (req, res, next) =>
+  purchaseOrdersController.downloadPoInvoice(req, res, next)
+);
+
+// Re-generate Invoice manually if job failed
+adminPurchaseOrdersRouter.post('/:id/invoice/regenerate', (req, res, next) =>
+  purchaseOrdersController.adminRegenerateInvoice(req, res, next)
 );
 
 // Advance Payment Settings

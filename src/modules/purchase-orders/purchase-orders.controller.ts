@@ -11,6 +11,7 @@ import {
   AdvancePaymentSettingSchema,
   BankAccountSettingSchema,
   SavedAddressSchema,
+  RecordDispatchSchema,
 } from './purchase-orders.schema';
 import { sendSuccess, sendPaginated } from '../../utils/response';
 import { AppError } from '../../middleware/error.middleware';
@@ -375,6 +376,122 @@ export class PurchaseOrdersController {
       next(error);
     }
   }
+
+  // ─── Dispatch & Invoice Endpoints ───────────────────────────────────────────
+
+  /**
+   * POST /api/v1/admin/purchase-orders/:id/dispatch
+   */
+  async adminRecordDispatch(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const adminUser = (req as any).user;
+      const validated = RecordDispatchSchema.parse(req.body);
+      const ip = req.ip || (req.headers['x-forwarded-for'] as string);
+
+      const result = await purchaseOrdersService.recordDispatch(
+        req.params.id,
+        { id: adminUser.id, email: adminUser.email, name: `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() },
+        validated,
+        ip
+      );
+
+      sendSuccess(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/purchase-orders/:id/invoice
+   */
+  async getPoInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = (req as any).user;
+      if (!user?.id) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+      const roles = user.roles || (user.roleSlug ? [user.roleSlug] : ['customer']);
+      const invoiceData = await purchaseOrdersService.getPoInvoice(req.params.id, {
+        id: user.id,
+        roles,
+      });
+
+      sendSuccess(res, invoiceData, 'Purchase Order Invoice retrieved successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/purchase-orders/:id/invoice/download
+   */
+  async downloadPoInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = (req as any).user;
+      if (!user?.id) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+      const roles = user.roles || (user.roleSlug ? [user.roleSlug] : ['customer']);
+      const { filePath, fileName } = await purchaseOrdersService.getInvoicePdf(req.params.id, {
+        id: user.id,
+        roles,
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/admin/purchase-orders/:id/invoice/regenerate
+   */
+  async adminRegenerateInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const adminUser = (req as any).user;
+      const ip = req.ip || (req.headers['x-forwarded-for'] as string);
+
+      const result = await purchaseOrdersService.regenerateInvoice(
+        req.params.id,
+        { id: adminUser.id, email: adminUser.email, name: `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() },
+        ip
+      );
+
+      sendSuccess(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/admin/invoices
+   */
+  async adminListInvoices(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const result = await purchaseOrdersService.listAllInvoices({
+        page: req.query.page ? Number(req.query.page) : 1,
+        limit: req.query.limit ? Number(req.query.limit) : 20,
+        search: req.query.search as string,
+        status: req.query.status as string,
+        startDate: req.query.startDate as string,
+        endDate: req.query.endDate as string,
+      });
+
+      sendPaginated(res, result.items, {
+        page: result.pagination.page,
+        limit: result.pagination.limit,
+        totalItems: result.pagination.total,
+        totalPages: result.pagination.totalPages,
+        hasNextPage: result.pagination.page < result.pagination.totalPages,
+        hasPrevPage: result.pagination.page > 1,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const purchaseOrdersController = new PurchaseOrdersController();
+

@@ -250,6 +250,7 @@ app.use(`${prefix}/invoices`, invoiceRoutes);
 app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
 app.use(`${prefix}/purchase-orders`, purchaseOrdersRoutes);
 app.use(`${prefix}/admin/purchase-orders`, adminPurchaseOrdersRouter);
+app.use(`${prefix}/admin/invoices`, adminPurchaseOrdersRouter);
 
 // ─── Razorpay Webhooks (raw body required) ───────────────────────────────────
 app.use(`${prefix}/payments/webhook`, webhookRoutes);

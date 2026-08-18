@@ -6831,6 +6831,91 @@ export const openApiSpec = {
       "responses": { "200": { "description": "Updated bank account" } },
       "security": [{ "BearerAuth": [] }]
     }
+  },
+  "/purchase-orders/{id}/invoice": {
+    "get": {
+      "summary": "Get PO Tax Invoice Metadata",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "responses": {
+        "200": { "description": "Tax invoice metadata including Quotation No, PO No, Advance Paid, and Balance Due" }
+      },
+      "security": [{ "BearerAuth": [] }],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Purchase Order UUID" }
+      ]
+    }
+  },
+  "/purchase-orders/{id}/invoice/download": {
+    "get": {
+      "summary": "Download Formal Tax Invoice PDF",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "responses": {
+        "200": { "description": "Stream of branded Tax Invoice PDF" }
+      },
+      "security": [{ "BearerAuth": [] }],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Purchase Order UUID" }
+      ]
+    }
+  },
+  "/admin/purchase-orders/{id}/dispatch": {
+    "post": {
+      "summary": "Record PO Dispatch & Trigger Automated Invoicing",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["carrierName"],
+              "properties": {
+                "carrierName": { "type": "string", "example": "BlueDart Express" },
+                "trackingNumber": { "type": "string", "example": "BD123456789IN" },
+                "dispatchedAt": { "type": "string", "format": "date-time" },
+                "dispatchNotes": { "type": "string", "example": "Dispatched in 2 corrugated cartons" }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": { "description": "PO marked as DISPATCHED and background invoice generation initiated" }
+      },
+      "security": [{ "BearerAuth": [] }],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Purchase Order UUID" }
+      ]
+    }
+  },
+  "/admin/purchase-orders/{id}/invoice/regenerate": {
+    "post": {
+      "summary": "Manually Re-trigger Invoice Generation for PO",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "responses": {
+        "200": { "description": "Invoice regeneration job executed" }
+      },
+      "security": [{ "BearerAuth": [] }],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" }, "description": "Purchase Order UUID" }
+      ]
+    }
+  },
+  "/admin/purchase-orders/invoices/all": {
+    "get": {
+      "summary": "List & Search All Generated Tax Invoices",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "parameters": [
+        { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+        { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } },
+        { "name": "search", "in": "query", "schema": { "type": "string" }, "description": "Search by invoice number, PO number, or customer name" },
+        { "name": "status", "in": "query", "schema": { "type": "string" } }
+      ],
+      "responses": {
+        "200": { "description": "Paginated list of all PO invoices" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
   }
 }
 };

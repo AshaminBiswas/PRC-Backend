@@ -103,6 +103,9 @@ enum B2BPoStatus {
   PAYMENT_ACKNOWLEDGED
   PAYMENT_VERIFIED
   PACKING_LIST_GENERATED
+  DISPATCHED
+  INVOICE_GENERATION_FAILED
+  INVOICED
   REJECTED
   CANCELLED
 }
@@ -118,6 +121,7 @@ enum PoNotificationType {
   ADVANCE_PAYMENT_REQUEST
   PAYMENT_ACKNOWLEDGMENT
   PACKING_LIST_READY
+  INVOICE_READY
 }
 
 enum PoNotificationStatus {
@@ -2362,6 +2366,8 @@ model B2BPurchaseOrder {
   items                     B2BPurchaseOrderItem[]
   receipts                  PaymentReceipt[]
   packingList               PackingList?
+  dispatch                  PoDispatch?
+  invoice                   B2BPoInvoice?
   auditLogs                 PoAuditLog[]
   notificationLogs          PoNotificationLog[]
 
@@ -2584,3 +2590,53 @@ model SavedAddress {
   @@index([customerId])
   @@map("saved_addresses")
 }
+
+model PoDispatch {
+  id              String           @id @default(uuid())
+  purchaseOrderId String           @unique @map("purchase_order_id")
+  dispatchedAt    DateTime         @default(now()) @map("dispatched_at")
+  dispatchedBy    String           @map("dispatched_by")
+  dispatchedByName String?         @map("dispatched_by_name")
+  carrierName     String           @map("carrier_name")
+  trackingNumber  String?          @map("tracking_number")
+  dispatchNotes   String?          @map("dispatch_notes")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  purchaseOrder   B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@index([trackingNumber])
+  @@map("po_dispatches")
+}
+
+model B2BPoInvoice {
+  id                  String           @id @default(uuid())
+  purchaseOrderId     String           @unique @map("purchase_order_id")
+  quotationNumber     String           @map("quotation_number")
+  poNumber            String           @map("po_number")
+  invoiceNumber       String           @unique @map("invoice_number")
+  source              String           @default("INTERNAL") // "LINKED_EXTERNAL" | "INTERNAL"
+  externalInvoiceId   String?          @map("external_invoice_id")
+  pdfStorageKeyOrUrl  String           @map("pdf_storage_key_or_url")
+  amountInvoiced      Decimal          @db.Decimal(12, 2) @map("amount_invoiced")
+  amountPaidAdvance   Decimal          @db.Decimal(12, 2) @map("amount_paid_advance")
+  balanceDue          Decimal          @db.Decimal(12, 2) @map("balance_due")
+  status              String           @default("GENERATED") // "GENERATED" | "SENT" | "FAILED"
+  fileHash            String?          @map("file_hash")
+  verificationToken   String?          @unique @map("verification_token")
+  generatedAt         DateTime         @default(now()) @map("generated_at")
+  sentAt              DateTime?        @map("sent_at")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  purchaseOrder       B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@index([invoiceNumber])
+  @@index([poNumber])
+  @@index([quotationNumber])
+  @@index([status])
+  @@map("b2b_po_invoices")
+}
+

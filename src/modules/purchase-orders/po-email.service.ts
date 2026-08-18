@@ -51,6 +51,20 @@ interface PackingListReadyEmailContext {
   totalQuantity: number;
 }
 
+export interface InvoiceReadyEmailContext {
+  poId: string;
+  poNumber: string;
+  quotationNumber: string;
+  invoiceNumber: string;
+  customerEmail: string;
+  customerName: string;
+  totalAmount: number;
+  amountPaidAdvance: number;
+  balanceDue: number;
+  carrierName?: string;
+  trackingNumber?: string | null;
+}
+
 const formatCurrency = (val: number, cur = 'INR') => {
   return `${cur === 'INR' ? '₹' : cur + ' '}${Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
@@ -274,3 +288,65 @@ export const sendPackingListReadyEmail = async (ctx: PackingListReadyEmailContex
     }).catch(() => {});
   }
 };
+
+/**
+ * 4. Sends Tax Invoice Ready Email
+ */
+export const sendInvoiceReadyEmail = async (ctx: InvoiceReadyEmailContext): Promise<void> => {
+  const downloadLink = `${env.frontend.url}/purchase-orders/${ctx.poId}`;
+
+  const content = `
+    <h2 style="margin-top:0; color:#0f172a;">Commercial Tax Invoice Generated</h2>
+    <p>Dear <strong>${ctx.customerName}</strong>,</p>
+    <p>Your order has been dispatched and the formal <strong>Commercial Tax Invoice #${ctx.invoiceNumber}</strong> has been generated for Purchase Order <strong>${ctx.poNumber}</strong>.</p>
+    
+    <div class="info-card">
+      <p style="margin: 4px 0;"><strong>Tax Invoice Number:</strong> <span class="ref-badge">${ctx.invoiceNumber}</span></p>
+      <p style="margin: 4px 0;"><strong>Purchase Order No:</strong> ${ctx.poNumber}</p>
+      <p style="margin: 4px 0;"><strong>Quotation Ref No:</strong> ${ctx.quotationNumber}</p>
+      <p style="margin: 4px 0;"><strong>Total Invoice Value:</strong> <span style="font-weight:bold; color:#0f172a;">${formatCurrency(ctx.totalAmount)}</span></p>
+      <p style="margin: 4px 0;"><strong>Advance Credited:</strong> <span style="color:#16a34a; font-weight:bold;">(-) ${formatCurrency(ctx.amountPaidAdvance)}</span></p>
+      <p style="margin: 4px 0;"><strong>Balance Due:</strong> <span style="color:#b45309; font-weight:bold;">${formatCurrency(ctx.balanceDue)}</span></p>
+      ${ctx.carrierName ? `<p style="margin: 4px 0;"><strong>Carrier / Dispatch:</strong> ${ctx.carrierName} ${ctx.trackingNumber ? `(AWB: ${ctx.trackingNumber})` : ''}</p>` : ''}
+    </div>
+
+    <p>You can view and download your official Tax Invoice PDF with HSN & GST breakdown anytime from your portal:</p>
+
+    <div style="text-align: center;">
+      <a href="${downloadLink}" class="btn-primary">View & Download Tax Invoice</a>
+    </div>
+  `;
+
+  try {
+    const result = await sendMail({
+      to: ctx.customerEmail,
+      subject: `Tax Invoice ${ctx.invoiceNumber}: PO ${ctx.poNumber} - PRC Hardware`,
+      html: basePoEmailTemplate('Tax Invoice Ready', content),
+    });
+
+    await prisma.poNotificationLog.create({
+      data: {
+        purchaseOrderId: ctx.poId,
+        type: PoNotificationType.INVOICE_READY,
+        recipient: ctx.customerEmail,
+        status: PoNotificationStatus.SENT,
+        providerMessageId: (result as any)?.messageId || null,
+        attempts: 1,
+        sentAt: new Date(),
+      },
+    }).catch(() => {});
+  } catch (err: any) {
+    console.error('[PO Email Error - Invoice Ready]:', err.message);
+    await prisma.poNotificationLog.create({
+      data: {
+        purchaseOrderId: ctx.poId,
+        type: PoNotificationType.INVOICE_READY,
+        recipient: ctx.customerEmail,
+        status: PoNotificationStatus.FAILED,
+        error: err.message,
+        attempts: 1,
+      },
+    }).catch(() => {});
+  }
+};
+

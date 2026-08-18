@@ -114,6 +114,19 @@ export const SavedAddressSchema = z.object({
   isDefaultDelivery: z.boolean().default(false),
 });
 
+// ─── Dispatch Schema ─────────────────────────────────────────────────────────
+
+export const RecordDispatchSchema = z.object({
+  carrierName: z.string().min(1, 'Carrier name is required (e.g. BlueDart, DTDC, VRL Logistics, Self Fleet)'),
+  trackingNumber: z.string().optional(),
+  dispatchedAt: z.string().datetime().optional().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/).optional()),
+  dispatchNotes: z.string().max(500).optional(),
+});
+
+export const RegenerateInvoiceSchema = z.object({
+  reason: z.string().optional(),
+});
+
 export type CreatePurchaseOrderInput = z.infer<typeof CreatePurchaseOrderSchema>;
 export type AcknowledgeReceiptInput = z.infer<typeof AcknowledgeReceiptSchema>;
 export type VerifyReceiptInput = z.infer<typeof VerifyReceiptSchema>;
@@ -121,3 +134,6 @@ export type RejectReceiptInput = z.infer<typeof RejectReceiptSchema>;
 export type AdvancePaymentSettingInput = z.infer<typeof AdvancePaymentSettingSchema>;
 export type BankAccountSettingInput = z.infer<typeof BankAccountSettingSchema>;
 export type SavedAddressInput = z.infer<typeof SavedAddressSchema>;
+export type RecordDispatchInput = z.infer<typeof RecordDispatchSchema>;
+export type RegenerateInvoiceInput = z.infer<typeof RegenerateInvoiceSchema>;
+

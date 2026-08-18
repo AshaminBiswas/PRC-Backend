@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { getCurrentFinancialYear, generateNextPoNumber } from '../po-numbering.service';
 import { generatePackingListPdfBuffer } from '../packing-list-pdf.service';
+import { generateInvoicePdfBuffer } from '../invoice-pdf.service';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -9,7 +10,7 @@ function assert(condition: boolean, message: string) {
 }
 
 export const testPurchaseOrderSystem = async () => {
-  console.log('\n📦 Running Purchase Order (PO) Module Comprehensive Unit Tests...');
+  console.log('\n📦 Running Purchase Order (PO) & Invoice Generation Module Comprehensive Unit Tests...');
 
   // 1. PO Numbering & Financial Year
   const aug2026 = new Date(2026, 7, 18);
@@ -53,7 +54,7 @@ export const testPurchaseOrderSystem = async () => {
   console.log('  ✓ SHA-256 Digital verification tamper-evidence test passed.');
 
   // 4. Commercial Packing List PDF Generation
-  const pdfBuffer = await generatePackingListPdfBuffer({
+  const packingPdfBuffer = await generatePackingListPdfBuffer({
     poNumber: 'PRC-PO-2026-27/001',
     quotationNumber: 'PRC-QT-2026-27/001',
     createdAt: new Date(),
@@ -89,10 +90,88 @@ export const testPurchaseOrderSystem = async () => {
     fileHash: hash1,
   });
 
-  assert(Buffer.isBuffer(pdfBuffer), 'Output is a valid binary Buffer');
-  assert(pdfBuffer.length > 1000, 'PDF buffer has content (>1KB)');
-  assert(pdfBuffer.slice(0, 5).toString('ascii') === '%PDF-', 'PDF has valid binary header %PDF-');
-  console.log(`  ✓ Commercial Packing List PDF generated successfully (${(pdfBuffer.length / 1024).toFixed(1)} KB).`);
+  assert(Buffer.isBuffer(packingPdfBuffer), 'Packing List output is a valid binary Buffer');
+  assert(packingPdfBuffer.length > 1000, 'Packing List PDF buffer has content (>1KB)');
+  assert(packingPdfBuffer.slice(0, 5).toString('ascii') === '%PDF-', 'Packing List PDF has valid binary header %PDF-');
+  console.log(`  ✓ Commercial Packing List PDF generated successfully (${(packingPdfBuffer.length / 1024).toFixed(1)} KB).`);
 
-  console.log('  ✅ All Purchase Order (PO) Module unit tests passed successfully!\n');
+  // 5. Commercial Tax Invoice PDF Generation (with Quotation No, PO No, Advance Paid, Balance Due)
+  const invoicePdfBuffer = await generateInvoicePdfBuffer({
+    invoiceNumber: 'PRC-INV-2026-27/001',
+    poNumber: 'PRC-PO-2026-27/001',
+    quotationNumber: 'PRC-QT-2026-27/001',
+    customerPoReferenceNumber: 'APEX-PO-2026-08',
+    issuedAt: new Date(),
+    customerName: 'Ashok Kumar',
+    customerCompany: 'Apex Builders Pvt Ltd',
+    customerEmail: 'ashok@apexbuilders.in',
+    customerPhone: '+91 98765 43210',
+    customerGstin: '29ABCDE1234F1Z5',
+    billingAddress: {
+      attentionTo: 'Ashok Kumar',
+      companyName: 'Apex Builders Pvt Ltd',
+      addressLine1: '42 MG Road',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      postalCode: '560001',
+      phone: '+91 98765 43210',
+      email: 'ashok@apexbuilders.in',
+    },
+    deliveryAddress: {
+      attentionTo: 'Site Supervisor',
+      companyName: 'Apex Builders Site Office',
+      addressLine1: 'Tower 4 Construction Site',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      postalCode: '560066',
+      phone: '+91 98765 43211',
+      email: 'site@apexbuilders.in',
+    },
+    dispatchInfo: {
+      carrierName: 'BlueDart Express',
+      trackingNumber: 'BD987654321IN',
+      dispatchedAt: new Date(),
+      dispatchNotes: 'Dispatched in 2 corrugated cartons with tamper seals',
+    },
+    items: [
+      {
+        slNo: 1,
+        productName: 'Stainless Steel Concealed Mortise Lock',
+        sku: 'PRC-LCK-01',
+        hsnCode: '8301',
+        unit: 'PCS',
+        quantity: 20,
+        rate: 2500,
+        taxRate: 18,
+        taxAmount: 9000,
+        total: 59000,
+      },
+      {
+        slNo: 2,
+        productName: 'Solid Brass Heavy Duty Door Hinges (4x3x3mm)',
+        sku: 'PRC-HNG-04',
+        hsnCode: '8302',
+        unit: 'PRS',
+        quantity: 30,
+        rate: 1000,
+        taxRate: 18,
+        taxAmount: 5400,
+        total: 35400,
+      },
+    ],
+    subtotal: 80000,
+    taxTotal: 14400,
+    shippingCost: 1000,
+    grandTotal: 95400,
+    advanceAmountPaid: 28620, // 30% advance paid
+    balanceDue: 66780,        // 70% balance due
+    fileHash: hash1,
+  });
+
+  assert(Buffer.isBuffer(invoicePdfBuffer), 'Tax Invoice output is a valid binary Buffer');
+  assert(invoicePdfBuffer.length > 1000, 'Tax Invoice PDF buffer has content (>1KB)');
+  assert(invoicePdfBuffer.slice(0, 5).toString('ascii') === '%PDF-', 'Tax Invoice PDF has valid binary header %PDF-');
+  console.log(`  ✓ Commercial Tax Invoice PDF generated successfully with Quotation No, PO No, Advance & Balance (${(invoicePdfBuffer.length / 1024).toFixed(1)} KB).`);
+
+  console.log('  ✅ All Purchase Order (PO) & Invoice Module unit tests passed successfully!\n');
 };
