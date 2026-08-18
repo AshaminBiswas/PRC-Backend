@@ -141,8 +141,11 @@ export class PurchaseOrdersService {
 
     const quote = await prisma.quote.findFirst({
       where: {
-        id: quotationId,
-        OR: userFilter,
+        OR: [
+          { id: quotationId },
+          { quoteNumber: quotationId },
+          { referenceNo: quotationId },
+        ],
         isDeleted: false,
       },
       include: {
@@ -163,7 +166,15 @@ export class PurchaseOrdersService {
     });
 
     if (!quote) {
-      throw new AppError('NOT_FOUND', 'Approved quotation not found or access denied', 404);
+      throw new AppError('NOT_FOUND', 'Quotation not found', 404);
+    }
+
+    const isOwner =
+      quote.userId === customerId ||
+      (user?.email && quote.email?.toLowerCase() === user.email.toLowerCase());
+
+    if (!isOwner) {
+      throw new AppError('FORBIDDEN', 'Access denied to this quotation', 403);
     }
 
     if (quote.status !== 'APPROVED') {
@@ -1253,18 +1264,32 @@ export class PurchaseOrdersService {
   // ─── Settings & Address Book Helpers ─────────────────────────────────────────
 
   async getAdvancePaymentSetting() {
-    let setting = await prisma.advancePaymentSetting.findFirst();
-    if (!setting) {
-      setting = await prisma.advancePaymentSetting.create({
-        data: {
-          defaultPercentage: new Prisma.Decimal(30),
-          minPercentage: new Prisma.Decimal(10),
-          maxPercentage: new Prisma.Decimal(100),
-          allowPerPoOverride: true,
-        },
-      });
+    try {
+      let setting = await prisma.advancePaymentSetting.findFirst();
+      if (!setting) {
+        setting = await prisma.advancePaymentSetting.create({
+          data: {
+            defaultPercentage: new Prisma.Decimal(30),
+            minPercentage: new Prisma.Decimal(10),
+            maxPercentage: new Prisma.Decimal(100),
+            allowPerPoOverride: true,
+          },
+        }).catch(() => null);
+      }
+      return setting || {
+        defaultPercentage: new Prisma.Decimal(30),
+        minPercentage: new Prisma.Decimal(10),
+        maxPercentage: new Prisma.Decimal(100),
+        allowPerPoOverride: true,
+      };
+    } catch {
+      return {
+        defaultPercentage: new Prisma.Decimal(30),
+        minPercentage: new Prisma.Decimal(10),
+        maxPercentage: new Prisma.Decimal(100),
+        allowPerPoOverride: true,
+      };
     }
-    return setting;
   }
 
   async updateAdvancePaymentSetting(input: AdvancePaymentSettingInput, adminId: string) {
@@ -1294,23 +1319,31 @@ export class PurchaseOrdersService {
   }
 
   async getPrimaryBankAccount() {
-    const bank = await prisma.bankAccountSetting.findFirst({
-      where: { isActive: true },
-    });
-    return bank || DEFAULT_BANK_SETTINGS;
+    try {
+      const bank = await prisma.bankAccountSetting.findFirst({
+        where: { isActive: true },
+      });
+      return bank || DEFAULT_BANK_SETTINGS;
+    } catch {
+      return DEFAULT_BANK_SETTINGS;
+    }
   }
 
   async getBankAccountSettings() {
-    const list = await prisma.bankAccountSetting.findMany({
-      orderBy: { updatedAt: 'desc' },
-    });
-    if (list.length === 0) {
-      const created = await prisma.bankAccountSetting.create({
-        data: DEFAULT_BANK_SETTINGS,
+    try {
+      const list = await prisma.bankAccountSetting.findMany({
+        orderBy: { updatedAt: 'desc' },
       });
-      return [created];
+      if (list.length === 0) {
+        const created = await prisma.bankAccountSetting.create({
+          data: DEFAULT_BANK_SETTINGS,
+        }).catch(() => null);
+        return created ? [created] : [DEFAULT_BANK_SETTINGS];
+      }
+      return list;
+    } catch {
+      return [DEFAULT_BANK_SETTINGS];
     }
-    return list;
   }
 
   async updateBankAccountSetting(input: BankAccountSettingInput, adminId: string) {
@@ -1334,10 +1367,14 @@ export class PurchaseOrdersService {
   }
 
   async getSavedAddresses(customerId: string) {
-    return await prisma.savedAddress.findMany({
-      where: { customerId },
-      orderBy: { createdAt: 'desc' },
-    });
+    try {
+      return await prisma.savedAddress.findMany({
+        where: { customerId },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch {
+      return [];
+    }
   }
 
   async saveAddressToBook(customerId: string, address: any, label = 'Default') {

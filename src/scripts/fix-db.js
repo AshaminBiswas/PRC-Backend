@@ -10,6 +10,7 @@
 'use strict';
 
 const path = require('path');
+require('dotenv').config();
 
 // Load compiled Prisma client from dist
 let PrismaClient;
@@ -508,18 +509,22 @@ const STATEMENTS = [
   `DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='advance_payment_settings') THEN
       CREATE TABLE "advance_payment_settings" (
-        "id"                         TEXT NOT NULL,
-        "default_percentage"         DECIMAL(5,2) NOT NULL DEFAULT 30,
-        "min_percentage"             DECIMAL(5,2) NOT NULL DEFAULT 10,
-        "max_percentage"             DECIMAL(5,2) NOT NULL DEFAULT 100,
-        "allow_custom_per_customer"  BOOLEAN NOT NULL DEFAULT false,
-        "updated_by"                 TEXT,
-        "created_at"                 TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updated_at"                 TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "id"                    TEXT NOT NULL,
+        "default_percentage"    DECIMAL(5,2) NOT NULL DEFAULT 30,
+        "min_percentage"        DECIMAL(5,2) NOT NULL DEFAULT 10,
+        "max_percentage"        DECIMAL(5,2) NOT NULL DEFAULT 100,
+        "allow_per_po_override" BOOLEAN NOT NULL DEFAULT true,
+        "updated_by"            TEXT,
+        "updated_at"            TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "advance_payment_settings_pkey" PRIMARY KEY ("id")
       );
     END IF;
   END $$`,
+
+  `ALTER TABLE "advance_payment_settings" ADD COLUMN IF NOT EXISTS "allow_per_po_override" BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE "advance_payment_settings" ADD COLUMN IF NOT EXISTS "default_percentage"    DECIMAL(5,2) NOT NULL DEFAULT 30`,
+  `ALTER TABLE "advance_payment_settings" ADD COLUMN IF NOT EXISTS "min_percentage"        DECIMAL(5,2) NOT NULL DEFAULT 10`,
+  `ALTER TABLE "advance_payment_settings" ADD COLUMN IF NOT EXISTS "max_percentage"        DECIMAL(5,2) NOT NULL DEFAULT 100`,
 
   // ─── BANK ACCOUNT SETTINGS TABLE ───
   `DO $$ BEGIN
@@ -532,17 +537,20 @@ const STATEMENTS = [
         "ifsc_or_routing_number" TEXT NOT NULL,
         "swift_code"             TEXT,
         "branch"                 TEXT,
-        "upi_id"                 TEXT,
-        "qr_code_image_url"      TEXT,
         "currency"               TEXT NOT NULL DEFAULT 'INR',
         "is_active"              BOOLEAN NOT NULL DEFAULT true,
         "updated_by"             TEXT,
-        "created_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updated_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "bank_account_settings_pkey" PRIMARY KEY ("id")
       );
     END IF;
   END $$`,
+
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "account_holder_name"    TEXT`,
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "bank_name"              TEXT`,
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "account_number"         TEXT`,
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "ifsc_or_routing_number" TEXT`,
+  `ALTER TABLE "bank_account_settings" ADD COLUMN IF NOT EXISTS "is_active"              BOOLEAN NOT NULL DEFAULT true`,
 ];
 
 async function run() {
