@@ -6,7 +6,39 @@ import { buildPagination, getPaginationParams } from '../../utils/response';
 import type { CreateProductInput, UpdateProductInput } from './products.schema';
 import type { Prisma } from '@prisma/client';
 
-const productSelect = {
+// ─── Fast Projections (Separating Lightweight Catalog from Heavy Detail Views) ─
+
+export const productListSelect = {
+  id: true,
+  name: true,
+  slug: true,
+  shortDesc: true,
+  sku: true,
+  price: true,
+  salePrice: true,
+  offerPrice: true,
+  thumbnail: true,
+  images: true,
+  categoryId: true,
+  stock: true,
+  reorderLevel: true,
+  status: true,
+  isVisible: true,
+  isFeatured: true,
+  isBestseller: true,
+  isInOffer: true,
+  isNewArrival: true,
+  warranty: true,
+  rating: true,
+  reviewCount: true,
+  colours: true,
+  tags: true,
+  createdAt: true,
+  updatedAt: true,
+  category: { select: { id: true, name: true, slug: true } },
+} as const;
+
+export const productDetailSelect = {
   id: true,
   name: true,
   slug: true,
@@ -46,14 +78,7 @@ const productSelect = {
   category: { select: { id: true, name: true, slug: true } },
 } as const;
 
-const formatProduct = (p: {
-  price: Prisma.Decimal;
-  salePrice?: Prisma.Decimal | null;
-  offerPrice?: Prisma.Decimal | null;
-  rating: Prisma.Decimal;
-  weight: Prisma.Decimal | null;
-  [key: string]: unknown;
-}) => {
+const formatProduct = (p: any) => {
   const effectivePrice = p.offerPrice ?? p.salePrice;
   const numOfferPrice = effectivePrice ? Number(effectivePrice) : null;
   return {
@@ -61,7 +86,7 @@ const formatProduct = (p: {
     price: Number(p.price),
     salePrice: numOfferPrice,
     offerPrice: numOfferPrice,
-    rating: Number(p.rating),
+    rating: p.rating ? Number(p.rating) : 0,
     weight: p.weight ? Number(p.weight) : null,
     inStock: (p.stock as number) > 0,
     productSpecification: p.specification ?? null,
@@ -73,7 +98,7 @@ const formatProduct = (p: {
   };
 };
 
-// ─── List Products ────────────────────────────────────────────────────────────
+// ─── List Products (B2C Fast Path with Server Pagination & Indexed Query) ──────
 
 export const listProducts = async (query: {
   page: number;
@@ -85,7 +110,6 @@ export const listProducts = async (query: {
   minPrice?: number;
   maxPrice?: number;
   isFeatured?: boolean;
-  isBestsaller?: boolean;
   isBestseller?: boolean;
   isInOffer?: boolean;
   isNewArrival?: boolean;
@@ -122,7 +146,7 @@ export const listProducts = async (query: {
   const [products, totalItems] = await Promise.all([
     readPrisma.product.findMany({
       where,
-      select: productSelect,
+      select: productListSelect,
       orderBy: { [sortBy]: query.sortOrder },
       skip,
       take: limit,
@@ -192,7 +216,7 @@ export const getProductsByCategory = async (
   const [products, totalItems, priceRange] = await Promise.all([
     readPrisma.product.findMany({
       where,
-      select: productSelect,
+      select: productListSelect,
       orderBy: { [sortBy]: sortOrder },
       skip,
       take: limit,
@@ -224,12 +248,12 @@ export const getProductsByCategory = async (
   };
 };
 
-// ─── Get Product By Slug ──────────────────────────────────────────────────────
+// ─── Get Product By Slug (Optimized Single Lookups) ───────────────────────────
 
 export const getProductBySlug = async (slug: string) => {
   const product = await readPrisma.product.findUnique({
     where: { slug, deletedAt: null },
-    select: productSelect,
+    select: productDetailSelect,
   });
 
   if (!product) throw new AppError('NOT_FOUND', 'Product not found', 404);
@@ -242,7 +266,7 @@ export const getProductBySlug = async (slug: string) => {
 export const getProductById = async (id: string) => {
   const product = await readPrisma.product.findUnique({
     where: { id, deletedAt: null },
-    select: productSelect,
+    select: productDetailSelect,
   });
 
   if (!product) throw new AppError('NOT_FOUND', 'Product not found', 404);
@@ -263,45 +287,29 @@ export const createProduct = async (input: CreateProductInput) => {
 
   const slug = await generateUniqueSlug(input.name, 'product');
 
-  const effectiveOfferPrice = input.offerPrice ?? input.salePrice;
+  const {
+    dimensions,
+    attributes,
+    specification,
+    productSpecification,
+    manufacturerInfo,
+    seo,
+    ...rest
+  } = input;
 
   const product = await prisma.product.create({
     data: {
-      name: input.name,
+      ...rest,
       slug,
-      description: input.description,
-      shortDesc: input.shortDesc,
-      sku: input.sku,
-      price: input.price,
-      salePrice: effectiveOfferPrice,
-      offerPrice: effectiveOfferPrice,
-      thumbnail: input.thumbnail,
-      images: input.images ?? [],
-      category: input.categoryId ? { connect: { id: input.categoryId } } : undefined,
-      stock: input.stock ?? 0,
-      reorderLevel: input.reorderLevel ?? 10,
-      status: input.status ?? 'DRAFT',
-      isVisible: input.isVisible ?? true,
-      isFeatured: input.isFeatured ?? false,
-      isBestseller: input.isBestseller ?? false,
-      isInOffer: input.isInOffer ?? false,
-      isNewArrival: input.isNewArrival ?? false,
-      compatibleFor: input.compatibleFor ?? [],
-      warranty: input.warranty ?? '2 years',
-      weight: input.weight,
-      dimensions: input.dimensions ? (input.dimensions as Prisma.InputJsonValue) : undefined,
-      attributes: input.attributes ? (input.attributes as Prisma.InputJsonValue) : undefined,
-      specification: (input.specification || input.productSpecification)
-        ? ((input.specification || input.productSpecification) as Prisma.InputJsonValue)
-        : undefined,
-      manufacturerInfo: input.manufacturerInfo ? (input.manufacturerInfo as Prisma.InputJsonValue) : undefined,
-      colours: input.colours ?? [],
-      tags: input.tags ?? [],
-      metaTitle: input.seo?.metaTitle,
-      metaDescription: input.seo?.metaDescription,
-      metaKeywords: input.seo?.metaKeywords,
+      dimensions: dimensions ? (dimensions as any) : undefined,
+      attributes: attributes ? (attributes as any) : undefined,
+      specification: (productSpecification || specification) ? ((productSpecification || specification) as any) : undefined,
+      manufacturerInfo: manufacturerInfo ? (manufacturerInfo as any) : undefined,
+      metaTitle: seo?.metaTitle,
+      metaDescription: seo?.metaDescription,
+      metaKeywords: seo?.metaKeywords,
     },
-    select: productSelect,
+    select: productDetailSelect,
   });
 
   return formatProduct(product);
@@ -310,76 +318,67 @@ export const createProduct = async (input: CreateProductInput) => {
 // ─── Update Product ───────────────────────────────────────────────────────────
 
 export const updateProduct = async (id: string, input: UpdateProductInput) => {
-  const product = await prisma.product.findUnique({ where: { id, deletedAt: null } });
-  if (!product) throw new AppError('NOT_FOUND', 'Product not found', 404);
+  const existing = await prisma.product.findUnique({ where: { id, deletedAt: null } });
+  if (!existing) throw new AppError('NOT_FOUND', 'Product not found', 404);
 
-  if (input.sku && input.sku !== product.sku) {
+  if (input.sku && input.sku !== existing.sku) {
     const skuExists = await prisma.product.findUnique({ where: { sku: input.sku } });
     if (skuExists) throw new AppError('CONFLICT', 'A product with this SKU already exists', 409);
   }
 
-  const updateData: Prisma.ProductUpdateInput = {};
-
-  if (input.name) {
-    updateData.name = input.name;
-    updateData.slug = await generateUniqueSlug(input.name, 'product', id);
-  }
-  if (input.description !== undefined) updateData.description = input.description;
-  if (input.shortDesc !== undefined) updateData.shortDesc = input.shortDesc;
-  if (input.sku) updateData.sku = input.sku;
-  if (input.price !== undefined) updateData.price = input.price;
-  if (input.offerPrice !== undefined || input.salePrice !== undefined) {
-    const pVal = input.offerPrice ?? input.salePrice;
-    updateData.salePrice = pVal;
-    updateData.offerPrice = pVal;
-  }
-  if (input.thumbnail !== undefined) updateData.thumbnail = input.thumbnail;
-  if (input.images !== undefined) updateData.images = input.images;
-  if (input.categoryId !== undefined) {
-    if (input.categoryId === null) {
-      updateData.category = { disconnect: true };
-    } else {
-      updateData.category = { connect: { id: input.categoryId } };
-    }
-  }
-  if (input.stock !== undefined) updateData.stock = input.stock;
-  if (input.reorderLevel !== undefined) updateData.reorderLevel = input.reorderLevel;
-  if (input.status !== undefined) updateData.status = input.status;
-  if (input.isVisible !== undefined) updateData.isVisible = input.isVisible;
-  if (input.isFeatured !== undefined) updateData.isFeatured = input.isFeatured;
-  if (input.isBestseller !== undefined) updateData.isBestseller = input.isBestseller;
-  if (input.isInOffer !== undefined) updateData.isInOffer = input.isInOffer;
-  if (input.isNewArrival !== undefined) updateData.isNewArrival = input.isNewArrival;
-  if (input.compatibleFor !== undefined) updateData.compatibleFor = input.compatibleFor;
-  if (input.warranty !== undefined) updateData.warranty = input.warranty;
-  if (input.weight !== undefined) updateData.weight = input.weight;
-  if (input.dimensions !== undefined) updateData.dimensions = input.dimensions as Prisma.InputJsonValue;
-  if (input.attributes !== undefined) updateData.attributes = input.attributes as Prisma.InputJsonValue;
-  if (input.specification !== undefined || input.productSpecification !== undefined) {
-    updateData.specification = (input.specification || input.productSpecification) as Prisma.InputJsonValue;
-  }
-  if (input.manufacturerInfo !== undefined) updateData.manufacturerInfo = input.manufacturerInfo as Prisma.InputJsonValue;
-  if (input.colours !== undefined) updateData.colours = input.colours;
-  if (input.tags !== undefined) updateData.tags = input.tags;
-  if (input.seo) {
-    updateData.metaTitle = input.seo.metaTitle;
-    updateData.metaDescription = input.seo.metaDescription;
-    updateData.metaKeywords = input.seo.metaKeywords;
+  if (input.categoryId) {
+    const category = await prisma.category.findUnique({ where: { id: input.categoryId, deletedAt: null } });
+    if (!category) throw new AppError('NOT_FOUND', 'Category not found', 404);
   }
 
-  const updated = await prisma.product.update({
+  let slug = existing.slug;
+  if (input.name && input.name !== existing.name) {
+    slug = await generateUniqueSlug(input.name, 'product');
+  }
+
+  const {
+    dimensions,
+    attributes,
+    specification,
+    productSpecification,
+    manufacturerInfo,
+    seo,
+    ...rest
+  } = input;
+
+  const product = await prisma.product.update({
     where: { id },
-    data: updateData,
-    select: productSelect,
+    data: {
+      ...rest,
+      slug,
+      dimensions: dimensions !== undefined ? (dimensions as any) : undefined,
+      attributes: attributes !== undefined ? (attributes as any) : undefined,
+      specification: (productSpecification !== undefined || specification !== undefined)
+        ? ((productSpecification || specification) as any)
+        : undefined,
+      manufacturerInfo: manufacturerInfo !== undefined ? (manufacturerInfo as any) : undefined,
+      ...(seo ? {
+        metaTitle: seo.metaTitle,
+        metaDescription: seo.metaDescription,
+        metaKeywords: seo.metaKeywords,
+      } : {}),
+    },
+    select: productDetailSelect,
   });
 
-  return formatProduct(updated);
+  return formatProduct(product);
 };
 
-// ─── Delete Product ───────────────────────────────────────────────────────────
+// ─── Delete Product (Soft Delete) ─────────────────────────────────────────────
 
 export const deleteProduct = async (id: string) => {
-  const product = await prisma.product.findUnique({ where: { id, deletedAt: null } });
-  if (!product) throw new AppError('NOT_FOUND', 'Product not found', 404);
-  await prisma.product.update({ where: { id }, data: { deletedAt: new Date() } });
+  const existing = await prisma.product.findUnique({ where: { id, deletedAt: null } });
+  if (!existing) throw new AppError('NOT_FOUND', 'Product not found', 404);
+
+  await prisma.product.update({
+    where: { id },
+    data: { deletedAt: new Date(), status: 'INACTIVE', isVisible: false },
+  });
+
+  return { message: 'Product deleted successfully' };
 };

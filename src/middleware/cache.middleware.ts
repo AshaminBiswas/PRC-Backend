@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { getCache, setCache } from '../services/redis/cache.redis';
+import { getCacheWithTier, setCache, deleteCache } from '../services/redis/cache.redis';
 
-// ─── Redis Automatic Response Caching Middleware ──────────────────────────────
+// ─── High-Performance Response Caching & Timing Middleware ───────────────────
 
 interface CacheMiddlewareOptions {
   ttlSeconds?: number;
@@ -13,17 +13,29 @@ export const cacheMiddleware = (options: CacheMiddlewareOptions = {}) => {
   const prefix = options.keyPrefix || 'cache';
 
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Only cache GET requests
     if (req.method !== 'GET') {
       return next();
     }
 
+    const startHrTime = process.hrtime();
     const cacheKey = `${prefix}:${req.originalUrl || req.url}`;
 
     try {
-      const cachedData = await getCache(cacheKey);
-      if (cachedData) {
+      const cached = await getCacheWithTier(cacheKey);
+      if (cached && cached.data) {
+        const elapsedHrTime = process.hrtime(startHrTime);
+        const elapsedMs = (elapsedHrTime[0] * 1000 + elapsedHrTime[1] / 1e6).toFixed(2);
+
         res.setHeader('X-Cache-Status', 'HIT');
-        res.json(cachedData);
+        res.setHeader('X-Cache-Tier', cached.tier);
+        res.setHeader('Server-Timing', `cache;dur=${elapsedMs}`);
+        res.setHeader(
+          'Cache-Control',
+          `public, max-age=${Math.min(ttl, 60)}, stale-while-revalidate=30`
+        );
+
+        res.json(cached.data);
         return;
       }
 
@@ -31,17 +43,18 @@ export const cacheMiddleware = (options: CacheMiddlewareOptions = {}) => {
       const originalJson = res.json.bind(res);
 
       res.json = (body: any): Response => {
+        const elapsedHrTime = process.hrtime(startHrTime);
+        const elapsedMs = (elapsedHrTime[0] * 1000 + elapsedHrTime[1] / 1e6).toFixed(2);
+        res.setHeader('Server-Timing', `db;dur=${elapsedMs}`);
+
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          setCache(cacheKey, body, ttl).catch((err) =>
-            console.error(`[Cache Middleware Set Error] key="${cacheKey}":`, err?.message || err)
-          );
+          setCache(cacheKey, body, ttl).catch(() => {});
         }
         return originalJson(body);
       };
 
       next();
-    } catch (err: any) {
-      console.error(`[Cache Middleware Error] key="${cacheKey}":`, err?.message || err);
+    } catch {
       next();
     }
   };
@@ -50,7 +63,6 @@ export const cacheMiddleware = (options: CacheMiddlewareOptions = {}) => {
 export const cacheResponse = (ttlSeconds = 300) => cacheMiddleware({ ttlSeconds });
 
 export const clearResponseCache = async (pattern = '*'): Promise<void> => {
-  const { deleteCache } = await import('../services/redis/cache.redis');
   await deleteCache(pattern);
 };
 
