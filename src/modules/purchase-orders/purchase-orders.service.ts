@@ -1,0 +1,1351 @@
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { Prisma, B2BPoStatus, PaymentReceiptStatus } from '@prisma/client';
+import prisma from '../../config/database';
+import { AppError } from '../../middleware/error.middleware';
+import { generateNextPoNumber } from './po-numbering.service';
+import { generatePackingListPdfBuffer } from './packing-list-pdf.service';
+import {
+  sendAdvancePaymentRequestEmail,
+  sendPaymentAcknowledgedEmail,
+  sendPackingListReadyEmail,
+} from './po-email.service';
+import {
+  CreatePurchaseOrderInput,
+  AcknowledgeReceiptInput,
+  VerifyReceiptInput,
+  RejectReceiptInput,
+  AdvancePaymentSettingInput,
+  BankAccountSettingInput,
+  SavedAddressInput,
+} from './purchase-orders.schema';
+
+const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
+const RECEIPTS_DIR = path.join(UPLOADS_DIR, 'receipts');
+const PACKING_LISTS_DIR = path.join(UPLOADS_DIR, 'packing-lists');
+
+// Ensure directories exist
+[UPLOADS_DIR, RECEIPTS_DIR, PACKING_LISTS_DIR].forEach((dir) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+});
+
+// Default fallback bank details if none configured
+const DEFAULT_BANK_SETTINGS = {
+  accountHolderName: 'PRC HARDWARE ENTERPRISE PRIVATE LIMITED',
+  bankName: 'HDFC Bank Ltd',
+  accountNumber: '50200088991122',
+  ifscOrRoutingNumber: 'HDFC0001234',
+  swiftCode: 'HDFCINBBXXX',
+  branch: 'Mandoli Industrial Area, Delhi',
+  currency: 'INR',
+  isActive: true,
+};
+
+// ─── File Validation Helpers ──────────────────────────────────────────────────
+
+function validateFileMagicBytes(buffer: Buffer, mimeType: string): boolean {
+  if (!buffer || buffer.length < 4) return false;
+
+  // PDF check: %PDF (0x25 0x50 0x44 0x46)
+  if (mimeType === 'application/pdf') {
+    return buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
+  }
+
+  // PNG check: 0x89 0x50 0x4E 0x47
+  if (mimeType === 'image/png') {
+    return buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47;
+  }
+
+  // JPEG check: 0xFF 0xD8 0xFF
+  if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+    return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+
+  return false;
+}
+
+function calculateSha256(buffer: Buffer): string {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+// ─── Purchase Order Service Class ─────────────────────────────────────────────
+
+export class PurchaseOrdersService {
+  /**
+   * 1. Get eligible approved quotations for a customer
+   */
+  async getEligibleQuotations(customerId: string) {
+    const quotes = await prisma.quote.findMany({
+      where: {
+        userId: customerId,
+        status: 'APPROVED',
+        isDeleted: false,
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                sku: true,
+                images: true,
+              },
+            },
+          },
+        },
+        b2bPurchaseOrder: {
+          select: {
+            id: true,
+            poNumber: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    // Filter out expired quotes or quotes with already active POs
+    const now = new Date();
+    return quotes.filter((q) => {
+      const isNotExpired = !q.validUntil || new Date(q.validUntil) >= now;
+      const hasActivePo =
+        q.b2bPurchaseOrder &&
+        q.b2bPurchaseOrder.status !== B2BPoStatus.CANCELLED &&
+        q.b2bPurchaseOrder.status !== B2BPoStatus.REJECTED;
+      return isNotExpired && !hasActivePo;
+    });
+  }
+
+  /**
+   * 2. Get quotation detail for PO pre-fill
+   */
+  async getQuotationForPo(quotationId: string, customerId: string) {
+    const quote = await prisma.quote.findFirst({
+      where: {
+        id: quotationId,
+        userId: customerId,
+        isDeleted: false,
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                sku: true,
+                images: true,
+              },
+            },
+          },
+        },
+        b2bPurchaseOrder: true,
+      },
+    });
+
+    if (!quote) {
+      throw new AppError('NOT_FOUND', 'Approved quotation not found or access denied', 404);
+    }
+
+    if (quote.status !== 'APPROVED') {
+      throw new AppError('INVALID_STATE', `Quotation must be APPROVED to start a PO. Current status: ${quote.status}`, 400);
+    }
+
+    if (quote.validUntil && new Date(quote.validUntil) < new Date()) {
+      throw new AppError('EXPIRED', 'This quotation has expired and cannot be converted into a Purchase Order', 400);
+    }
+
+    if (
+      quote.b2bPurchaseOrder &&
+      quote.b2bPurchaseOrder.status !== B2BPoStatus.CANCELLED &&
+      quote.b2bPurchaseOrder.status !== B2BPoStatus.REJECTED
+    ) {
+      throw new AppError(
+        'CONFLICT',
+        `A Purchase Order (${quote.b2bPurchaseOrder.poNumber}) already exists for this quotation`,
+        409
+      );
+    }
+
+    const advanceSetting = await this.getAdvancePaymentSetting();
+    const grandTotal = Number(quote.grandTotal || quote.basicPrice || 0);
+    const advancePercentage = Number(advanceSetting.defaultPercentage || 30);
+    const advanceAmount = Math.round((grandTotal * (advancePercentage / 100)) * 100) / 100;
+    const balanceAmount = Math.round((grandTotal - advanceAmount) * 100) / 100;
+
+    return {
+      quote,
+      pricingSummary: {
+        basicPrice: Number(quote.basicPrice || 0),
+        taxTotal: Number(quote.taxTotal || quote.gstAmount || 0),
+        shippingCost: Number(quote.shippingCost || 0),
+        discountTotal: Number(quote.discountTotal || 0),
+        grandTotal,
+        advancePercentage,
+        advanceAmount,
+        balanceAmount,
+      },
+    };
+  }
+
+  /**
+   * 3. Create & submit a Purchase Order against an approved quotation
+   */
+  async createPurchaseOrder(
+    customerId: string,
+    input: CreatePurchaseOrderInput,
+    ipAddress?: string
+  ) {
+    // 1. Fetch & validate quotation server-side
+    const quote = await prisma.quote.findFirst({
+      where: {
+        id: input.quotationId,
+        userId: customerId,
+        isDeleted: false,
+      },
+      include: {
+        items: {
+          include: {
+            product: true,
+          },
+        },
+        user: true,
+        b2bPurchaseOrder: true,
+      },
+    });
+
+    if (!quote) {
+      throw new AppError('NOT_FOUND', 'Approved quotation not found or does not belong to your account', 404);
+    }
+
+    if (quote.status !== 'APPROVED') {
+      throw new AppError('INVALID_STATE', 'Only APPROVED quotations can be converted into a Purchase Order', 400);
+    }
+
+    if (quote.validUntil && new Date(quote.validUntil) < new Date()) {
+      throw new AppError('EXPIRED', 'This quotation has expired', 400);
+    }
+
+    if (
+      quote.b2bPurchaseOrder &&
+      quote.b2bPurchaseOrder.status !== B2BPoStatus.CANCELLED &&
+      quote.b2bPurchaseOrder.status !== B2BPoStatus.REJECTED
+    ) {
+      throw new AppError(
+        'CONFLICT',
+        `A Purchase Order (${quote.b2bPurchaseOrder.poNumber}) has already been submitted for this quotation`,
+        409
+      );
+    }
+
+    if (!quote.items || quote.items.length === 0) {
+      throw new AppError('BAD_REQUEST', 'Quotation has no line items', 400);
+    }
+
+    // 2. Fetch Advance Payment Setting
+    const advanceSetting = await this.getAdvancePaymentSetting();
+    const advancePercentage = Number(advanceSetting.defaultPercentage || 30);
+
+    // 3. Recompute totals server-side from live quotation snapshot
+    let subtotal = 0;
+    const itemsSnapshot = quote.items.map((item, idx) => {
+      const rate = Number(item.offeredPrice ?? item.rate ?? item.requestedPrice ?? 0);
+      const amount = Math.round(rate * item.quantity * 100) / 100;
+      subtotal += amount;
+      return {
+        slNo: idx + 1,
+        productId: item.productId,
+        productName: item.productNameSnapshot || item.product?.name || 'Architectural Hardware Item',
+        sku: item.product?.sku || undefined,
+        variantId: item.variantId || undefined,
+        unit: item.unit || 'PCS',
+        quantity: item.quantity,
+        rate: new Prisma.Decimal(rate),
+        amount: new Prisma.Decimal(amount),
+        taxRate: new Prisma.Decimal(18.0),
+        taxAmount: new Prisma.Decimal(Math.round(amount * 0.18 * 100) / 100),
+        total: new Prisma.Decimal(Math.round(amount * 1.18 * 100) / 100),
+      };
+    });
+
+    const taxTotal = Number(quote.taxTotal || quote.gstAmount || Math.round(subtotal * 0.18 * 100) / 100);
+    const shippingCost = Number(quote.shippingCost || 0);
+    const discountTotal = Number(quote.discountTotal || 0);
+    const totalAmount = Number(quote.grandTotal || subtotal + taxTotal + shippingCost - discountTotal);
+
+    const advanceAmount = Math.round((totalAmount * (advancePercentage / 100)) * 100) / 100;
+    const balanceAmount = Math.round((totalAmount - advanceAmount) * 100) / 100;
+
+    // Delivery address resolution
+    const billingAddress = input.billingAddress;
+    const deliveryAddress = input.sameAsBilling || !input.deliveryAddress ? input.billingAddress : input.deliveryAddress;
+
+    // 4. Save to address book if requested
+    if (input.saveBillingAddress) {
+      await this.saveAddressToBook(customerId, billingAddress, input.billingAddressLabel || 'Billing Address').catch(() => {});
+    }
+    if (input.saveDeliveryAddress && !input.sameAsBilling && input.deliveryAddress) {
+      await this.saveAddressToBook(customerId, deliveryAddress, input.deliveryAddressLabel || 'Delivery Address').catch(() => {});
+    }
+
+    // 5. Generate Atomic Sequential PO Number
+    const { poNumber } = await generateNextPoNumber();
+
+    // 6. Execute atomic database transaction
+    const po = await prisma.$transaction(async (tx) => {
+      const createdPo = await tx.b2BPurchaseOrder.create({
+        data: {
+          poNumber,
+          quotationId: quote.id,
+          quotationNumber: quote.referenceNo || quote.quoteNumber,
+          customerId,
+          status: B2BPoStatus.AWAITING_ADVANCE_PAYMENT,
+          customerPoReferenceNumber: input.customerPoReferenceNumber || null,
+          billingAddress: billingAddress as any,
+          deliveryAddress: deliveryAddress as any,
+          deliveryInstructions: input.deliveryInstructions || null,
+          requestedDeliveryDate: input.requestedDeliveryDate ? new Date(input.requestedDeliveryDate) : null,
+          subtotal: new Prisma.Decimal(subtotal),
+          taxTotal: new Prisma.Decimal(taxTotal),
+          discountTotal: new Prisma.Decimal(discountTotal),
+          shippingCost: new Prisma.Decimal(shippingCost),
+          totalAmount: new Prisma.Decimal(totalAmount),
+          currency: 'INR',
+          advancePercentage: new Prisma.Decimal(advancePercentage),
+          advanceAmount: new Prisma.Decimal(advanceAmount),
+          balanceAmount: new Prisma.Decimal(balanceAmount),
+          submittedAt: new Date(),
+          validatedAt: new Date(),
+          createdBy: customerId,
+          items: {
+            create: itemsSnapshot,
+          },
+        },
+        include: {
+          items: true,
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              companyName: true,
+              phone: true,
+            },
+          },
+        },
+      });
+
+      // Write Audit Log
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: createdPo.id,
+          action: 'PO_SUBMITTED_AND_VALIDATED',
+          fromStatus: B2BPoStatus.SUBMITTED,
+          toStatus: B2BPoStatus.AWAITING_ADVANCE_PAYMENT,
+          performedBy: customerId,
+          metadata: {
+            poNumber,
+            quotationNumber: createdPo.quotationNumber,
+            totalAmount,
+            advanceAmount,
+            advancePercentage,
+          },
+          ipAddress,
+        },
+      });
+
+      return createdPo;
+    });
+
+    // 7. Dispatch Advance Payment Request Email asynchronously
+    const bankDetails = await this.getPrimaryBankAccount();
+    sendAdvancePaymentRequestEmail({
+      poId: po.id,
+      to: po.customer.email,
+      customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
+      companyName: po.customer.companyName || undefined,
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber,
+      totalAmount,
+      currency: 'INR',
+      advancePercentage,
+      advanceAmount,
+      balanceAmount,
+      bankDetails,
+    }).catch((err) => console.error('[Advance Payment Email Error]:', err));
+
+    return po;
+  }
+
+  /**
+   * 4. List Purchase Orders with role-based filtering
+   */
+  async getPurchaseOrders(
+    userId: string,
+    roles: string[],
+    params: {
+      status?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    }
+  ) {
+    const isAdmin = roles.some((r) => ['admin', 'sales_admin', 'finance_admin', 'super_admin'].includes(r.toLowerCase()));
+    const page = Math.max(1, Number(params.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(params.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.B2BPurchaseOrderWhereInput = {};
+
+    if (!isAdmin) {
+      where.customerId = userId;
+    }
+
+    if (params.status && params.status !== 'ALL') {
+      where.status = params.status as B2BPoStatus;
+    }
+
+    if (params.search && params.search.trim()) {
+      const q = params.search.trim();
+      where.OR = [
+        { poNumber: { contains: q, mode: 'insensitive' } },
+        { quotationNumber: { contains: q, mode: 'insensitive' } },
+        { customerPoReferenceNumber: { contains: q, mode: 'insensitive' } },
+        { customer: { companyName: { contains: q, mode: 'insensitive' } } },
+        { customer: { email: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [total, items] = await Promise.all([
+      prisma.b2BPurchaseOrder.count({ where }),
+      prisma.b2BPurchaseOrder.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              companyName: true,
+              phone: true,
+            },
+          },
+          receipts: {
+            where: { isDeleted: false },
+            orderBy: { uploadedAt: 'desc' },
+            take: 1,
+          },
+          packingList: {
+            select: {
+              id: true,
+              generatedAt: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * 5. Get Purchase Order by ID
+   */
+  async getPurchaseOrderById(poId: string, user: { id: string; roles: string[] }) {
+    const isAdmin = user.roles.some((r) =>
+      ['admin', 'sales_admin', 'finance_admin', 'super_admin'].includes(r.toLowerCase())
+    );
+
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            companyName: true,
+            phone: true,
+            gstin: true,
+          },
+        },
+        items: {
+          orderBy: { slNo: 'asc' },
+        },
+        receipts: {
+          where: { isDeleted: false },
+          orderBy: { uploadedAt: 'desc' },
+          include: {
+            verifiedByUser: {
+              select: { id: true, firstName: true, lastName: true, email: true },
+            },
+            acknowledgedByUser: {
+              select: { id: true, firstName: true, lastName: true, email: true },
+            },
+          },
+        },
+        packingList: true,
+        auditLogs: {
+          orderBy: { performedAt: 'desc' },
+          include: {
+            adminUser: {
+              select: { id: true, firstName: true, lastName: true, email: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to this Purchase Order', 403);
+    }
+
+    const bankDetails = await this.getPrimaryBankAccount();
+
+    return {
+      ...po,
+      bankDetails,
+    };
+  }
+
+  /**
+   * 6. Upload or replace Payment Receipt
+   */
+  async uploadPaymentReceipt(
+    poId: string,
+    file: Express.Multer.File,
+    user: { id: string; roles: string[] },
+    ipAddress?: string
+  ) {
+    if (!file) {
+      throw new AppError('BAD_REQUEST', 'Payment receipt file is required', 400);
+    }
+
+    // 1. Check size limit: 2 MB
+    const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
+    if (file.size > MAX_SIZE) {
+      throw new AppError('FILE_TOO_LARGE', 'Payment receipt file size must not exceed 2 MB', 400);
+    }
+
+    // 2. Validate MIME type & file signature
+    const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    if (!allowedMimes.includes(file.mimetype) || !validateFileMagicBytes(file.buffer, file.mimetype)) {
+      throw new AppError(
+        'INVALID_FILE_TYPE',
+        'Invalid file type. Allowed formats: PDF, JPEG, JPG, PNG (with valid binary signature)',
+        400
+      );
+    }
+
+    // 3. Check PO existence and ownership
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        receipts: {
+          where: { isDeleted: false },
+          orderBy: { version: 'desc' },
+        },
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const isAdmin = user.roles.some((r) =>
+      ['admin', 'sales_admin', 'finance_admin', 'super_admin'].includes(r.toLowerCase())
+    );
+
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to upload receipt for this Purchase Order', 403);
+    }
+
+    // 4. Check status lock: If receipt is already VERIFIED, lock it
+    const activeReceipt = po.receipts[0];
+    if (activeReceipt && activeReceipt.status === PaymentReceiptStatus.VERIFIED) {
+      throw new AppError(
+        'LOCKED',
+        'This payment receipt has already been digitally verified and locked. Contact Finance Admin to reopen.',
+        400
+      );
+    }
+
+    // 5. Compute SHA-256 hash and save to disk
+    const fileHash = calculateSha256(file.buffer);
+    const ext = path.extname(file.originalname).toLowerCase() || (file.mimetype === 'application/pdf' ? '.pdf' : '.jpg');
+    const storageFileName = `receipt_${po.poNumber.replace(/[^a-zA-Z0-9]/g, '_')}_v${(activeReceipt?.version || 0) + 1}_${Date.now()}${ext}`;
+    const filePath = path.join(RECEIPTS_DIR, storageFileName);
+
+    await fs.promises.writeFile(filePath, file.buffer);
+
+    const nextVersion = (activeReceipt?.version || 0) + 1;
+
+    // 6. Update database record
+    return await prisma.$transaction(async (tx) => {
+      if (activeReceipt) {
+        // Archive previous version to history
+        await tx.paymentReceiptHistory.create({
+          data: {
+            receiptId: activeReceipt.id,
+            purchaseOrderId: po.id,
+            fileStorageKey: activeReceipt.fileStorageKey,
+            originalFileName: activeReceipt.originalFileName,
+            fileSizeBytes: activeReceipt.fileSizeBytes,
+            mimeType: activeReceipt.mimeType,
+            fileHash: activeReceipt.fileHash,
+            version: activeReceipt.version,
+            uploadedBy: activeReceipt.uploadedBy,
+            uploadedAt: activeReceipt.uploadedAt,
+          },
+        });
+
+        // Update active receipt
+        const updated = await tx.paymentReceipt.update({
+          where: { id: activeReceipt.id },
+          data: {
+            status: PaymentReceiptStatus.PENDING_REVIEW,
+            fileStorageKey: storageFileName,
+            originalFileName: file.originalname,
+            fileSizeBytes: file.size,
+            mimeType: file.mimetype,
+            fileHash,
+            uploadedBy: user.id,
+            uploadedAt: new Date(),
+            version: nextVersion,
+            rejectionReason: null,
+            rejectedAt: null,
+            rejectedBy: null,
+          },
+        });
+
+        await tx.b2BPurchaseOrder.update({
+          where: { id: po.id },
+          data: { status: B2BPoStatus.PAYMENT_RECEIPT_SUBMITTED },
+        });
+
+        await tx.poAuditLog.create({
+          data: {
+            purchaseOrderId: po.id,
+            action: 'PAYMENT_RECEIPT_UPDATED',
+            fromStatus: po.status,
+            toStatus: B2BPoStatus.PAYMENT_RECEIPT_SUBMITTED,
+            performedBy: user.id,
+            metadata: {
+              version: nextVersion,
+              originalFileName: file.originalname,
+              fileHash,
+              fileSize: file.size,
+            },
+            ipAddress,
+          },
+        });
+
+        return updated;
+      } else {
+        // Create new receipt
+        const created = await tx.paymentReceipt.create({
+          data: {
+            purchaseOrderId: po.id,
+            status: PaymentReceiptStatus.PENDING_REVIEW,
+            fileStorageKey: storageFileName,
+            originalFileName: file.originalname,
+            fileSizeBytes: file.size,
+            mimeType: file.mimetype,
+            fileHash,
+            uploadedBy: user.id,
+            version: 1,
+          },
+        });
+
+        await tx.b2BPurchaseOrder.update({
+          where: { id: po.id },
+          data: { status: B2BPoStatus.PAYMENT_RECEIPT_SUBMITTED },
+        });
+
+        await tx.poAuditLog.create({
+          data: {
+            purchaseOrderId: po.id,
+            action: 'PAYMENT_RECEIPT_UPLOADED',
+            fromStatus: po.status,
+            toStatus: B2BPoStatus.PAYMENT_RECEIPT_SUBMITTED,
+            performedBy: user.id,
+            metadata: {
+              version: 1,
+              originalFileName: file.originalname,
+              fileHash,
+              fileSize: file.size,
+            },
+            ipAddress,
+          },
+        });
+
+        return created;
+      }
+    });
+  }
+
+  /**
+   * 7. Admin acknowledges payment receipt and sends confirmation email
+   */
+  async acknowledgePaymentReceipt(
+    poId: string,
+    adminUser: { id: string; email: string },
+    input: AcknowledgeReceiptInput,
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        receipts: {
+          where: { isDeleted: false },
+          orderBy: { uploadedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const receipt = po.receipts[0];
+    if (!receipt) {
+      throw new AppError('BAD_REQUEST', 'No active payment receipt found on this Purchase Order to acknowledge', 400);
+    }
+
+    const remainingBalance = Math.max(0, Number(po.totalAmount) - input.amountReceived);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedReceipt = await tx.paymentReceipt.update({
+        where: { id: receipt.id },
+        data: {
+          status: PaymentReceiptStatus.ACKNOWLEDGED,
+          amountReceived: new Prisma.Decimal(input.amountReceived),
+          paymentDate: input.paymentDate ? new Date(input.paymentDate) : new Date(),
+          paymentReference: input.paymentReference,
+          paymentMethod: input.paymentMethod,
+          remarks: input.remarks || null,
+          acknowledgedBy: adminUser.id,
+          acknowledgedAt: new Date(),
+        },
+      });
+
+      await tx.b2BPurchaseOrder.update({
+        where: { id: po.id },
+        data: {
+          status: B2BPoStatus.PAYMENT_ACKNOWLEDGED,
+          balanceAmount: new Prisma.Decimal(remainingBalance),
+        },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PAYMENT_ACKNOWLEDGED_BY_ADMIN',
+          fromStatus: po.status,
+          toStatus: B2BPoStatus.PAYMENT_ACKNOWLEDGED,
+          performedBy: adminUser.id,
+          metadata: {
+            amountReceived: input.amountReceived,
+            paymentReference: input.paymentReference,
+            paymentMethod: input.paymentMethod,
+            acknowledgedByEmail: adminUser.email,
+          },
+          ipAddress,
+        },
+      });
+
+      return updatedReceipt;
+    });
+
+    // Send payment acknowledgment email
+    sendPaymentAcknowledgedEmail({
+      poId: po.id,
+      to: po.customer.email,
+      customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber,
+      amountReceived: input.amountReceived,
+      currency: po.currency,
+      paymentDate: input.paymentDate ? new Date(input.paymentDate).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN'),
+      paymentReference: input.paymentReference,
+      paymentMethod: input.paymentMethod,
+      balanceAmount: remainingBalance,
+      remarks: input.remarks,
+    }).catch((err) => console.error('[Payment Ack Email Error]:', err));
+
+    return updated;
+  }
+
+  /**
+   * 8. Admin digitally verifies the payment receipt (tamper-evident audit & auto-packing list)
+   */
+  async verifyPaymentReceipt(
+    poId: string,
+    adminUser: { id: string; email: string },
+    input: VerifyReceiptInput,
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        items: true,
+        receipts: {
+          where: { isDeleted: false },
+          orderBy: { uploadedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const receipt = po.receipts[0];
+    if (!receipt) {
+      throw new AppError('BAD_REQUEST', 'No active payment receipt uploaded to verify', 400);
+    }
+
+    // Verify current file integrity on disk against stored hash
+    const filePath = path.join(RECEIPTS_DIR, receipt.fileStorageKey);
+    let diskFileHash = receipt.fileHash;
+    if (fs.existsSync(filePath)) {
+      const fileBuffer = await fs.promises.readFile(filePath);
+      diskFileHash = calculateSha256(fileBuffer);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.paymentReceipt.update({
+        where: { id: receipt.id },
+        data: {
+          status: PaymentReceiptStatus.VERIFIED,
+          verifiedBy: adminUser.id,
+          verifiedAt: new Date(),
+          verificationNotes: input.verificationNotes || 'Digitally verified against bank statement',
+          fileHash: diskFileHash,
+        },
+      });
+
+      await tx.b2BPurchaseOrder.update({
+        where: { id: po.id },
+        data: {
+          status: B2BPoStatus.PAYMENT_VERIFIED,
+        },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PAYMENT_RECEIPT_DIGITALLY_VERIFIED',
+          fromStatus: po.status,
+          toStatus: B2BPoStatus.PAYMENT_VERIFIED,
+          performedBy: adminUser.id,
+          metadata: {
+            verifiedByEmail: adminUser.email,
+            fileHash: diskFileHash,
+            notes: input.verificationNotes,
+            confirmedAgainstBank: true,
+          },
+          ipAddress,
+        },
+      });
+    });
+
+    // ── Automatic Packing List Generation (Background / Async) ───────────────
+    this.generatePackingList(po.id, adminUser.id).catch((err) => {
+      console.error(`[Packing List Generation Error on PO ${po.poNumber}]:`, err);
+    });
+
+    return {
+      success: true,
+      message: 'Payment receipt digitally verified. Packing list generation triggered.',
+      poNumber: po.poNumber,
+      status: B2BPoStatus.PAYMENT_VERIFIED,
+    };
+  }
+
+  /**
+   * 9. Generate Packing List PDF for a verified PO
+   */
+  async generatePackingList(poId: string, adminId?: string) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        items: true,
+        receipts: {
+          where: { isDeleted: false },
+          orderBy: { uploadedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!po) {
+      throw new Error(`PO not found: ${poId}`);
+    }
+
+    const receipt = po.receipts[0];
+    const totalQuantity = po.items.reduce((acc, i) => acc + i.quantity, 0);
+    const totalPackages = Math.max(1, Math.ceil(totalQuantity / 25)); // Estimate 25 pcs per box
+
+    // Generate PDF buffer using pdfmake
+    const pdfBuffer = await generatePackingListPdfBuffer({
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber,
+      customerPoReferenceNumber: po.customerPoReferenceNumber,
+      createdAt: po.createdAt,
+      requestedDeliveryDate: po.requestedDeliveryDate,
+      customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
+      customerCompany: po.customer.companyName,
+      customerEmail: po.customer.email,
+      customerPhone: po.customer.phone || '',
+      billingAddress: po.billingAddress,
+      deliveryAddress: po.deliveryAddress,
+      deliveryInstructions: po.deliveryInstructions,
+      totalPackages,
+      totalQuantity,
+      items: po.items.map((item) => ({
+        slNo: item.slNo,
+        productName: item.productName,
+        sku: item.sku,
+        unit: item.unit,
+        quantity: item.quantity,
+      })),
+      verifiedAt: receipt?.verifiedAt,
+      fileHash: receipt?.fileHash,
+    });
+
+    // Save PDF to storage
+    const pdfFileName = `packing_list_${po.poNumber.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
+    const pdfPath = path.join(PACKING_LISTS_DIR, pdfFileName);
+    await fs.promises.writeFile(pdfPath, pdfBuffer);
+
+    const pdfHash = calculateSha256(pdfBuffer);
+
+    // Upsert PackingList record
+    await prisma.$transaction(async (tx) => {
+      await tx.packingList.upsert({
+        where: { purchaseOrderId: po.id },
+        update: {
+          fileStorageKey: pdfFileName,
+          fileHash: pdfHash,
+          totalPackages,
+          totalQuantity,
+          generatedAt: new Date(),
+        },
+        create: {
+          purchaseOrderId: po.id,
+          quotationNumber: po.quotationNumber,
+          poNumber: po.poNumber,
+          fileStorageKey: pdfFileName,
+          fileHash: pdfHash,
+          totalPackages,
+          totalQuantity,
+          generatedAt: new Date(),
+        },
+      });
+
+      await tx.b2BPurchaseOrder.update({
+        where: { id: po.id },
+        data: {
+          status: B2BPoStatus.PACKING_LIST_GENERATED,
+        },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PACKING_LIST_AUTO_GENERATED',
+          fromStatus: B2BPoStatus.PAYMENT_VERIFIED,
+          toStatus: B2BPoStatus.PACKING_LIST_GENERATED,
+          performedBy: adminId || null,
+          metadata: {
+            pdfFileName,
+            pdfHash,
+            totalPackages,
+            totalQuantity,
+          },
+        },
+      });
+    });
+
+    // Send packing list ready notification to customer
+    sendPackingListReadyEmail({
+      poId: po.id,
+      to: po.customer.email,
+      customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber,
+      totalPackages,
+      totalQuantity,
+    }).catch((err) => console.error('[Packing List Email Error]:', err));
+  }
+
+  /**
+   * 10. Get Packing List PDF stream / buffer for download
+   */
+  async getPackingListPdf(poId: string, user: { id: string; roles: string[] }) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        packingList: true,
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const isAdmin = user.roles.some((r) =>
+      ['admin', 'sales_admin', 'finance_admin', 'super_admin'].includes(r.toLowerCase())
+    );
+
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to download this packing list', 403);
+    }
+
+    if (!po.packingList || !po.packingList.fileStorageKey) {
+      throw new AppError(
+        'NOT_FOUND',
+        'Packing list has not been generated yet. Advance payment must be verified first.',
+        404
+      );
+    }
+
+    const filePath = path.join(PACKING_LISTS_DIR, po.packingList.fileStorageKey);
+    if (!fs.existsSync(filePath)) {
+      // Regenerate on demand if file is missing
+      await this.generatePackingList(po.id, user.id);
+    }
+
+    return {
+      filePath,
+      fileName: `PackingList_${po.poNumber.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+    };
+  }
+
+  /**
+   * 11. Reject Payment Receipt
+   */
+  async rejectPaymentReceipt(
+    poId: string,
+    adminUser: { id: string; email: string },
+    input: RejectReceiptInput,
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        receipts: {
+          where: { isDeleted: false },
+          orderBy: { uploadedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const receipt = po.receipts[0];
+    if (!receipt) {
+      throw new AppError('BAD_REQUEST', 'No active receipt to reject', 400);
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      const updatedReceipt = await tx.paymentReceipt.update({
+        where: { id: receipt.id },
+        data: {
+          status: PaymentReceiptStatus.REJECTED,
+          rejectedBy: adminUser.id,
+          rejectedAt: new Date(),
+          rejectionReason: input.rejectionReason,
+        },
+      });
+
+      await tx.b2BPurchaseOrder.update({
+        where: { id: po.id },
+        data: {
+          status: B2BPoStatus.AWAITING_ADVANCE_PAYMENT,
+        },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PAYMENT_RECEIPT_REJECTED_BY_ADMIN',
+          fromStatus: po.status,
+          toStatus: B2BPoStatus.AWAITING_ADVANCE_PAYMENT,
+          performedBy: adminUser.id,
+          metadata: {
+            reason: input.rejectionReason,
+            rejectedByEmail: adminUser.email,
+          },
+          ipAddress,
+        },
+      });
+
+      return updatedReceipt;
+    });
+  }
+
+  /**
+   * 12. Reopen Payment Receipt (Unlocks verified receipt for correction)
+   */
+  async reopenPaymentReceipt(
+    poId: string,
+    adminUser: { id: string; email: string },
+    reason: string,
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        receipts: {
+          where: { isDeleted: false },
+          orderBy: { uploadedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const receipt = po.receipts[0];
+    if (!receipt) {
+      throw new AppError('BAD_REQUEST', 'No active receipt to reopen', 400);
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      const updatedReceipt = await tx.paymentReceipt.update({
+        where: { id: receipt.id },
+        data: {
+          status: PaymentReceiptStatus.PENDING_REVIEW,
+          verifiedBy: null,
+          verifiedAt: null,
+        },
+      });
+
+      await tx.b2BPurchaseOrder.update({
+        where: { id: po.id },
+        data: {
+          status: B2BPoStatus.PAYMENT_RECEIPT_SUBMITTED,
+        },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PAYMENT_RECEIPT_REOPENED_BY_ADMIN',
+          fromStatus: po.status,
+          toStatus: B2BPoStatus.PAYMENT_RECEIPT_SUBMITTED,
+          performedBy: adminUser.id,
+          metadata: {
+            reason,
+            reopenedByEmail: adminUser.email,
+          },
+          ipAddress,
+        },
+      });
+
+      return updatedReceipt;
+    });
+  }
+
+  /**
+   * 13. Reject Purchase Order at validation stage
+   */
+  async rejectPurchaseOrder(
+    poId: string,
+    adminUser: { id: string; email: string },
+    rejectionReason: string,
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      const updatedPo = await tx.b2BPurchaseOrder.update({
+        where: { id: po.id },
+        data: {
+          status: B2BPoStatus.REJECTED,
+          rejectedAt: new Date(),
+          rejectionReason,
+        },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PURCHASE_ORDER_REJECTED',
+          fromStatus: po.status,
+          toStatus: B2BPoStatus.REJECTED,
+          performedBy: adminUser.id,
+          metadata: {
+            rejectionReason,
+            rejectedByEmail: adminUser.email,
+          },
+          ipAddress,
+        },
+      });
+
+      return updatedPo;
+    });
+  }
+
+  // ─── Settings & Address Book Helpers ─────────────────────────────────────────
+
+  async getAdvancePaymentSetting() {
+    let setting = await prisma.advancePaymentSetting.findFirst();
+    if (!setting) {
+      setting = await prisma.advancePaymentSetting.create({
+        data: {
+          defaultPercentage: new Prisma.Decimal(30),
+          minPercentage: new Prisma.Decimal(10),
+          maxPercentage: new Prisma.Decimal(100),
+          allowPerPoOverride: true,
+        },
+      });
+    }
+    return setting;
+  }
+
+  async updateAdvancePaymentSetting(input: AdvancePaymentSettingInput, adminId: string) {
+    let setting = await prisma.advancePaymentSetting.findFirst();
+    if (setting) {
+      return await prisma.advancePaymentSetting.update({
+        where: { id: setting.id },
+        data: {
+          defaultPercentage: new Prisma.Decimal(input.defaultPercentage),
+          minPercentage: new Prisma.Decimal(input.minPercentage),
+          maxPercentage: new Prisma.Decimal(input.maxPercentage),
+          allowPerPoOverride: input.allowPerPoOverride,
+          updatedBy: adminId,
+        },
+      });
+    } else {
+      return await prisma.advancePaymentSetting.create({
+        data: {
+          defaultPercentage: new Prisma.Decimal(input.defaultPercentage),
+          minPercentage: new Prisma.Decimal(input.minPercentage),
+          maxPercentage: new Prisma.Decimal(input.maxPercentage),
+          allowPerPoOverride: input.allowPerPoOverride,
+          updatedBy: adminId,
+        },
+      });
+    }
+  }
+
+  async getPrimaryBankAccount() {
+    const bank = await prisma.bankAccountSetting.findFirst({
+      where: { isActive: true },
+    });
+    return bank || DEFAULT_BANK_SETTINGS;
+  }
+
+  async getBankAccountSettings() {
+    const list = await prisma.bankAccountSetting.findMany({
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (list.length === 0) {
+      const created = await prisma.bankAccountSetting.create({
+        data: DEFAULT_BANK_SETTINGS,
+      });
+      return [created];
+    }
+    return list;
+  }
+
+  async updateBankAccountSetting(input: BankAccountSettingInput, adminId: string) {
+    const existing = await prisma.bankAccountSetting.findFirst();
+    if (existing) {
+      return await prisma.bankAccountSetting.update({
+        where: { id: existing.id },
+        data: {
+          ...input,
+          updatedBy: adminId,
+        },
+      });
+    } else {
+      return await prisma.bankAccountSetting.create({
+        data: {
+          ...input,
+          updatedBy: adminId,
+        },
+      });
+    }
+  }
+
+  async getSavedAddresses(customerId: string) {
+    return await prisma.savedAddress.findMany({
+      where: { customerId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async saveAddressToBook(customerId: string, address: any, label = 'Default') {
+    return await prisma.savedAddress.create({
+      data: {
+        customerId,
+        label,
+        attentionTo: address.attentionTo,
+        companyName: address.companyName || null,
+        addressLine1: address.addressLine1,
+        addressLine2: address.addressLine2 || null,
+        city: address.city,
+        state: address.state,
+        postalCode: address.postalCode,
+        country: address.country || 'IN',
+        phone: address.phone,
+        email: address.email,
+        isDefaultBilling: Boolean(address.isDefaultBilling),
+        isDefaultDelivery: Boolean(address.isDefaultDelivery),
+      },
+    });
+  }
+
+  async deleteSavedAddress(customerId: string, addressId: string) {
+    return await prisma.savedAddress.deleteMany({
+      where: {
+        id: addressId,
+        customerId,
+      },
+    });
+  }
+}
+
+export const purchaseOrdersService = new PurchaseOrdersService();

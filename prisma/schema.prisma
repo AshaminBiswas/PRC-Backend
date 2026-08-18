@@ -94,6 +94,38 @@ enum ContentStatus {
   ARCHIVED
 }
 
+enum B2BPoStatus {
+  DRAFT
+  SUBMITTED
+  VALIDATION_FAILED
+  AWAITING_ADVANCE_PAYMENT
+  PAYMENT_RECEIPT_SUBMITTED
+  PAYMENT_ACKNOWLEDGED
+  PAYMENT_VERIFIED
+  PACKING_LIST_GENERATED
+  REJECTED
+  CANCELLED
+}
+
+enum PaymentReceiptStatus {
+  PENDING_REVIEW
+  REJECTED
+  ACKNOWLEDGED
+  VERIFIED
+}
+
+enum PoNotificationType {
+  ADVANCE_PAYMENT_REQUEST
+  PAYMENT_ACKNOWLEDGMENT
+  PACKING_LIST_READY
+}
+
+enum PoNotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
 // ─── User & Auth ─────────────────────────────────────────────────────────────
 
 model User {
@@ -139,6 +171,11 @@ model User {
   invoices             Invoice[]
   b2bCustomerPrices    B2BCustomerPrice[]
   quoteActivityLogs    QuoteActivityLog[] @relation("AdminQuoteActivity")
+  b2bPurchaseOrders    B2BPurchaseOrder[]
+  savedAddresses       SavedAddress[]
+  poAuditLogs          PoAuditLog[]       @relation("AdminPoAuditLogs")
+  verifiedReceipts     PaymentReceipt[]   @relation("AdminVerifiedReceipts")
+  acknowledgedReceipts PaymentReceipt[]   @relation("AdminAcknowledgedReceipts")
 
   @@index([email])
   @@index([status])
@@ -650,6 +687,7 @@ model Quote {
   user                  User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
   items                 QuoteItem[]
   activityLogs          QuoteActivityLog[]
+  b2bPurchaseOrder      B2BPurchaseOrder?
 
   @@index([userId])
   @@index([quoteNumber])
@@ -2284,4 +2322,265 @@ model AppointmentStatusHistory {
 
   @@index([appointmentId])
   @@map("appointment_status_histories")
+}
+
+// ─── Purchase Order (PO) Module ──────────────────────────────────────────────
+
+model B2BPurchaseOrder {
+  id                        String              @id @default(uuid())
+  poNumber                  String              @unique @map("po_number")
+  quotationId               String              @unique @map("quotation_id")
+  quotationNumber           String              @map("quotation_number")
+  customerId                String              @map("customer_id")
+  status                    B2BPoStatus         @default(SUBMITTED)
+  customerPoReferenceNumber String?             @map("customer_po_reference_number")
+  billingAddress            Json                @map("billing_address")
+  deliveryAddress           Json                @map("delivery_address")
+  deliveryInstructions      String?             @map("delivery_instructions")
+  requestedDeliveryDate     DateTime?           @map("requested_delivery_date")
+  subtotal                  Decimal             @db.Decimal(12, 2)
+  taxTotal                  Decimal             @db.Decimal(12, 2) @map("tax_total")
+  discountTotal             Decimal             @default(0) @db.Decimal(12, 2) @map("discount_total")
+  shippingCost              Decimal             @default(0) @db.Decimal(12, 2) @map("shipping_cost")
+  totalAmount               Decimal             @db.Decimal(12, 2) @map("total_amount")
+  currency                  String              @default("INR")
+  advancePercentage         Decimal             @default(30) @db.Decimal(5, 2) @map("advance_percentage")
+  advanceAmount             Decimal             @db.Decimal(12, 2) @map("advance_amount")
+  balanceAmount             Decimal             @db.Decimal(12, 2) @map("balance_amount")
+  validationErrors          Json?               @map("validation_errors")
+  submittedAt               DateTime            @default(now()) @map("submitted_at")
+  validatedAt               DateTime?           @map("validated_at")
+  rejectedAt                DateTime?           @map("rejected_at")
+  rejectionReason           String?             @map("rejection_reason")
+  createdBy                 String?             @map("created_by")
+  createdAt                 DateTime            @default(now()) @map("created_at")
+  updatedAt                 DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  customer                  User                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  quotation                 Quote               @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  items                     B2BPurchaseOrderItem[]
+  receipts                  PaymentReceipt[]
+  packingList               PackingList?
+  auditLogs                 PoAuditLog[]
+  notificationLogs          PoNotificationLog[]
+
+  @@index([poNumber])
+  @@index([quotationId])
+  @@index([quotationNumber])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("b2b_purchase_orders")
+}
+
+model B2BPurchaseOrderItem {
+  id              String           @id @default(uuid())
+  purchaseOrderId String           @map("purchase_order_id")
+  slNo            Int              @default(1) @map("sl_no")
+  productId       String           @map("product_id")
+  productName     String           @map("product_name")
+  sku             String?
+  variantId       String?          @map("variant_id")
+  unit            String           @default("PCS")
+  quantity        Int
+  rate            Decimal          @db.Decimal(12, 2)
+  amount          Decimal          @db.Decimal(12, 2)
+  taxRate         Decimal?         @db.Decimal(5, 2) @map("tax_rate")
+  taxAmount       Decimal?         @db.Decimal(12, 2) @map("tax_amount")
+  total           Decimal          @db.Decimal(12, 2)
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  purchaseOrder   B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@map("b2b_purchase_order_items")
+}
+
+model B2BPoSequence {
+  id            String    @id @default(uuid())
+  financialYear String    @unique @map("financial_year")
+  nextNumber    Int       @default(1) @map("next_number")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@map("b2b_po_sequences")
+}
+
+model AdvancePaymentSetting {
+  id                 String   @id @default(uuid())
+  defaultPercentage  Decimal  @default(30) @db.Decimal(5, 2) @map("default_percentage")
+  minPercentage      Decimal  @default(10) @db.Decimal(5, 2) @map("min_percentage")
+  maxPercentage      Decimal  @default(100) @db.Decimal(5, 2) @map("max_percentage")
+  allowPerPoOverride Boolean  @default(true) @map("allow_per_po_override")
+  updatedBy          String?  @map("updated_by")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("advance_payment_settings")
+}
+
+model BankAccountSetting {
+  id                  String   @id @default(uuid())
+  accountHolderName   String   @map("account_holder_name")
+  bankName            String   @map("bank_name")
+  accountNumber       String   @map("account_number")
+  ifscOrRoutingNumber String   @map("ifsc_or_routing_number")
+  swiftCode           String?  @map("swift_code")
+  branch              String?  @map("branch")
+  currency            String   @default("INR")
+  isActive            Boolean  @default(true) @map("is_active")
+  updatedBy           String?  @map("updated_by")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("bank_account_settings")
+}
+
+model PaymentReceipt {
+  id                String               @id @default(uuid())
+  purchaseOrderId   String               @map("purchase_order_id")
+  status            PaymentReceiptStatus @default(PENDING_REVIEW)
+  fileStorageKey    String               @map("file_storage_key")
+  originalFileName  String               @map("original_file_name")
+  fileSizeBytes     Int                  @map("file_size_bytes")
+  mimeType          String               @map("mime_type")
+  fileHash          String               @map("file_hash") // SHA-256
+  uploadedBy        String               @map("uploaded_by")
+  uploadedAt        DateTime             @default(now()) @map("uploaded_at")
+  version           Int                  @default(1)
+  amountReceived    Decimal?             @db.Decimal(12, 2) @map("amount_received")
+  paymentDate       DateTime?            @map("payment_date")
+  paymentReference  String?              @map("payment_reference")
+  paymentMethod     String?              @map("payment_method")
+  remarks           String?
+  acknowledgedBy    String?              @map("acknowledged_by")
+  acknowledgedAt    DateTime?            @map("acknowledged_at")
+  verifiedBy        String?              @map("verified_by")
+  verifiedAt        DateTime?            @map("verified_at")
+  verificationNotes String?              @map("verification_notes")
+  rejectedBy        String?              @map("rejected_by")
+  rejectedAt        DateTime?            @map("rejected_at")
+  rejectionReason   String?              @map("rejection_reason")
+  isDeleted         Boolean              @default(false) @map("is_deleted")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  purchaseOrder      B2BPurchaseOrder    @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  verifiedByUser     User?               @relation("AdminVerifiedReceipts", fields: [verifiedBy], references: [id], onDelete: SetNull)
+  acknowledgedByUser User?               @relation("AdminAcknowledgedReceipts", fields: [acknowledgedBy], references: [id], onDelete: SetNull)
+  history            PaymentReceiptHistory[]
+
+  @@index([purchaseOrderId])
+  @@index([status])
+  @@map("payment_receipts")
+}
+
+model PaymentReceiptHistory {
+  id                String         @id @default(uuid())
+  receiptId         String         @map("receipt_id")
+  purchaseOrderId   String         @map("purchase_order_id")
+  fileStorageKey    String         @map("file_storage_key")
+  originalFileName  String         @map("original_file_name")
+  fileSizeBytes     Int            @map("file_size_bytes")
+  mimeType          String         @map("mime_type")
+  fileHash          String         @map("file_hash")
+  version           Int
+  uploadedBy        String         @map("uploaded_by")
+  uploadedAt        DateTime       @map("uploaded_at")
+  archivedAt        DateTime       @default(now()) @map("archived_at")
+
+  receipt           PaymentReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@index([receiptId])
+  @@index([purchaseOrderId])
+  @@map("payment_receipt_histories")
+}
+
+model PackingList {
+  id              String           @id @default(uuid())
+  purchaseOrderId String           @unique @map("purchase_order_id")
+  quotationNumber String           @map("quotation_number")
+  poNumber        String           @map("po_number")
+  fileStorageKey  String           @map("file_storage_key")
+  fileHash        String?          @map("file_hash")
+  totalPackages   Int              @default(1) @map("total_packages")
+  totalQuantity   Int              @default(0) @map("total_quantity")
+  qrCodeData      String?          @map("qr_code_data")
+  notes           String?
+  generatedAt     DateTime         @default(now()) @map("generated_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  purchaseOrder   B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@index([poNumber])
+  @@index([quotationNumber])
+  @@map("packing_lists")
+}
+
+model PoAuditLog {
+  id              String           @id @default(uuid())
+  purchaseOrderId String           @map("purchase_order_id")
+  entityType      String           @default("PURCHASE_ORDER") @map("entity_type")
+  action          String
+  fromStatus      String?          @map("from_status")
+  toStatus        String?          @map("to_status")
+  performedBy     String?          @map("performed_by")
+  performedAt     DateTime         @default(now()) @map("performed_at")
+  metadata        Json?
+  ipAddress       String?          @map("ip_address")
+
+  purchaseOrder   B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  adminUser       User?            @relation("AdminPoAuditLogs", fields: [performedBy], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderId])
+  @@index([action])
+  @@index([performedAt])
+  @@map("po_audit_logs")
+}
+
+model PoNotificationLog {
+  id                String               @id @default(uuid())
+  purchaseOrderId   String               @map("purchase_order_id")
+  type              PoNotificationType
+  recipient         String
+  status            PoNotificationStatus @default(QUEUED)
+  providerMessageId String?              @map("provider_message_id")
+  error             String?
+  attempts          Int                  @default(1)
+  sentAt            DateTime?            @map("sent_at")
+  createdAt         DateTime             @default(now()) @map("created_at")
+
+  purchaseOrder     B2BPurchaseOrder     @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@index([type])
+  @@index([status])
+  @@map("po_notification_logs")
+}
+
+model SavedAddress {
+  id                String       @id @default(uuid())
+  customerId        String       @map("customer_id")
+  label             String?      @default("Default")
+  attentionTo       String       @map("attention_to")
+  companyName       String?      @map("company_name")
+  addressLine1      String       @map("address_line1")
+  addressLine2      String?      @map("address_line2")
+  city              String
+  state             String
+  postalCode        String       @map("postal_code")
+  country           String       @default("IN")
+  phone             String
+  email             String
+  isDefaultBilling  Boolean      @default(false) @map("is_default_billing")
+  isDefaultDelivery Boolean      @default(false) @map("is_default_delivery")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  customer          User         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("saved_addresses")
 }

@@ -44,6 +44,7 @@ import logisticsRoutes from './modules/logistics/logistics.routes';
 import invoiceRoutes from './modules/invoices/invoices.routes';
 import webhookRoutes from './modules/payments/webhook.routes';
 import b2bPricingRoutes from './modules/b2b-pricing/b2b-pricing.routes';
+import purchaseOrdersRoutes, { adminPurchaseOrdersRouter } from './modules/purchase-orders/purchase-orders.routes';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -247,6 +248,8 @@ app.use('/api/warehouse', allocationRoutes);
 app.use(`${prefix}/logistics`, logisticsRoutes);
 app.use(`${prefix}/invoices`, invoiceRoutes);
 app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
+app.use(`${prefix}/purchase-orders`, purchaseOrdersRoutes);
+app.use(`${prefix}/admin/purchase-orders`, adminPurchaseOrdersRouter);
 
 // ─── Razorpay Webhooks (raw body required) ───────────────────────────────────
 app.use(`${prefix}/payments/webhook`, webhookRoutes);

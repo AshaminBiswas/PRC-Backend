@@ -6586,6 +6586,251 @@ export const openApiSpec = {
         }
       ]
     }
+  },
+  "/purchase-orders/eligible-quotations": {
+    "get": {
+      "summary": "Get Approved Quotations Eligible for Starting a PO",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "responses": {
+        "200": { "description": "List of approved eligible quotations" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/purchase-orders/quotation/{id}": {
+    "get": {
+      "summary": "Get Quotation Details for PO Pre-fill",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "responses": {
+        "200": { "description": "Quotation details with pricing and calculated advance" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/purchase-orders": {
+    "post": {
+      "summary": "Create & Submit a Purchase Order against an Approved Quotation",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["quotationId", "billingAddress"],
+              "properties": {
+                "quotationId": { "type": "string", "format": "uuid" },
+                "customerPoReferenceNumber": { "type": "string" },
+                "billingAddress": { "type": "object" },
+                "deliveryAddress": { "type": "object" },
+                "sameAsBilling": { "type": "boolean" },
+                "deliveryInstructions": { "type": "string" },
+                "requestedDeliveryDate": { "type": "string", "format": "date" }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": { "description": "Purchase Order created with sequential PO number" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    },
+    "get": {
+      "summary": "List Customer's Purchase Orders",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "parameters": [
+        { "name": "status", "in": "query", "schema": { "type": "string" } },
+        { "name": "page", "in": "query", "schema": { "type": "integer" } },
+        { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+      ],
+      "responses": {
+        "200": { "description": "List of purchase orders" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/purchase-orders/{id}": {
+    "get": {
+      "summary": "Get Purchase Order Detail & Bank Details",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "responses": {
+        "200": { "description": "Full PO details with snapshot addresses and active bank account" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/purchase-orders/{id}/payment-receipt": {
+    "post": {
+      "summary": "Upload or Replace Advance Payment Receipt (Max 2MB, PDF/JPEG/PNG)",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "responses": {
+        "200": { "description": "Receipt uploaded and SHA-256 hashed" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    },
+    "put": {
+      "summary": "Update Payment Receipt (while Pending Review or Rejected)",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "responses": {
+        "200": { "description": "Receipt updated" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/purchase-orders/{id}/packing-list": {
+    "get": {
+      "summary": "Download Commercial Packing List PDF",
+      "tags": ["34. Purchase Orders (Customer)"],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "responses": {
+        "200": { "description": "Packing List PDF file stream", "content": { "application/pdf": {} } }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders": {
+    "get": {
+      "summary": "Admin List All Purchase Orders",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "parameters": [
+        { "name": "status", "in": "query", "schema": { "type": "string" } },
+        { "name": "search", "in": "query", "schema": { "type": "string" } },
+        { "name": "page", "in": "query", "schema": { "type": "integer" } },
+        { "name": "limit", "in": "query", "schema": { "type": "integer" } }
+      ],
+      "responses": {
+        "200": { "description": "List of all customer POs" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/{id}": {
+    "get": {
+      "summary": "Admin Get Purchase Order Detail & Audit Logs",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "responses": {
+        "200": { "description": "Detailed PO with audit logs and receipts" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/{id}/payment-receipt/acknowledge": {
+    "post": {
+      "summary": "Admin Acknowledge Payment & Send Customer Email",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["amountReceived", "paymentReference"],
+              "properties": {
+                "amountReceived": { "type": "number" },
+                "paymentDate": { "type": "string", "format": "date" },
+                "paymentReference": { "type": "string" },
+                "paymentMethod": { "type": "string" },
+                "remarks": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": { "description": "Payment acknowledged" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/{id}/payment-receipt/verify": {
+    "post": {
+      "summary": "Admin Digitally Verify Receipt (Triggers Packing List PDF Generation)",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["confirmVerifiedAgainstBank"],
+              "properties": {
+                "confirmVerifiedAgainstBank": { "type": "boolean" },
+                "verificationNotes": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": { "description": "Payment verified and packing list generated" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/{id}/payment-receipt/reject": {
+    "post": {
+      "summary": "Admin Reject Receipt",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+      ],
+      "responses": {
+        "200": { "description": "Receipt rejected" }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/settings/advance-payment": {
+    "get": {
+      "summary": "Get Global Advance Payment Percentage Settings",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "responses": { "200": { "description": "Advance payment configuration" } },
+      "security": [{ "BearerAuth": [] }]
+    },
+    "put": {
+      "summary": "Update Advance Payment Percentage",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "responses": { "200": { "description": "Updated configuration" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/settings/bank-account": {
+    "get": {
+      "summary": "Get Bank Account Settings for Payment Emails",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "responses": { "200": { "description": "Bank account details" } },
+      "security": [{ "BearerAuth": [] }]
+    },
+    "put": {
+      "summary": "Update Bank Account Settings",
+      "tags": ["35. Purchase Orders (Admin)"],
+      "responses": { "200": { "description": "Updated bank account" } },
+      "security": [{ "BearerAuth": [] }]
+    }
   }
 }
 };
