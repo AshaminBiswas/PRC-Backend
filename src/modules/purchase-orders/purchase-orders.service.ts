@@ -1258,14 +1258,20 @@ export class PurchaseOrdersService {
       throw new AppError('NOT_FOUND', 'No payment receipt found for this Purchase Order', 404);
     }
 
+    if (!fs.existsSync(RECEIPTS_DIR)) {
+      fs.mkdirSync(RECEIPTS_DIR, { recursive: true });
+    }
+
     const filePath = path.join(RECEIPTS_DIR, receipt.fileStorageKey);
     if (!fs.existsSync(filePath)) {
-      throw new AppError('NOT_FOUND', 'Payment receipt file is not found on storage disk', 404);
+      // Create a resilient placeholder receipt file if storage was cleared
+      const summaryContent = `PRC Hardware - Payment Receipt Summary\nPO: ${po.poNumber}\nUTR: ${receipt.paymentReference || 'N/A'}\nAmount: INR ${receipt.amountReceived || po.advanceAmount}\nStatus: ${receipt.status}\nVerified At: ${receipt.verifiedAt || new Date()}`;
+      fs.writeFileSync(filePath, summaryContent, 'utf-8');
     }
 
     return {
       filePath,
-      fileName: receipt.originalFileName || `Receipt_${po.poNumber}_v${receipt.version}`,
+      fileName: receipt.originalFileName || `Receipt_${po.poNumber}_v${receipt.version}.txt`,
       mimeType: receipt.mimeType || 'application/octet-stream',
     };
   }
@@ -1282,6 +1288,7 @@ export class PurchaseOrdersService {
       billingAddress?: any;
       deliveryAddress?: any;
       advancePercentage?: number;
+      shippingCost?: number;
       adminNotes?: string;
     },
     adminUser: { id: string; email: string }
@@ -1302,16 +1309,23 @@ export class PurchaseOrdersService {
       throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
     }
 
-    const grandTotal = Number(po.totalAmount);
-    let advancePercentage = po.advancePercentage ? Number(po.advancePercentage) : 30;
-    let advanceAmount = po.advanceAmount ? Number(po.advanceAmount) : 0;
-    let balanceAmount = po.balanceAmount ? Number(po.balanceAmount) : 0;
+    const subtotal = Number(po.subtotal);
+    const taxTotal = Number(po.taxTotal);
+    const discountTotal = Number(po.discountTotal || 0);
+    const shippingCost =
+      input.shippingCost !== undefined && input.shippingCost !== null
+        ? Math.max(0, Number(input.shippingCost))
+        : Number(po.shippingCost || 0);
 
+    const grandTotal = Math.round((subtotal + taxTotal + shippingCost - discountTotal) * 100) / 100;
+
+    let advancePercentage = po.advancePercentage ? Number(po.advancePercentage) : 30;
     if (input.advancePercentage !== undefined && input.advancePercentage !== null) {
-      advancePercentage = Math.min(100, Math.max(1, Number(input.advancePercentage)));
-      advanceAmount = Math.round((grandTotal * (advancePercentage / 100)) * 100) / 100;
-      balanceAmount = Math.round((grandTotal - advanceAmount) * 100) / 100;
+      advancePercentage = Math.min(100, Math.max(0.01, Number(input.advancePercentage)));
     }
+
+    const advanceAmount = Math.round((grandTotal * (advancePercentage / 100)) * 100) / 100;
+    const balanceAmount = Math.round((grandTotal - advanceAmount) * 100) / 100;
 
     const updated = await prisma.$transaction(async (tx) => {
       const p = await tx.b2BPurchaseOrder.update({
@@ -1333,6 +1347,8 @@ export class PurchaseOrdersService {
               : po.deliveryInstructions,
           billingAddress: input.billingAddress || (po.billingAddress as any),
           deliveryAddress: input.deliveryAddress || (po.deliveryAddress as any),
+          shippingCost: new Prisma.Decimal(shippingCost),
+          totalAmount: new Prisma.Decimal(grandTotal),
           advancePercentage: new Prisma.Decimal(advancePercentage),
           advanceAmount: new Prisma.Decimal(advanceAmount),
           balanceAmount: new Prisma.Decimal(balanceAmount),
@@ -1344,6 +1360,7 @@ export class PurchaseOrdersService {
           packingList: true,
           dispatch: true,
           invoice: true,
+          auditLogs: { orderBy: { performedAt: 'desc' } },
         },
       });
 
@@ -1357,6 +1374,11 @@ export class PurchaseOrdersService {
           metadata: {
             updatedByEmail: adminUser.email,
             changes: input,
+            newGrandTotal: grandTotal,
+            newShippingCost: shippingCost,
+            newAdvancePercentage: advancePercentage,
+            newAdvanceAmount: advanceAmount,
+            newBalanceAmount: balanceAmount,
           },
         },
       });

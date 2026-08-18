@@ -68,7 +68,8 @@ export const AdminUpdatePurchaseOrderSchema = z.object({
   deliveryInstructions: z.string().max(500).optional().nullable(),
   deliveryAddress: PoAddressSchema.partial().optional(),
   billingAddress: PoAddressSchema.partial().optional(),
-  advancePercentage: z.coerce.number().min(1).max(100).optional(),
+  advancePercentage: z.coerce.number().min(0.01).max(100).optional(),
+  shippingCost: z.coerce.number().min(0).optional(),
   adminNotes: z.string().max(500).optional(),
 });
 
