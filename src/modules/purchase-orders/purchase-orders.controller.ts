@@ -568,7 +568,29 @@ export class PurchaseOrdersController {
       next(error);
     }
   }
+
+  /**
+   * DELETE /api/v1/purchase-orders/:id or DELETE /api/v1/admin/purchase-orders/:id
+   */
+  async deletePurchaseOrder(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = (req as any).user;
+      if (!user?.id) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+      const roles = user.roles || (user.roleSlug ? [user.roleSlug] : ['customer']);
+      const result = await purchaseOrdersService.deletePurchaseOrder(req.params.id, {
+        id: user.id,
+        email: user.email || '',
+        roles,
+      });
+
+      sendSuccess(res, result, 'Purchase Order deleted successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const purchaseOrdersController = new PurchaseOrdersController();
+
 

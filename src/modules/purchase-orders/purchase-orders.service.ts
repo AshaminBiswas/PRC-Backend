@@ -248,7 +248,7 @@ export class PurchaseOrdersService {
       quote.advancePercentage !== null && quote.advancePercentage !== undefined
         ? Number(quote.advancePercentage)
         : Number(advanceSetting.defaultPercentage || 30);
-    const minPercentage = Number(advanceSetting.minPercentage || 10);
+    const minPercentage = Number(advanceSetting.minPercentage || 1);
     const maxPercentage = Number(advanceSetting.maxPercentage || 100);
     const allowPerPoOverride = advanceSetting.allowPerPoOverride !== false;
     const advanceAmount = Math.round((grandTotal * (advancePercentage / 100)) * 100) / 100;
@@ -349,7 +349,7 @@ export class PurchaseOrdersService {
 
     if (input.advancePercentage !== undefined && input.advancePercentage !== null && !isNaN(Number(input.advancePercentage))) {
       const requestedPct = Math.round(Number(input.advancePercentage) * 100) / 100;
-      const minPct = Number(advanceSetting.minPercentage || 10);
+      const minPct = Number(advanceSetting.minPercentage || 1);
       const maxPct = Number(advanceSetting.maxPercentage || 100);
       if (requestedPct < minPct || requestedPct > maxPct) {
         throw new AppError('BAD_REQUEST', `Advance percentage must be between ${minPct}% and ${maxPct}%`, 400);
@@ -2250,7 +2250,64 @@ export class PurchaseOrdersService {
       },
     };
   }
+
+  /**
+   * 20. Delete Purchase Order (Admin or Customer for un-dispatched)
+   */
+  async deletePurchaseOrder(poId: string, user: { id: string; email: string; roles: string[] }) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        items: true,
+        receipts: true,
+        packingList: true,
+        dispatch: true,
+        invoice: true,
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const isAdmin = isUserAdmin(user.roles);
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to delete this Purchase Order', 403);
+    }
+
+    // If customer, cannot delete if already dispatched or invoiced
+    if (!isAdmin && ['DISPATCHED', 'INVOICED'].includes(po.status)) {
+      throw new AppError(
+        'BAD_REQUEST',
+        'Cannot delete a Purchase Order that has already been dispatched or invoiced. Please contact admin.',
+        400
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete associated invoice
+      await tx.b2BPoInvoice.deleteMany({ where: { purchaseOrderId: poId } });
+      // 2. Delete dispatch record
+      await tx.poDispatch.deleteMany({ where: { purchaseOrderId: poId } });
+      // 3. Delete packing list
+      await tx.packingList.deleteMany({ where: { purchaseOrderId: poId } });
+      // 4. Delete receipts and histories
+      await tx.paymentReceiptHistory.deleteMany({ where: { purchaseOrderId: poId } });
+      await tx.paymentReceipt.deleteMany({ where: { purchaseOrderId: poId } });
+      // 5. Delete line items
+      await tx.b2BPurchaseOrderItem.deleteMany({ where: { purchaseOrderId: poId } });
+      // 6. Delete audit logs & notifications
+      await tx.poAuditLog.deleteMany({ where: { purchaseOrderId: poId } });
+      await tx.poNotificationLog.deleteMany({ where: { purchaseOrderId: poId } });
+      // 7. Delete the purchase order
+      await tx.b2BPurchaseOrder.delete({ where: { id: poId } });
+    });
+
+    return { success: true, message: `Purchase Order ${po.poNumber} has been deleted successfully.` };
+  }
 }
 
 export const purchaseOrdersService = new PurchaseOrdersService();
+
 

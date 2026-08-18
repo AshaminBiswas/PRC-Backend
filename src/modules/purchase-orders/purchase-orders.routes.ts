@@ -108,6 +108,11 @@ router.get('/:id/invoice/download', (req, res, next) =>
   purchaseOrdersController.downloadPoInvoice(req, res, next)
 );
 
+// Delete / Cancel Purchase Order (Customer)
+router.delete('/:id', (req, res, next) =>
+  purchaseOrdersController.deletePurchaseOrder(req, res, next)
+);
+
 // ─── 2. Admin PO Management Routes ───────────────────────────────────────────
 
 export const adminPurchaseOrdersRouter = Router();
@@ -221,6 +226,11 @@ adminPurchaseOrdersRouter.get('/settings/bank-account', (req, res, next) =>
 
 adminPurchaseOrdersRouter.put('/settings/bank-account', (req, res, next) =>
   purchaseOrdersController.updateBankAccountSetting(req, res, next)
+);
+
+// Delete Purchase Order (Admin)
+adminPurchaseOrdersRouter.delete('/:id', (req, res, next) =>
+  purchaseOrdersController.deletePurchaseOrder(req, res, next)
 );
 
 export default router;
