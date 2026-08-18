@@ -12,6 +12,7 @@ declare global {
         id: string;
         email: string;
         roleSlug: string;
+        roles?: string[];
         permissions: string[];
       };
     }
@@ -95,6 +96,7 @@ export const authenticate = async (
       id: user.id,
       email: user.email,
       roleSlug: primaryRoleSlug,
+      roles: roleSlugs.length > 0 ? roleSlugs : [primaryRoleSlug],
       permissions,
     };
 

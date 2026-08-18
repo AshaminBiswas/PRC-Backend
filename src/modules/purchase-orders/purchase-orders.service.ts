@@ -74,6 +74,15 @@ function calculateSha256(buffer: Buffer): string {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
+function isUserAdmin(roles?: string[]): boolean {
+  if (!roles || !Array.isArray(roles)) return false;
+  return roles.some((r) => {
+    if (!r) return false;
+    const clean = r.toLowerCase().replace(/[-_\s]/g, '');
+    return ['admin', 'superadmin', 'salesadmin', 'financeadmin', 'manager', 'staff'].includes(clean);
+  });
+}
+
 // ─── Purchase Order Service Class ─────────────────────────────────────────────
 
 export class PurchaseOrdersService {
@@ -484,7 +493,7 @@ export class PurchaseOrdersService {
       limit?: number;
     }
   ) {
-    const isAdmin = roles.some((r) => ['admin', 'sales_admin', 'finance_admin', 'super_admin'].includes(r.toLowerCase()));
+    const isAdmin = isUserAdmin(roles);
     const page = Math.max(1, Number(params.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(params.limit) || 20));
     const skip = (page - 1) * limit;
@@ -558,52 +567,96 @@ export class PurchaseOrdersService {
    * 5. Get Purchase Order by ID
    */
   async getPurchaseOrderById(poId: string, user: { id: string; roles: string[] }) {
-    const isAdmin = user.roles.some((r) =>
-      ['admin', 'sales_admin', 'finance_admin', 'super_admin'].includes(r.toLowerCase())
-    );
+    const isAdmin = isUserAdmin(user.roles);
 
-    const po = await prisma.b2BPurchaseOrder.findUnique({
-      where: { id: poId },
-      include: {
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            companyName: true,
-            phone: true,
-            gstin: true,
-          },
-        },
-        items: {
-          orderBy: { slNo: 'asc' },
-        },
-        receipts: {
-          where: { isDeleted: false },
-          orderBy: { uploadedAt: 'desc' },
-          include: {
-            verifiedByUser: {
-              select: { id: true, firstName: true, lastName: true, email: true },
-            },
-            acknowledgedByUser: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+    let po: any = null;
+    try {
+      po = await prisma.b2BPurchaseOrder.findUnique({
+        where: { id: poId },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              companyName: true,
+              phone: true,
+              gstin: true,
             },
           },
-        },
-        packingList: true,
-        dispatch: true,
-        invoice: true,
-        auditLogs: {
-          orderBy: { performedAt: 'desc' },
-          include: {
-            adminUser: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+          items: {
+            orderBy: { slNo: 'asc' },
+          },
+          receipts: {
+            where: { isDeleted: false },
+            orderBy: { uploadedAt: 'desc' },
+            include: {
+              verifiedByUser: {
+                select: { id: true, firstName: true, lastName: true, email: true },
+              },
+              acknowledgedByUser: {
+                select: { id: true, firstName: true, lastName: true, email: true },
+              },
+            },
+          },
+          packingList: true,
+          dispatch: true,
+          invoice: true,
+          auditLogs: {
+            orderBy: { performedAt: 'desc' },
+            include: {
+              adminUser: {
+                select: { id: true, firstName: true, lastName: true, email: true },
+              },
             },
           },
         },
-      },
-    });
+      });
+    } catch (queryErr: any) {
+      // Fallback query without invoice relation in case of column discrepancy
+      po = await prisma.b2BPurchaseOrder.findUnique({
+        where: { id: poId },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              companyName: true,
+              phone: true,
+              gstin: true,
+            },
+          },
+          items: {
+            orderBy: { slNo: 'asc' },
+          },
+          receipts: {
+            where: { isDeleted: false },
+            orderBy: { uploadedAt: 'desc' },
+            include: {
+              verifiedByUser: {
+                select: { id: true, firstName: true, lastName: true, email: true },
+              },
+              acknowledgedByUser: {
+                select: { id: true, firstName: true, lastName: true, email: true },
+              },
+            },
+          },
+          packingList: true,
+          dispatch: true,
+          auditLogs: {
+            orderBy: { performedAt: 'desc' },
+            include: {
+              adminUser: {
+                select: { id: true, firstName: true, lastName: true, email: true },
+              },
+            },
+          },
+        },
+      });
+    }
 
     if (!po) {
       throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
