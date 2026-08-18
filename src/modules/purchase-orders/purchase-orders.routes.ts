@@ -49,6 +49,19 @@ router.get('/', (req, res, next) =>
   purchaseOrdersController.getPurchaseOrders(req, res, next)
 );
 
+// Address Book routes (must be before /:id)
+router.get('/addresses/all', (req, res, next) =>
+  purchaseOrdersController.getSavedAddresses(req, res, next)
+);
+
+router.post('/addresses/save', (req, res, next) =>
+  purchaseOrdersController.createSavedAddress(req, res, next)
+);
+
+router.delete('/addresses/:id', (req, res, next) =>
+  purchaseOrdersController.deleteSavedAddress(req, res, next)
+);
+
 // Get single Purchase Order details
 router.get('/:id', (req, res, next) =>
   purchaseOrdersController.getPurchaseOrderById(req, res, next)
@@ -75,19 +88,6 @@ router.get('/:id/invoice', (req, res, next) =>
 
 router.get('/:id/invoice/download', (req, res, next) =>
   purchaseOrdersController.downloadPoInvoice(req, res, next)
-);
-
-// Address Book routes
-router.get('/addresses/all', (req, res, next) =>
-  purchaseOrdersController.getSavedAddresses(req, res, next)
-);
-
-router.post('/addresses/save', (req, res, next) =>
-  purchaseOrdersController.createSavedAddress(req, res, next)
-);
-
-router.delete('/addresses/:id', (req, res, next) =>
-  purchaseOrdersController.deleteSavedAddress(req, res, next)
 );
 
 // ─── 2. Admin PO Management Routes ───────────────────────────────────────────

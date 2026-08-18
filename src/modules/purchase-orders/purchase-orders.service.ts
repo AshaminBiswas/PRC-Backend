@@ -81,9 +81,15 @@ export class PurchaseOrdersService {
    * 1. Get eligible approved quotations for a customer
    */
   async getEligibleQuotations(customerId: string) {
+    const user = await prisma.user.findUnique({ where: { id: customerId }, select: { email: true } });
+    const userFilter: Prisma.QuoteWhereInput[] = [{ userId: customerId }];
+    if (user?.email) {
+      userFilter.push({ email: { equals: user.email, mode: 'insensitive' } });
+    }
+
     const quotes = await prisma.quote.findMany({
       where: {
-        userId: customerId,
+        OR: userFilter,
         status: 'APPROVED',
         isDeleted: false,
       },
@@ -127,10 +133,16 @@ export class PurchaseOrdersService {
    * 2. Get quotation detail for PO pre-fill
    */
   async getQuotationForPo(quotationId: string, customerId: string) {
+    const user = await prisma.user.findUnique({ where: { id: customerId }, select: { email: true } });
+    const userFilter: Prisma.QuoteWhereInput[] = [{ userId: customerId }];
+    if (user?.email) {
+      userFilter.push({ email: { equals: user.email, mode: 'insensitive' } });
+    }
+
     const quote = await prisma.quote.findFirst({
       where: {
         id: quotationId,
-        userId: customerId,
+        OR: userFilter,
         isDeleted: false,
       },
       include: {
@@ -204,10 +216,16 @@ export class PurchaseOrdersService {
     ipAddress?: string
   ) {
     // 1. Fetch & validate quotation server-side
+    const user = await prisma.user.findUnique({ where: { id: customerId }, select: { email: true } });
+    const userFilter: Prisma.QuoteWhereInput[] = [{ userId: customerId }];
+    if (user?.email) {
+      userFilter.push({ email: { equals: user.email, mode: 'insensitive' } });
+    }
+
     const quote = await prisma.quote.findFirst({
       where: {
         id: input.quotationId,
-        userId: customerId,
+        OR: userFilter,
         isDeleted: false,
       },
       include: {

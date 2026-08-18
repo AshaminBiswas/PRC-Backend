@@ -19,6 +19,14 @@ router.get(
   controller.listOrders
 );
 
+// GET /my - Customer's own orders alias
+router.get(
+  '/my',
+  authenticate,
+  validate(ListOrdersQuerySchema, 'query'),
+  controller.listOrders
+);
+
 // GET /:id - Full order details with items, shipping, payment
 router.get(
   '/:id',
