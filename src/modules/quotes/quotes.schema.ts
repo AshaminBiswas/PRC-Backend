@@ -77,6 +77,7 @@ export const AdminUpdateQuoteItemsSchema = z.object({
     )
     .min(1, 'Quotation must have at least one line item'),
   shippingCost: z.number().nonnegative().optional().nullable(),
+  advancePercentage: z.number().min(1).max(100).optional().nullable(),
   notes: z.string().max(500).optional().nullable(),
   adminNotes: z.string().max(1000).optional().nullable(),
   validUntil: z.string().datetime().or(z.date()).optional().nullable(),
@@ -85,6 +86,7 @@ export const AdminUpdateQuoteItemsSchema = z.object({
 export const SignQuoteSchema = z.object({
   adminNotes: z.string().max(1000).optional().nullable(),
   shippingCost: z.number().nonnegative().optional().nullable(),
+  advancePercentage: z.number().min(1).max(100).optional().nullable(),
 });
 
 export const VerifySignatureSchema = z.object({

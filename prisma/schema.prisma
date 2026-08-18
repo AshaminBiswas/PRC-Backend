@@ -669,6 +669,7 @@ model Quote {
   discountTotal         Decimal?            @db.Decimal(12, 2) @map("discount_total")
   taxTotal              Decimal?            @db.Decimal(12, 2) @map("tax_total")
   grandTotal            Decimal?            @db.Decimal(12, 2) @map("grand_total")
+  advancePercentage     Decimal?            @db.Decimal(5, 2) @map("advance_percentage")
   notes                 String?             @db.VarChar(500)
   adminNotes            String?             @map("admin_notes")
   termsAccepted         Boolean             @default(false) @map("terms_accepted")

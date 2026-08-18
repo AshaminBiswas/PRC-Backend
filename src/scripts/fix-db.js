@@ -91,6 +91,7 @@ const STATEMENTS = [
   `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "discount_total"          DECIMAL(12,2)`,
   `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "tax_total"               DECIMAL(12,2)`,
   `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "grand_total"             DECIMAL(12,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "advance_percentage"      DECIMAL(5,2)`,
   `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "admin_notes"             TEXT`,
   `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "terms_accepted"          BOOLEAN NOT NULL DEFAULT false`,
   `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "customer_response"       TEXT NOT NULL DEFAULT 'pending'`,

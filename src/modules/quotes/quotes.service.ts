@@ -112,6 +112,7 @@ export const formatQuote = (q: any) => {
     discountTotal: q.discountTotal !== null ? Number(q.discountTotal) : 0,
     taxTotal: q.taxTotal !== null ? Number(q.taxTotal) : Number(q.gstAmount || 0),
     grandTotal: q.grandTotal !== null ? Number(q.grandTotal) : 0,
+    advancePercentage: q.advancePercentage !== null && q.advancePercentage !== undefined ? Number(q.advancePercentage) : null,
     notes: q.notes,
     adminNotes: q.adminNotes,
     termsAccepted: q.termsAccepted,
@@ -717,6 +718,10 @@ export const updateQuoteItemsAndPricing = async (
         subtotal: new Prisma.Decimal(basicPriceDecimal),
         taxTotal: new Prisma.Decimal(gstAmountDecimal),
         grandTotal: new Prisma.Decimal(grandTotalDecimal),
+        advancePercentage:
+          input.advancePercentage !== undefined && input.advancePercentage !== null
+            ? new Prisma.Decimal(input.advancePercentage)
+            : quote.advancePercentage,
         notes: input.notes !== undefined ? input.notes : quote.notes,
         adminNotes: input.adminNotes !== undefined ? input.adminNotes : quote.adminNotes,
         validUntil: input.validUntil ? new Date(input.validUntil) : quote.validUntil,
@@ -811,6 +816,10 @@ export const digitallySignAndApproveQuote = async (
       subtotal: new Prisma.Decimal(basicPrice),
       taxTotal: new Prisma.Decimal(gstAmount),
       grandTotal: new Prisma.Decimal(grandTotal),
+      advancePercentage:
+        input.advancePercentage !== undefined && input.advancePercentage !== null
+          ? new Prisma.Decimal(input.advancePercentage)
+          : quote.advancePercentage,
       accessToken,
       digitalSignature,
       signedBy: adminName,

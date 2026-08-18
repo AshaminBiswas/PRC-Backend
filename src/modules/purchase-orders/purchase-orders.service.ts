@@ -242,7 +242,10 @@ export class PurchaseOrdersService {
 
     const advanceSetting = await this.getAdvancePaymentSetting();
     const grandTotal = Number(quote.grandTotal || quote.basicPrice || 0);
-    const advancePercentage = Number(advanceSetting.defaultPercentage || 30);
+    const advancePercentage =
+      quote.advancePercentage !== null && quote.advancePercentage !== undefined
+        ? Number(quote.advancePercentage)
+        : Number(advanceSetting.defaultPercentage || 30);
     const minPercentage = Number(advanceSetting.minPercentage || 10);
     const maxPercentage = Number(advanceSetting.maxPercentage || 100);
     const allowPerPoOverride = advanceSetting.allowPerPoOverride !== false;
@@ -337,7 +340,11 @@ export class PurchaseOrdersService {
 
     // 2. Fetch Advance Payment Setting and compute requested percentage
     const advanceSetting = await this.getAdvancePaymentSetting();
-    let advancePercentage = Number(advanceSetting.defaultPercentage || 30);
+    let advancePercentage =
+      quote.advancePercentage !== null && quote.advancePercentage !== undefined
+        ? Number(quote.advancePercentage)
+        : Number(advanceSetting.defaultPercentage || 30);
+
     if (input.advancePercentage !== undefined && input.advancePercentage !== null && !isNaN(Number(input.advancePercentage))) {
       const requestedPct = Math.round(Number(input.advancePercentage) * 100) / 100;
       const minPct = Number(advanceSetting.minPercentage || 10);

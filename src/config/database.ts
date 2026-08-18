@@ -427,6 +427,8 @@ const PO_AUTO_HEAL_STATEMENTS = [
   `ALTER TABLE "b2b_purchase_orders" ADD COLUMN IF NOT EXISTS "validated_at" TIMESTAMP(3)`,
   `ALTER TABLE "b2b_purchase_orders" ADD COLUMN IF NOT EXISTS "validation_notes" TEXT`,
   `ALTER TABLE "b2b_purchase_orders" ADD COLUMN IF NOT EXISTS "is_deleted" BOOLEAN NOT NULL DEFAULT false`,
+
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "advance_percentage" DECIMAL(5,2)`,
 ];
 
 export const autoHealDatabaseSchema = async () => {
