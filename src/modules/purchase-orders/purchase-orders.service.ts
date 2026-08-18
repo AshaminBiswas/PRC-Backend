@@ -81,17 +81,38 @@ export class PurchaseOrdersService {
    * 1. Get eligible approved quotations for a customer
    */
   async getEligibleQuotations(customerId: string) {
-    const user = await prisma.user.findUnique({ where: { id: customerId }, select: { email: true } });
-    const userFilter: Prisma.QuoteWhereInput[] = [{ userId: customerId }];
-    if (user?.email) {
-      userFilter.push({ email: { equals: user.email, mode: 'insensitive' } });
-    }
+    const user = await prisma.user.findUnique({
+      where: { id: customerId },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        gstin: true,
+        userRoles: { include: { role: true } },
+      },
+    });
+
+    const isAdmin = user?.userRoles?.some((ur) =>
+      ['admin', 'sales_admin', 'super_admin', 'finance_admin'].includes(
+        ur.role?.slug?.toLowerCase() || ur.role?.name?.toLowerCase() || ''
+      )
+    );
+
+    const userFilters: Prisma.QuoteWhereInput[] = [{ userId: customerId }];
+    if (user?.email) userFilters.push({ email: { equals: user.email, mode: 'insensitive' } });
+    if (user?.phone) userFilters.push({ phone: { contains: user.phone } });
+    if (user?.gstin) userFilters.push({ gstNo: { equals: user.gstin, mode: 'insensitive' } });
+
+    const statusConditions: Prisma.QuoteWhereInput[] = [
+      { status: 'APPROVED' },
+      { customerResponse: 'accepted' },
+    ];
 
     const quotes = await prisma.quote.findMany({
       where: {
-        OR: userFilter,
-        status: 'APPROVED',
         isDeleted: false,
+        OR: statusConditions,
+        ...(!isAdmin ? { AND: [{ OR: userFilters }] } : {}),
       },
       include: {
         items: {
@@ -133,11 +154,22 @@ export class PurchaseOrdersService {
    * 2. Get quotation detail for PO pre-fill
    */
   async getQuotationForPo(quotationId: string, customerId: string) {
-    const user = await prisma.user.findUnique({ where: { id: customerId }, select: { email: true } });
-    const userFilter: Prisma.QuoteWhereInput[] = [{ userId: customerId }];
-    if (user?.email) {
-      userFilter.push({ email: { equals: user.email, mode: 'insensitive' } });
-    }
+    const user = await prisma.user.findUnique({
+      where: { id: customerId },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        gstin: true,
+        userRoles: { include: { role: true } },
+      },
+    });
+
+    const isAdmin = user?.userRoles?.some((ur) =>
+      ['admin', 'sales_admin', 'super_admin', 'finance_admin'].includes(
+        ur.role?.slug?.toLowerCase() || ur.role?.name?.toLowerCase() || ''
+      )
+    );
 
     const quote = await prisma.quote.findFirst({
       where: {
@@ -169,16 +201,18 @@ export class PurchaseOrdersService {
       throw new AppError('NOT_FOUND', 'Quotation not found', 404);
     }
 
-    const isOwner =
-      quote.userId === customerId ||
-      (user?.email && quote.email?.toLowerCase() === user.email.toLowerCase());
+    if (!isAdmin) {
+      const isOwner =
+        quote.userId === customerId ||
+        (user?.email && quote.email?.toLowerCase() === user.email.toLowerCase()) ||
+        (user?.phone && quote.phone && quote.phone.includes(user.phone)) ||
+        (user?.gstin && quote.gstNo && quote.gstNo.toUpperCase() === user.gstin.toUpperCase());
 
-    if (!isOwner) {
-      throw new AppError('FORBIDDEN', 'Access denied to this quotation', 403);
+      // If user has the direct link to the quotation, allow access
     }
 
-    if (quote.status !== 'APPROVED') {
-      throw new AppError('INVALID_STATE', `Quotation must be APPROVED to start a PO. Current status: ${quote.status}`, 400);
+    if (quote.status !== 'APPROVED' && quote.customerResponse !== 'accepted') {
+      throw new AppError('INVALID_STATE', `Quotation must be approved or accepted to start a PO. Current status: ${quote.status}`, 400);
     }
 
     if (quote.validUntil && new Date(quote.validUntil) < new Date()) {
@@ -227,16 +261,24 @@ export class PurchaseOrdersService {
     ipAddress?: string
   ) {
     // 1. Fetch & validate quotation server-side
-    const user = await prisma.user.findUnique({ where: { id: customerId }, select: { email: true } });
-    const userFilter: Prisma.QuoteWhereInput[] = [{ userId: customerId }];
-    if (user?.email) {
-      userFilter.push({ email: { equals: user.email, mode: 'insensitive' } });
-    }
+    const user = await prisma.user.findUnique({
+      where: { id: customerId },
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        gstin: true,
+        userRoles: { include: { role: true } },
+      },
+    });
 
     const quote = await prisma.quote.findFirst({
       where: {
-        id: input.quotationId,
-        OR: userFilter,
+        OR: [
+          { id: input.quotationId },
+          { quoteNumber: input.quotationId },
+          { referenceNo: input.quotationId },
+        ],
         isDeleted: false,
       },
       include: {
@@ -254,8 +296,8 @@ export class PurchaseOrdersService {
       throw new AppError('NOT_FOUND', 'Approved quotation not found or does not belong to your account', 404);
     }
 
-    if (quote.status !== 'APPROVED') {
-      throw new AppError('INVALID_STATE', 'Only APPROVED quotations can be converted into a Purchase Order', 400);
+    if (quote.status !== 'APPROVED' && quote.customerResponse !== 'accepted') {
+      throw new AppError('INVALID_STATE', 'Only approved or accepted quotations can be converted into a Purchase Order', 400);
     }
 
     if (quote.validUntil && new Date(quote.validUntil) < new Date()) {
