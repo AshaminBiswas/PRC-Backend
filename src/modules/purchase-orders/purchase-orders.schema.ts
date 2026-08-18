@@ -18,7 +18,8 @@ export const PoAddressSchema = z.object({
 // ─── PO Creation Schema ───────────────────────────────────────────────────────
 
 export const CreatePurchaseOrderSchema = z.object({
-  quotationId: z.string().uuid('Valid Quotation UUID is required'),
+  quotationId: z.string().min(1, 'Quotation ID is required'),
+  advancePercentage: z.coerce.number().min(1).max(100).optional(),
   customerPoReferenceNumber: z.string().max(100).optional(),
   billingAddress: PoAddressSchema,
   deliveryAddress: PoAddressSchema.optional(),

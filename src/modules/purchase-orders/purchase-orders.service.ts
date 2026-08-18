@@ -234,6 +234,9 @@ export class PurchaseOrdersService {
     const advanceSetting = await this.getAdvancePaymentSetting();
     const grandTotal = Number(quote.grandTotal || quote.basicPrice || 0);
     const advancePercentage = Number(advanceSetting.defaultPercentage || 30);
+    const minPercentage = Number(advanceSetting.minPercentage || 10);
+    const maxPercentage = Number(advanceSetting.maxPercentage || 100);
+    const allowPerPoOverride = advanceSetting.allowPerPoOverride !== false;
     const advanceAmount = Math.round((grandTotal * (advancePercentage / 100)) * 100) / 100;
     const balanceAmount = Math.round((grandTotal - advanceAmount) * 100) / 100;
 
@@ -246,6 +249,9 @@ export class PurchaseOrdersService {
         discountTotal: Number(quote.discountTotal || 0),
         grandTotal,
         advancePercentage,
+        minPercentage,
+        maxPercentage,
+        allowPerPoOverride,
         advanceAmount,
         balanceAmount,
       },
@@ -320,9 +326,18 @@ export class PurchaseOrdersService {
       throw new AppError('BAD_REQUEST', 'Quotation has no line items', 400);
     }
 
-    // 2. Fetch Advance Payment Setting
+    // 2. Fetch Advance Payment Setting and compute requested percentage
     const advanceSetting = await this.getAdvancePaymentSetting();
-    const advancePercentage = Number(advanceSetting.defaultPercentage || 30);
+    let advancePercentage = Number(advanceSetting.defaultPercentage || 30);
+    if (input.advancePercentage !== undefined && input.advancePercentage !== null && !isNaN(Number(input.advancePercentage))) {
+      const requestedPct = Math.round(Number(input.advancePercentage) * 100) / 100;
+      const minPct = Number(advanceSetting.minPercentage || 10);
+      const maxPct = Number(advanceSetting.maxPercentage || 100);
+      if (requestedPct < minPct || requestedPct > maxPct) {
+        throw new AppError('BAD_REQUEST', `Advance percentage must be between ${minPct}% and ${maxPct}%`, 400);
+      }
+      advancePercentage = requestedPct;
+    }
 
     // 3. Recompute totals server-side from live quotation snapshot
     let subtotal = 0;
