@@ -6,10 +6,13 @@ const globalForPrisma = globalThis as unknown as {
   readPrisma?: PrismaClient;
 };
 
+const prismaLogConfig: any =
+  process.env.PRISMA_LOG_QUERIES === 'true' ? ['query', 'error', 'warn'] : ['error'];
+
 export const writePrisma =
   globalForPrisma.prisma ||
   new PrismaClient({
-    log: env.isDev ? ['query', 'error', 'warn'] : ['error'],
+    log: prismaLogConfig,
   });
 
 export const readPrisma =
@@ -17,7 +20,7 @@ export const readPrisma =
   (env.database.readUrl
     ? new PrismaClient({
         datasources: { db: { url: env.database.readUrl } },
-        log: env.isDev ? ['error', 'warn'] : ['error'],
+        log: prismaLogConfig,
       })
     : writePrisma);
 

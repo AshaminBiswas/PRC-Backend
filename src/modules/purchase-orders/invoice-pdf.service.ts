@@ -471,17 +471,7 @@ export const generateInvoicePdfBuffer = async (data: InvoicePdfData): Promise<Bu
   };
 
   const doc = pdfmake.createPdf(docDefinition as TDocumentDefinitions);
-  return new Promise<Buffer>((resolve, reject) => {
-    try {
-      doc.getBuffer((buf: Buffer) => {
-        if (buf) {
-          resolve(buf);
-        } else {
-          reject(new Error('Invoice PDF generation produced an empty buffer'));
-        }
-      });
-    } catch (err) {
-      reject(err);
-    }
-  });
+  const buffer = await doc.getBuffer();
+  return buffer;
 };
+

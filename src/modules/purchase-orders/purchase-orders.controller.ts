@@ -186,15 +186,16 @@ export class PurchaseOrdersController {
         roles,
       });
 
+      const fileBuffer = await fs.promises.readFile(filePath);
       res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', fileBuffer.length);
       const isInline = req.query.inline === 'true' || req.path.endsWith('/view');
       res.setHeader(
         'Content-Disposition',
         `${isInline ? 'inline' : 'attachment'}; filename="${fileName}"`
       );
 
-      const fileStream = fs.createReadStream(filePath);
-      fileStream.pipe(res);
+      res.status(200).send(fileBuffer);
     } catch (error) {
       next(error);
     }
@@ -214,11 +215,12 @@ export class PurchaseOrdersController {
         roles,
       });
 
+      const fileBuffer = await fs.promises.readFile(filePath);
       res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', fileBuffer.length);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
-      const fileStream = fs.createReadStream(filePath);
-      fileStream.pipe(res);
+      res.status(200).send(fileBuffer);
     } catch (error) {
       next(error);
     }
@@ -512,11 +514,12 @@ export class PurchaseOrdersController {
         roles,
       });
 
+      const fileBuffer = await fs.promises.readFile(filePath);
       res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', fileBuffer.length);
       res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
-      const fileStream = fs.createReadStream(filePath);
-      fileStream.pipe(res);
+      res.status(200).send(fileBuffer);
     } catch (error) {
       next(error);
     }

@@ -5,7 +5,7 @@ import { z } from 'zod';
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('production'),
   PORT: z.coerce.number().default(3000),
   API_PREFIX: z.string().default('/api/v1'),
   INSTANCE_ID: z.string().default(process.env.HOSTNAME ?? `local-${process.pid}`),

@@ -376,17 +376,7 @@ export const generatePackingListPdfBuffer = async (data: PackingListPdfData): Pr
   };
 
   const doc = pdfmake.createPdf(docDefinition as TDocumentDefinitions);
-  return new Promise<Buffer>((resolve, reject) => {
-    try {
-      doc.getBuffer((buf: Buffer) => {
-        if (buf) {
-          resolve(buf);
-        } else {
-          reject(new Error('PDF generation produced an empty buffer'));
-        }
-      });
-    } catch (err) {
-      reject(err);
-    }
-  });
+  const buffer = await doc.getBuffer();
+  return buffer;
 };
+
