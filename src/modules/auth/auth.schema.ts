@@ -52,8 +52,12 @@ export const ResetPasswordSchema = z
   .object({
     token: z.string().min(1, 'Reset token is required'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
-    confirmPassword: z.string(),
+    confirmPassword: z.string().optional(),
   })
+  .transform((data) => ({
+    ...data,
+    confirmPassword: data.confirmPassword || data.password,
+  }))
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match',
     path: ['confirmPassword'],
