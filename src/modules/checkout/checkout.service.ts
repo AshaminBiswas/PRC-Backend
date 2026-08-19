@@ -465,9 +465,29 @@ export const placeOrder = async (userId: string, input: PlaceOrderInput) => {
     where: { id: createdOrder.id },
     include: {
       items: true,
+      user: { select: { id: true, firstName: true, lastName: true, email: true } },
       coupon: { select: { id: true, code: true, discountValue: true } },
     },
   });
+
+  // Emit Domain Event for Real-Time SSE and Background Workers
+  try {
+    const { eventBus } = await import('../../events/eventBus');
+    const customerName = fullOrder?.user
+      ? `${fullOrder.user.firstName || ''} ${fullOrder.user.lastName || ''}`.trim()
+      : 'Customer';
+    eventBus.emitEvent('order.created', {
+      orderId: createdOrder.id,
+      orderNumber: createdOrder.orderNumber,
+      userId,
+      totalAmount: Number(fullOrder?.grandTotal || 0),
+      itemsCount: fullOrder?.items.length || 0,
+      customerName,
+      customerEmail: fullOrder?.user?.email,
+    });
+  } catch (e: any) {
+    console.error('[Checkout EventBus Error]:', e.message);
+  }
 
   return {
     ...fullOrder,

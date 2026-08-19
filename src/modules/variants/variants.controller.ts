@@ -1,11 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
 import * as variantsService from './variants.service';
-import { sendSuccess, sendMessage } from '../../utils/response';
+import { sendSuccess, sendPaginated } from '../../utils/response';
+import type { ListVariantsQuery } from './variants.schema';
 
 export const listVariants = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const data = await variantsService.listVariants(req.params.productId);
-    sendSuccess(res, data);
+    const result = await variantsService.listVariants(req.params.productId, req.query as unknown as ListVariantsQuery);
+    sendPaginated(res, result.data, result.pagination);
   } catch (error) {
     next(error);
   }
@@ -40,8 +41,8 @@ export const updateVariant = async (req: Request, res: Response, next: NextFunct
 
 export const deleteVariant = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await variantsService.deleteVariant(req.params.productId, req.params.id);
-    sendMessage(res, 'Product variant deleted successfully');
+    const result = await variantsService.deleteVariant(req.params.productId, req.params.id);
+    sendSuccess(res, result, 'Product variant deleted successfully');
   } catch (error) {
     next(error);
   }

@@ -357,6 +357,7 @@
 <a href="#sec-analytics" class="nav-item">33. Inventory Analytics</a>
 <a href="#sec-audit" class="nav-item">34. System Audit Logs</a>
 <a href="#sec-app" class="nav-item">35. System Health & Core Endpoints</a>
+<a href="#sec-events" class="nav-item">36. Real-Time Events Gateway (SSE)</a>
 
     </div>
   </div>
@@ -24398,6 +24399,69 @@
     }
   }
 ]</code></pre>
+    </div>
+  </div>
+</div>
+</section>
+
+<section id="sec-events" class="api-section">
+<h2>36. Real-Time Events Gateway (SSE)</h2>
+<p class="sec-desc">Native HTTP/2 Server-Sent Events (SSE) push stream for live orders, notifications, inventory alerts, and B2B quotations.</p>
+<div id="ep-events-stream" class="endpoint-card">
+  <div class="ep-header">
+    <span class="badge get">GET</span>
+    <span class="ep-path">/api/v1/events/stream</span>
+    <span class="ep-auth auth-yes">🔒 Authenticated (JWT)</span>
+  </div>
+  <div class="ep-body">
+    <p class="ep-info"><strong>Source File:</strong> <code>events/sse.routes.ts</code></p>
+    <p class="ep-info"><strong>Authentication:</strong> <code>Bearer &lt;token&gt;</code> header or <code>?token=&lt;token&gt;</code> query parameter.</p>
+    <p class="ep-info"><strong>Response MIME:</strong> <code>text/event-stream</code></p>
+    <p class="no-body"><em>Streams real-time events: <code>connected</code>, <code>order:new</code>, <code>order:status_updated</code>, <code>quote:new</code>, <code>inventory:low_stock</code>, <code>notification:new</code>, <code>notification:broadcast</code></em></p>
+    <div class="code-block success-block">
+      <div class="code-header"><span class="lbl-success">✅ Handshake Stream Event (200 OK)</span> <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+      <pre><code class="code-success">event: connected
+data: {"clientId":"user-uuid-1724068","userId":"user-uuid","role":"super_admin","connectedAt":"2026-08-19T11:30:00.000Z","activeConnections":1}
+
+: heartbeat 2026-08-19T11:30:25.000Z
+
+event: order:new
+data: {"type":"ORDER_CREATED","title":"New Order Received #PRC-9821","message":"Order #PRC-9821 placed for ₹12,450.","data":{"orderId":"...","totalAmount":12450}}</code></pre>
+    </div>
+    <div class="code-block error-block">
+      <div class="code-header"><span class="lbl-error">⚠️ Error Response (401 Unauthorized)</span></div>
+      <pre><code class="code-error">{
+  "success": false,
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "Authentication token required for real-time SSE stream (?token=... or Authorization header)"
+  }
+}</code></pre>
+    </div>
+  </div>
+</div>
+
+<div id="ep-events-metrics" class="endpoint-card">
+  <div class="ep-header">
+    <span class="badge get">GET</span>
+    <span class="ep-path">/api/v1/events/metrics</span>
+    <span class="ep-auth auth-no">🌐 Public / Diagnostics</span>
+  </div>
+  <div class="ep-body">
+    <p class="ep-info"><strong>Source File:</strong> <code>events/sse.routes.ts</code></p>
+    <div class="code-block success-block">
+      <div class="code-header"><span class="lbl-success">✅ Expected Outcome (200 OK)</span> <button class="copy-btn" onclick="copyCode(this)">Copy JSON</button></div>
+      <pre><code class="code-success">{
+  "success": true,
+  "data": {
+    "totalActiveConnections": 3,
+    "roles": {
+      "super_admin": 1,
+      "sales_manager": 1,
+      "customer": 1
+    }
+  }
+}</code></pre>
     </div>
   </div>
 </div>

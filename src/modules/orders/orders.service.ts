@@ -482,6 +482,20 @@ export const updateOrderStatus = async (
     return updated;
   });
 
+  // Emit Domain Event for Real-Time SSE and Audit
+  try {
+    const { eventBus } = await import('../../events/eventBus');
+    eventBus.emitEvent('order.status_changed', {
+      orderId: updatedOrder.id,
+      orderNumber: updatedOrder.orderNumber,
+      userId: updatedOrder.userId,
+      previousStatus: order.status,
+      newStatus: newStatus,
+    });
+  } catch (e: any) {
+    console.error('[Order EventBus Error]:', e.message);
+  }
+
   return formatOrder(updatedOrder);
 };
 

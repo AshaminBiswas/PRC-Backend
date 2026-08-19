@@ -126,6 +126,22 @@ export const sendNotification = async (input: SendNotificationInput) => {
       data: notificationsData,
     });
 
+    // Publish to Domain Event Bus
+    try {
+      const { eventBus } = await import('../../events/eventBus');
+      eventBus.emitEvent('notification.created', {
+        id: `broadcast-${Date.now()}`,
+        broadcast: true,
+        type: input.type,
+        title: input.title,
+        message: input.message,
+        data: notificationDataPayload,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.error('[Notification Event Error]:', e.message);
+    }
+
     return { count: result.count, broadcast: true };
   }
 
@@ -157,6 +173,22 @@ export const sendNotification = async (input: SendNotificationInput) => {
       data: Object.keys(notificationDataPayload).length > 0 ? (notificationDataPayload as any) : undefined,
     },
   });
+
+  // Publish to Domain Event Bus
+  try {
+    const { eventBus } = await import('../../events/eventBus');
+    eventBus.emitEvent('notification.created', {
+      id: notification.id,
+      userId: targetUserId,
+      type: notification.type,
+      title: notification.title,
+      message: notification.message,
+      data: notification.data,
+      createdAt: notification.createdAt.toISOString(),
+    });
+  } catch (e: any) {
+    console.error('[Notification Event Error]:', e.message);
+  }
 
   return notification;
 };

@@ -2102,12 +2102,57 @@ export const openApiSpec = {
   "/variants": {
     "get": {
       "summary": "List All System Variants",
+      "description": "List product variants catalog-wide or by product with search across SKU/name, stock filters, and pagination.",
       "tags": [
         "7. Products & Variants"
       ],
+      "parameters": [
+        {
+          "name": "page",
+          "in": "query",
+          "required": false,
+          "schema": { "type": "integer", "default": 1 },
+          "description": "Page number"
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": { "type": "integer", "default": 20 },
+          "description": "Items per page"
+        },
+        {
+          "name": "search",
+          "in": "query",
+          "required": false,
+          "schema": { "type": "string" },
+          "description": "Search query for SKU, variant name, or product name"
+        },
+        {
+          "name": "productId",
+          "in": "query",
+          "required": false,
+          "schema": { "type": "string", "format": "uuid" },
+          "description": "Filter variants by parent product UUID"
+        },
+        {
+          "name": "inStock",
+          "in": "query",
+          "required": false,
+          "schema": { "type": "string", "enum": ["true", "false"] },
+          "description": "Filter by stock availability"
+        },
+        {
+          "name": "isAvailable",
+          "in": "query",
+          "required": false,
+          "schema": { "type": "string", "enum": ["true", "false"] },
+          "description": "Filter by catalog visibility status"
+        }
+      ],
       "responses": {
         "200": {
-          "description": "Successful response"
+          "description": "Successful paginated list of variants"
         },
         "400": {
           "description": "Validation or client error"
@@ -2115,12 +2160,52 @@ export const openApiSpec = {
         "401": {
           "description": "Unauthorized access"
         }
-      },
+      }
+    },
+    "post": {
+      "summary": "Create Product Variant",
+      "description": "Create a new variant SKU under a parent product.",
+      "tags": [
+        "7. Products & Variants"
+      ],
       "security": [
         {
           "BearerAuth": []
         }
-      ]
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["productId", "sku", "price"],
+              "properties": {
+                "productId": { "type": "string", "format": "uuid" },
+                "sku": { "type": "string", "example": "SS-HINGE-100-BLK" },
+                "name": { "type": "string", "example": "100mm Matte Black Stainless" },
+                "price": { "type": "number", "example": 499 },
+                "salePrice": { "type": "number", "nullable": true, "example": 399 },
+                "stock": { "type": "integer", "default": 0, "example": 25 },
+                "attributes": { "type": "object", "example": { "size": "100mm", "finish": "Matte Black" } },
+                "image": { "type": "string", "nullable": true },
+                "isAvailable": { "type": "boolean", "default": true }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Variant created successfully"
+        },
+        "400": {
+          "description": "Validation or client error"
+        },
+        "409": {
+          "description": "SKU Conflict - A variant with this SKU already exists"
+        }
+      }
     }
   },
   "/variants/{id}": {
@@ -4070,6 +4155,48 @@ export const openApiSpec = {
           "BearerAuth": []
         }
       ]
+    },
+    "post": {
+      "summary": "Broadcast or Send Targeted Notification",
+      "description": "Send a direct in-app notification to a user or broadcast to all active customers/staff. Emits real-time event through EventBus & SSE.",
+      "tags": [
+        "21. Customer Notifications"
+      ],
+      "security": [
+        {
+          "BearerAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["title", "message"],
+              "properties": {
+                "userId": { "type": "string", "format": "uuid", "description": "Target recipient user ID (omit if broadcast is true)" },
+                "broadcast": { "type": "boolean", "default": false, "description": "Set true to broadcast to all active users" },
+                "type": { "type": "string", "enum": ["ORDER", "PROMO", "GENERAL", "SYSTEM"], "default": "GENERAL" },
+                "title": { "type": "string", "example": "Flash Sale Weekend" },
+                "message": { "type": "string", "example": "Special discounts on SS-304 architectural hardware!" },
+                "data": { "type": "object", "example": { "discountPercent": 15 } }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Notification created and emitted successfully"
+        },
+        "400": {
+          "description": "Validation or client error"
+        },
+        "401": {
+          "description": "Unauthorized access"
+        }
+      }
     }
   },
   "/notifications/unread-count": {
@@ -4153,6 +4280,46 @@ export const openApiSpec = {
           "BearerAuth": []
         }
       ]
+    }
+  },
+  "/events/stream": {
+    "get": {
+      "summary": "Real-Time Server-Sent Events (SSE) Stream",
+      "description": "Establish a real-time HTTP/2 Server-Sent Events push stream for live orders, notifications, stock alerts, and quotation events. Accepts JWT in Authorization header or query parameter ?token=...",
+      "tags": [
+        "22. Real-Time Events & Webhooks"
+      ],
+      "parameters": [
+        {
+          "name": "token",
+          "in": "query",
+          "required": false,
+          "schema": { "type": "string" },
+          "description": "JWT access token for EventSource browser clients"
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Real-time SSE event stream (text/event-stream)"
+        },
+        "401": {
+          "description": "Missing or invalid authentication token"
+        }
+      }
+    }
+  },
+  "/events/metrics": {
+    "get": {
+      "summary": "Get Live SSE Connection Pool Metrics",
+      "description": "Returns active connection count and distribution across user roles.",
+      "tags": [
+        "22. Real-Time Events & Webhooks"
+      ],
+      "responses": {
+        "200": {
+          "description": "SSE connection pool statistics"
+        }
+      }
     }
   },
   "/settings/public": {

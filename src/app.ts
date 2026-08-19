@@ -45,6 +45,9 @@ import invoiceRoutes from './modules/invoices/invoices.routes';
 import webhookRoutes from './modules/payments/webhook.routes';
 import b2bPricingRoutes from './modules/b2b-pricing/b2b-pricing.routes';
 import purchaseOrdersRoutes, { adminPurchaseOrdersRouter } from './modules/purchase-orders/purchase-orders.routes';
+import sseRoutes from './events/sse.routes';
+import { initEventBus } from './events/eventBus';
+import { startBullMQWorkers } from './queues/bullmq.worker';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -251,9 +254,16 @@ app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
 app.use(`${prefix}/purchase-orders`, purchaseOrdersRoutes);
 app.use(`${prefix}/admin/purchase-orders`, adminPurchaseOrdersRouter);
 app.use(`${prefix}/admin/invoices`, adminPurchaseOrdersRouter);
+app.use(`${prefix}/events`, sseRoutes);
 
 // ─── Razorpay Webhooks (raw body required) ───────────────────────────────────
 app.use(`${prefix}/payments/webhook`, webhookRoutes);
+
+// ─── Initialize Event-Driven Architecture & BullMQ Background Workers ────────
+initEventBus();
+if (env.NODE_ENV !== 'test') {
+  startBullMQWorkers();
+}
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
 
