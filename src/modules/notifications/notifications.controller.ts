@@ -52,3 +52,16 @@ export const sendNotification = async (req: Request, res: Response, next: NextFu
     next(error);
   }
 };
+
+export const deleteNotification = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+    }
+    const isAdmin = ['super_admin', 'admin', 'manager'].includes((req.user as any).role);
+    const data = await notificationsService.deleteNotification(req.user.id, req.params.id, isAdmin);
+    sendSuccess(res, data, 'Notification deleted successfully');
+  } catch (error) {
+    next(error);
+  }
+};

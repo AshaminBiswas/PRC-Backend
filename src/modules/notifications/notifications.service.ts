@@ -190,5 +190,18 @@ export const sendNotification = async (input: SendNotificationInput) => {
     console.error('[Notification Event Error]:', e.message);
   }
 
-  return notification;
+    return notification;
+};
+
+export const deleteNotification = async (userId: string, notificationId: string, isAdmin = false) => {
+  const where: any = { id: notificationId };
+  if (!isAdmin) {
+    where.userId = userId;
+  }
+  const notif = await prisma.notification.findFirst({ where });
+  if (!notif) {
+    throw new AppError('NOT_FOUND', 'Notification not found', 404);
+  }
+  await prisma.notification.delete({ where: { id: notificationId } });
+  return { deleted: true, id: notificationId };
 };

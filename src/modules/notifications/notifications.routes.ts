@@ -31,6 +31,13 @@ router.patch(
   controller.markAsRead
 );
 
+router.delete(
+  '/:id',
+  authenticate,
+  validate(UuidParamSchema, 'params'),
+  controller.deleteNotification
+);
+
 // Admin route to send / broadcast notification
 router.post(
   '/',
