@@ -20,20 +20,39 @@ export const getRedisClient = (): any => {
     return upstashClient;
   }
 
-  // 2. Standard TCP Redis (Docker Container / Localhost / VPS)
-  if (env.redis.url && (env.redis.url.startsWith('redis://') || env.redis.url.startsWith('rediss://'))) {
+  // 2. Standard TCP Redis (Docker Container / Localhost / Cloud VPS)
+  const rawUrl = env.redis.url || process.env.REDIS_URL;
+  if (rawUrl && (rawUrl.startsWith('redis://') || rawUrl.startsWith('rediss://'))) {
+    // In production on Render / Cloud, skip localhost connection if no external Redis is supplied
+    if (env.NODE_ENV === 'production' && (rawUrl.includes('localhost') || rawUrl.includes('127.0.0.1'))) {
+      if (!process.env.FORCE_LOCAL_REDIS) {
+        return null;
+      }
+    }
+
     if (!ioredisClient) {
-      ioredisClient = new Redis(env.redis.url, {
-        maxRetriesPerRequest: 5,
-        enableOfflineQueue: true,
+      const isTls = rawUrl.startsWith('rediss://');
+      ioredisClient = new Redis(rawUrl, {
+        maxRetriesPerRequest: 3,
+        enableOfflineQueue: false,
+        lazyConnect: true,
+        tls: isTls ? { rejectUnauthorized: false } : undefined,
+        retryStrategy: (times) => (times <= 3 ? 1000 : null),
       });
 
       ioredisClient.on('connect', () => {
-        console.log('⚡ [Redis] Standard TCP client connected →', env.redis.url);
+        console.log('⚡ [Redis] Standard TCP client connected →', rawUrl);
       });
 
       ioredisClient.on('error', (err) => {
-        console.error('❌ [Redis Error]:', err?.message || err);
+        // Log cleanly without throwing unhandled exceptions
+        if (!err.message.includes('ECONNREFUSED') && !err.message.includes('ECONNRESET')) {
+          console.warn('⚠️ [Redis Warning]:', err?.message || err);
+        }
+      });
+
+      ioredisClient.connect().catch(() => {
+        // Connection handled gracefully
       });
     }
     return ioredisClient;
@@ -44,7 +63,11 @@ export const getRedisClient = (): any => {
 
 export const disconnectRedis = async (): Promise<void> => {
   if (ioredisClient) {
-    await ioredisClient.quit();
+    try {
+      await ioredisClient.quit();
+    } catch {
+      // ignore
+    }
     ioredisClient = null;
   }
   upstashClient = null;
