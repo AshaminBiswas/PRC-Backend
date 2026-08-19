@@ -126,10 +126,15 @@ export const deleteRole = async (id: string) => {
   if (!role) throw new AppError('NOT_FOUND', 'Role not found', 404);
   if (role.isSystem) throw new AppError('FORBIDDEN', 'System roles cannot be deleted', 403);
   if (role._count.userRoles > 0) {
-    throw new AppError('CONFLICT', 'Cannot delete a role that is assigned to users', 409);
+    throw new AppError('CONFLICT', 'Cannot delete a role that is assigned to users. Please reassign those users first.', 409);
   }
 
-  await prisma.role.delete({ where: { id } });
+  await prisma.$transaction(async (tx) => {
+    await tx.rolePermission.deleteMany({ where: { roleId: id } });
+    await tx.role.delete({ where: { id } });
+  });
+
+  return { success: true, message: `Role ${role.name} deleted permanently.` };
 };
 
 // ─── Update Role Permissions ──────────────────────────────────────────────────
@@ -137,6 +142,11 @@ export const deleteRole = async (id: string) => {
 export const updateRolePermissions = async (id: string, permissionsInput: string[]) => {
   const role = await prisma.role.findUnique({ where: { id } });
   if (!role) throw new AppError('NOT_FOUND', 'Role not found', 404);
+
+  const roleSlug = (role.slug || '').toLowerCase();
+  if (['super_admin', 'super-admin', 'superadmin'].includes(roleSlug) || role.name.toLowerCase() === 'super admin') {
+    throw new AppError('FORBIDDEN', 'Super Admin permissions are protected and cannot be modified. Super Admin possesses unrestricted access by default.', 403);
+  }
 
   // Validate and resolve permissions (by ID or slug)
   const permissions = await prisma.permission.findMany({

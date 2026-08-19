@@ -230,13 +230,44 @@ export const updateUser = async (id: string, input: UpdateUserInput) => {
   };
 };
 
-// ─── Delete User (soft) ───────────────────────────────────────────────────────
+// ─── Delete User (Permanent from Database) ───────────────────────────────────
 
 export const deleteUser = async (id: string) => {
-  const user = await prisma.user.findUnique({ where: { id, deletedAt: null } });
+  const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw new AppError('NOT_FOUND', 'User not found', 404);
 
-  await prisma.user.update({ where: { id }, data: { deletedAt: new Date(), status: 'INACTIVE' } });
+  await prisma.$transaction(async (tx) => {
+    await tx.refreshToken.deleteMany({ where: { userId: id } });
+    await tx.emailVerification.deleteMany({ where: { userId: id } });
+    await tx.passwordReset.deleteMany({ where: { userId: id } });
+    await tx.userActivityLog.deleteMany({ where: { userId: id } });
+    await tx.userRole.deleteMany({ where: { userId: id } });
+    await tx.staffAvailability.deleteMany({ where: { staffUserId: id } });
+    await tx.b2BCustomerPrice.deleteMany({ where: { userId: id } });
+    await tx.savedAddress.deleteMany({ where: { customerId: id } });
+    await tx.cart.deleteMany({ where: { userId: id } });
+    await tx.wishlist.deleteMany({ where: { userId: id } });
+    await tx.address.deleteMany({ where: { userId: id } });
+
+    await tx.enquiry.updateMany({ where: { userId: id }, data: { userId: null } });
+    await tx.quote.updateMany({ where: { userId: id }, data: { userId: null } });
+    await tx.appointment.updateMany({ where: { customerUserId: id }, data: { customerUserId: null } });
+    await tx.appointment.updateMany({ where: { staffUserId: id }, data: { staffUserId: null } });
+
+    // Handle any orders placed by this user
+    const userOrders = await tx.order.findMany({ where: { userId: id }, select: { id: true } });
+    const orderIds = userOrders.map((o) => o.id);
+    if (orderIds.length > 0) {
+      await tx.orderStatusHistory.deleteMany({ where: { orderId: { in: orderIds } } });
+      await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+      await tx.payment.deleteMany({ where: { orderId: { in: orderIds } } });
+      await tx.order.deleteMany({ where: { userId: id } });
+    }
+
+    await tx.user.delete({ where: { id } });
+  });
+
+  return { success: true, message: `User ${user.email} permanently deleted from database.` };
 };
 
 // ─── Update Profile ───────────────────────────────────────────────────────────
