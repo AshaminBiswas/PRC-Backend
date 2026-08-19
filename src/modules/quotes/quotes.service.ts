@@ -902,7 +902,7 @@ export const verifySignatureRecord = async (referenceNo: string, _providedSignat
 };
 
 /**
- * 11. Admin: Soft Delete Quotation
+ * 11. Admin: Permanent Delete Quotation from Database
  */
 export const softDeleteQuote = async (id: string, admin: AdminContext) => {
   const quote = await prisma.quote.findUnique({ where: { id } });
@@ -910,24 +910,27 @@ export const softDeleteQuote = async (id: string, admin: AdminContext) => {
     throw new AppError('NOT_FOUND', 'Quotation not found', 404);
   }
 
-  const adminName = [admin.firstName, admin.lastName].filter(Boolean).join(' ') || admin.email || 'Admin';
-
-  const deletedQuote = await prisma.quote.update({
-    where: { id },
-    data: {
-      isDeleted: true,
-      deletedAt: new Date(),
-    },
+  await prisma.$transaction(async (tx) => {
+    // 1. Delete any associated Purchase Order and its child records
+    const po = await tx.b2BPurchaseOrder.findFirst({ where: { quotationId: id } });
+    if (po) {
+      await tx.b2BPoInvoice.deleteMany({ where: { purchaseOrderId: po.id } });
+      await tx.poDispatch.deleteMany({ where: { purchaseOrderId: po.id } });
+      await tx.packingList.deleteMany({ where: { purchaseOrderId: po.id } });
+      await tx.paymentReceiptHistory.deleteMany({ where: { purchaseOrderId: po.id } });
+      await tx.paymentReceipt.deleteMany({ where: { purchaseOrderId: po.id } });
+      await tx.b2BPurchaseOrderItem.deleteMany({ where: { purchaseOrderId: po.id } });
+      await tx.poAuditLog.deleteMany({ where: { purchaseOrderId: po.id } });
+      await tx.poNotificationLog.deleteMany({ where: { purchaseOrderId: po.id } });
+      await tx.b2BPurchaseOrder.delete({ where: { id: po.id } });
+    }
+    // 2. Delete Quote Activity Logs
+    await tx.quoteActivityLog.deleteMany({ where: { quoteId: id } });
+    // 3. Delete Quote Items
+    await tx.quoteItem.deleteMany({ where: { quoteId: id } });
+    // 4. Permanently Delete the Quote from Database
+    await tx.quote.delete({ where: { id } });
   });
 
-  safeLogActivity({
-    quoteId: id,
-    changedBy: admin.id,
-    changeType: 'deleted',
-    note: `Quotation marked as deleted by ${adminName}`,
-    oldValue: { isDeleted: false },
-    newValue: { isDeleted: true, deletedAt: new Date() },
-  });
-
-  return { success: true, message: `Quotation ${quote.referenceNo || quote.quoteNumber} soft-deleted successfully.` };
+  return { success: true, message: `Quotation ${quote.referenceNo || quote.quoteNumber} deleted permanently from database.` };
 };

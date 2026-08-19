@@ -95,9 +95,25 @@ router.patch(
 router.patch(
   '/:id/status',
   authenticate,
-  authorize('appointments.update'),
+  authorize('appointments.update', 'appointments.manage'),
   validate(UpdateAppointmentStatusSchema),
   controller.updateAppointmentStatus
+);
+
+// Admin delete appointment permanently from database
+router.delete(
+  '/:id',
+  authenticate,
+  authorize('appointments.delete', 'appointments.update', 'appointments.manage'),
+  controller.deleteAppointment
+);
+
+// Admin delete service permanently from database
+router.delete(
+  '/services/:id',
+  authenticate,
+  authorize('appointments.delete', 'appointments.update', 'appointments.manage'),
+  controller.deleteService
 );
 
 export default router;

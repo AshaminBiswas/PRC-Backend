@@ -226,3 +226,20 @@ export const updateEnquiry = async (id: string, input: UpdateEnquiryInput) => {
 
   return updatedEnquiry;
 };
+
+export const deleteEnquiry = async (id: string) => {
+  const enquiry = await prisma.enquiry.findUnique({
+    where: { id },
+    select: { id: true, name: true, subject: true },
+  });
+
+  if (!enquiry) {
+    throw new AppError('NOT_FOUND', 'Enquiry not found', 404);
+  }
+
+  await prisma.enquiry.delete({
+    where: { id },
+  });
+
+  return { success: true, message: `Enquiry from ${enquiry.name} deleted permanently from database.` };
+};

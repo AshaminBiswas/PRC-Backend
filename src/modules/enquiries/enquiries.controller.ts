@@ -48,3 +48,12 @@ export const updateEnquiry = async (req: Request, res: Response, next: NextFunct
     next(error);
   }
 };
+
+export const deleteEnquiry = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await enquiriesService.deleteEnquiry(req.params.id);
+    sendSuccess(res, result, 'Enquiry deleted permanently');
+  } catch (error) {
+    next(error);
+  }
+};

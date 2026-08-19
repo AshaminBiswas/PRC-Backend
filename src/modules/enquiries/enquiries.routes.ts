@@ -66,4 +66,13 @@ router.put(
   controller.updateEnquiry
 );
 
+// Admin delete enquiry permanently from database
+router.delete(
+  '/:id',
+  authenticate,
+  authorize('enquiries.delete', 'enquiries.manage'),
+  validate(UuidParamSchema, 'params'),
+  controller.deleteEnquiry
+);
+
 export default router;

@@ -471,3 +471,65 @@ export const listAppointments = async (query: {
     pagination: buildPagination(page, limit, totalItems),
   };
 };
+
+export const deleteAppointment = async (id: string) => {
+  const appointment = await prisma.appointment.findUnique({
+    where: { id },
+    select: { id: true, appointmentNumber: true, customerName: true },
+  });
+
+  if (!appointment) {
+    throw new AppError('NOT_FOUND', 'Appointment not found', 404);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.appointmentStatusHistory.deleteMany({
+      where: { appointmentId: id },
+    });
+    await tx.appointment.delete({
+      where: { id },
+    });
+  });
+
+  return {
+    success: true,
+    message: `Appointment ${appointment.appointmentNumber} deleted permanently from database.`,
+  };
+};
+
+export const deleteService = async (id: string) => {
+  const service = await prisma.appointmentService.findUnique({
+    where: { id },
+    select: { id: true, name: true },
+  });
+
+  if (!service) {
+    throw new AppError('NOT_FOUND', 'Service offering not found', 404);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const apts = await tx.appointment.findMany({
+      where: { serviceId: id },
+      select: { id: true },
+    });
+
+    const aptIds = apts.map((a) => a.id);
+    if (aptIds.length > 0) {
+      await tx.appointmentStatusHistory.deleteMany({
+        where: { appointmentId: { in: aptIds } },
+      });
+      await tx.appointment.deleteMany({
+        where: { serviceId: id },
+      });
+    }
+
+    await tx.appointmentService.delete({
+      where: { id },
+    });
+  });
+
+  return {
+    success: true,
+    message: `Service "${service.name}" and any associated bookings deleted permanently.`,
+  };
+};

@@ -102,3 +102,21 @@ export const listAppointments = async (req: Request, res: Response, next: NextFu
     next(error);
   }
 };
+
+export const deleteAppointment = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await appointmentsService.deleteAppointment(req.params.id);
+    sendSuccess(res, result, 'Appointment deleted permanently');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteService = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await appointmentsService.deleteService(req.params.id);
+    sendSuccess(res, result, 'Service deleted permanently');
+  } catch (error) {
+    next(error);
+  }
+};
