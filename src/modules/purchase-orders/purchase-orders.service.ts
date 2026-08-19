@@ -1454,6 +1454,9 @@ export class PurchaseOrdersService {
         ifscOrRoutingNumber: bank.ifscOrRoutingNumber,
         branch: bank.branch,
       },
+      signedBy: 'PRC Hardware Commercial Operations',
+      approvedBy: 'Executive Director / Authorized Signatory',
+      signedAt: po.submittedAt || po.createdAt,
     });
 
     if (!fs.existsSync(PO_DOCS_DIR)) {
@@ -1879,17 +1882,10 @@ export class PurchaseOrdersService {
       return { updatedPo, dispatchRecord };
     });
 
-    // Asynchronously trigger non-blocking Invoice generation in background
-    setImmediate(() => {
-      this.triggerBackgroundInvoiceGeneration(po.id, adminUser).catch((err) => {
-        console.error(`[Async Invoice Job] Background generation failed for PO ${po.poNumber}:`, err.message);
-      });
-    });
-
     return {
       po: result.updatedPo,
       dispatch: result.dispatchRecord,
-      message: 'Purchase Order marked as dispatched. Invoice generation initiated.',
+      message: 'Purchase Order marked as dispatched. Packing list and PI ready for customer.',
     };
   }
 

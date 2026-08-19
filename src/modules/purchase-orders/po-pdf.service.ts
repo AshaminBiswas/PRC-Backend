@@ -8,7 +8,9 @@
  * Address: "H -3, J.R. COMPLEX GATE NO 4, MELA RAM FARM, MANDOLI, DELHI 110093, INDIA"
  */
 
+import crypto from 'crypto';
 import path from 'path';
+import QRCode from 'qrcode';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfmake = require('pdfmake');
 import type { TDocumentDefinitions, Margins, TableCell } from 'pdfmake/interfaces';
@@ -116,6 +118,10 @@ export interface PoPdfData {
     ifscOrRoutingNumber: string;
     branch?: string | null;
   };
+  digitalSignature?: string | null;
+  signedBy?: string | null;
+  signedAt?: Date | string | null;
+  approvedBy?: string | null;
 }
 
 /**
@@ -124,6 +130,52 @@ export interface PoPdfData {
 export const generatePurchaseOrderPdfBuffer = async (data: PoPdfData): Promise<Buffer> => {
   const billTo = data.billingAddress || {};
   const shipTo = data.deliveryAddress || billTo;
+
+  // ── Compute Cryptographic HMAC-SHA256 Digital Signature ───────────────────
+  const signingSecret = process.env.QUOTATION_SIGNING_SECRET || 'prc-hardware-digital-signature-secret-key-2026';
+  const signerName = data.approvedBy || data.signedBy || 'PRC Hardware Executive Authority';
+  const isoDate = data.createdAt instanceof Date ? data.createdAt.toISOString() : new Date(data.createdAt).toISOString();
+
+  const canonicalString = [
+    `PO:${data.poNumber}`,
+    `QUOTE:${data.quotationNumber}`,
+    `CUSTOMER:${(data.customerCompany || data.customerName).trim()}`,
+    `GSTIN:${(data.customerGstin || 'B2B').trim().toUpperCase()}`,
+    `TOTAL:${Number(data.grandTotal).toFixed(2)}`,
+    `ADVANCE:${Number(data.advanceAmount).toFixed(2)}`,
+    `BALANCE:${Number(data.balanceAmount).toFixed(2)}`,
+    `SIGNER:${signerName.trim()}`,
+    `TIME:${isoDate}`,
+  ].join('|');
+
+  const digitalSignature =
+    data.digitalSignature ||
+    crypto.createHmac('sha256', signingSecret).update(canonicalString).digest('hex');
+
+  // ── Generate Verification QR Code ─────────────────────────────────────────
+  const verificationPayload = JSON.stringify({
+    doc: 'PROFORMA_INVOICE',
+    po: data.poNumber,
+    quotation: data.quotationNumber,
+    customer: data.customerCompany || data.customerName,
+    total: data.grandTotal,
+    advance: data.advanceAmount,
+    balance: data.balanceAmount,
+    signedBy: signerName,
+    sig: digitalSignature.substring(0, 16),
+  });
+
+  let qrDataUrl = '';
+  try {
+    qrDataUrl = await QRCode.toDataURL(verificationPayload, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 140,
+      color: { dark: '#0f172a', light: '#ffffff' },
+    });
+  } catch (e: any) {
+    console.warn('[PO PDF QR Error]:', e?.message || e);
+  }
 
   // ── Build Items Table ────────────────────────────────────────────────────
   const itemRows: any[][] = [
@@ -186,7 +238,7 @@ export const generatePurchaseOrderPdfBuffer = async (data: PoPdfData): Promise<B
             width: '40%',
             stack: [
               {
-                text: 'COMMERCIAL PURCHASE ORDER',
+                text: 'PROFORMA INVOICE (PI)',
                 fontSize: 11,
                 bold: true,
                 color: NAVY,
@@ -425,15 +477,15 @@ export const generatePurchaseOrderPdfBuffer = async (data: PoPdfData): Promise<B
         margin: [0, 0, 0, 10],
       },
 
-      // ── Terms & Commercial Acceptance ─────────────────────────────────────
+      // ── Terms & Administrative Digital Signature Approval ───────────────
       {
         columns: [
           {
-            width: '65%',
+            width: '45%',
             stack: [
-              { text: 'TERMS & CONDITIONS', fontSize: 7, bold: true, color: GRAY, margin: [0, 0, 0, 2] },
+              { text: 'TERMS & INSTRUCTIONS', fontSize: 7, bold: true, color: GRAY, margin: [0, 0, 0, 2] },
               {
-                text: '1. This Purchase Order is formally accepted against PRC Hardware digitally approved Quotation.\n2. Dispatch timeline initiates upon digital verification of the agreed advance payment credited to PRC Hardware bank account.\n3. Balance payment is strictly payable upon dispatch / delivery notification.\n4. Standard manufacturer warranty applies as defined per item specifications.',
+                text: '1. This Proforma Invoice is formally approved & issued against quotation ' + data.quotationNumber + '.\n2. Dispatch & manufacturing commence upon advance receipt verification.\n3. Goods remain the property of PRC Hardware until final balance settlement.\n4. Standard warranty applies as per item specs.',
                 fontSize: 6.5,
                 color: GRAY,
                 lineHeight: 1.3,
@@ -441,28 +493,74 @@ export const generatePurchaseOrderPdfBuffer = async (data: PoPdfData): Promise<B
             ],
           },
           {
-            width: '35%',
-            stack: [
-              {
-                table: {
-                  widths: ['100%'],
-                  body: [
-                    [
+            width: '55%',
+            table: {
+              widths: ['*'],
+              body: [
+                [
+                  {
+                    fillColor: '#f0fdf4',
+                    margin: [6, 4, 6, 4],
+                    stack: [
                       {
-                        fillColor: '#f8fafc',
-                        margin: [6, 4, 6, 4],
-                        stack: [
-                          { text: 'AUTHORIZED SIGNATORY', fontSize: 6.5, bold: true, color: GRAY, alignment: 'center' },
-                          { text: 'PRC Hardware Operations', fontSize: 7.5, bold: true, color: NAVY, alignment: 'center', margin: [0, 12, 0, 2] },
-                          { text: 'Commercial B2B Division', fontSize: 6, color: GREEN, alignment: 'center' },
+                        columns: [
+                          {
+                            width: '*',
+                            stack: [
+                              {
+                                text: '✔ DIGITALLY SIGNED & APPROVED',
+                                fontSize: 7.5,
+                                bold: true,
+                                color: '#065f46',
+                                margin: [0, 0, 0, 2],
+                              },
+                              {
+                                text: 'PRC Hardware Operations Authority',
+                                fontSize: 7.5,
+                                bold: true,
+                                color: NAVY,
+                              },
+                              {
+                                text: `Signer: ${signerName}`,
+                                fontSize: 6.5,
+                                color: GRAY,
+                              },
+                              {
+                                text: `Approved: ${formatDate(data.createdAt)}`,
+                                fontSize: 6.5,
+                                color: GRAY,
+                              },
+                              {
+                                text: `HMAC-SHA256: ${digitalSignature.substring(0, 20)}...`,
+                                fontSize: 5.5,
+                                color: '#059669',
+                                margin: [0, 2, 0, 0],
+                              },
+                            ],
+                          },
+                          ...(qrDataUrl
+                            ? [
+                                {
+                                  width: 52,
+                                  image: qrDataUrl,
+                                  alignment: 'right',
+                                  margin: [0, 0, 0, 0],
+                                },
+                              ]
+                            : []),
                         ],
                       },
                     ],
-                  ],
-                },
-                layout: { hLineWidth: () => 1, vLineWidth: () => 1, hLineColor: () => BORDER, vLineColor: () => BORDER },
-              },
-            ],
+                  },
+                ],
+              ],
+            },
+            layout: {
+              hLineWidth: () => 1,
+              vLineWidth: () => 1,
+              hLineColor: () => '#10b981',
+              vLineColor: () => '#10b981',
+            },
           },
         ],
       },
