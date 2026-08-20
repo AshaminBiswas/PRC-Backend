@@ -20,14 +20,12 @@ export const getBullMQRedisConnection = (): IORedis | null => {
 
   const rawUrl = process.env.REDIS_URL || env.redis.url;
 
-  // In production on Render/AWS/Vercel, if REDIS_URL is not set or points to localhost, skip TCP socket
-  if (env.NODE_ENV === 'production' && (!rawUrl || rawUrl.includes('localhost') || rawUrl.includes('127.0.0.1'))) {
-    if (!process.env.FORCE_LOCAL_REDIS) {
+  // Skip TCP socket if no remote Redis is provided or if pointing to localhost without explicit override
+  if (!rawUrl || rawUrl.includes('localhost') || rawUrl.includes('127.0.0.1')) {
+    if (process.env.FORCE_LOCAL_REDIS !== 'true') {
       return null;
     }
   }
-
-  if (!rawUrl) return null;
 
   try {
     const isTls = rawUrl.startsWith('rediss://');
@@ -35,6 +33,7 @@ export const getBullMQRedisConnection = (): IORedis | null => {
       maxRetriesPerRequest: null,
       enableOfflineQueue: false,
       lazyConnect: true,
+      connectTimeout: 3000,
       tls: isTls ? { rejectUnauthorized: false } : undefined,
       retryStrategy: (times) => (times <= 3 ? 1000 : null),
     });

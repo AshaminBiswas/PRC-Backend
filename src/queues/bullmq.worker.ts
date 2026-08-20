@@ -8,16 +8,17 @@ import { getBullMQRedisConnection } from './bullmq.queue';
 // ─── BullMQ Worker Processor ──────────────────────────────────────────────────
 
 export const startBullMQWorkers = () => {
-  const connection = getBullMQRedisConnection();
+  setImmediate(() => {
+    try {
+      const connection = getBullMQRedisConnection();
 
-  if (!connection) {
-    console.log('ℹ️ [BullMQ Workers] No dedicated remote Redis TCP connection. Background tasks will run via in-process async fallback.');
-    return;
-  }
+      if (!connection) {
+        console.log('ℹ️ [BullMQ Workers] No dedicated remote Redis TCP connection. Background tasks will run via in-process async fallback.');
+        return;
+      }
 
-  try {
-    // 1. Email Worker Processor
-    const emailWorker = new Worker(
+      // 1. Email Worker Processor
+      const emailWorker = new Worker(
       'email-queue',
       async (job) => {
         console.log(`[BullMQ Worker] Processing email job ${job.id} (${job.name})`);
@@ -136,7 +137,8 @@ export const startBullMQWorkers = () => {
     notificationWorker.on('error', () => {});
 
     console.log('🚀 [BullMQ Workers] Registered & active on email-queue, invoice-queue, inventory-queue, notification-queue');
-  } catch (err: any) {
-    console.warn('⚠️ [BullMQ Workers Startup Warning]:', err.message);
-  }
+    } catch (err: any) {
+      console.warn('⚠️ [BullMQ Workers Startup Warning]:', err.message);
+    }
+  });
 };
