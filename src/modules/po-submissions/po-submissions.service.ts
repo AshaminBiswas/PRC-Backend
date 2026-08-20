@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { Prisma, PoSourceType, PoSubmissionStatus, LineItemSource, PoSubmissionAction } from '@prisma/client';
+import { Prisma, PoSourceType, PoSubmissionStatus, LineItemSource, PoSubmissionAction, B2BPoStatus } from '@prisma/client';
 import prisma from '../../config/database';
 import { env } from '../../config/env';
 import { AppError } from '../../middleware/error.middleware';
@@ -21,6 +21,7 @@ import {
   CustomerListQuery,
 } from './po-submissions.schema';
 import { generatePoAcknowledgementPdfBuffer } from './po-submissions-pdf.service';
+import { generateNextPoNumber } from '../purchase-orders/po-numbering.service';
 import {
   sendSubmissionReceivedEmail,
   sendChangesRequestedEmail,
@@ -59,16 +60,14 @@ function validatePdfMagicBytes(buffer: Buffer): boolean {
   return buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46; // %PDF
 }
 
-function generateDefaultPoNumber(): string {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const rand = Math.floor(1000 + Math.random() * 9000);
-  return `PO-${yyyy}${mm}${dd}-${rand}`;
-}
-
 export class PoSubmissionsService {
+  /**
+   * Returns the next sequential Purchase Order Number (e.g. PRC-PO-2026-27/001)
+   */
+  async getNextSequentialPoNumber(): Promise<{ poNumber: string; financialYear: string; sequenceNo: number }> {
+    return await generateNextPoNumber();
+  }
+
   /**
    * Generates next sequential reference number, e.g. POS-2425-0001 or ACK-2425-0001
    */
@@ -108,7 +107,7 @@ export class PoSubmissionsService {
 
     const effectivePoNumber = (input.customerPoNumber && input.customerPoNumber.trim())
       ? input.customerPoNumber.trim()
-      : generateDefaultPoNumber();
+      : (await generateNextPoNumber()).poNumber;
 
     // Duplicate PO check (non-blocking warning flag)
     const existingDuplicate = await prisma.poSubmission.findFirst({
@@ -251,7 +250,7 @@ export class PoSubmissionsService {
 
     const effectivePoNumber = (input.customerPoNumber && input.customerPoNumber.trim())
       ? input.customerPoNumber.trim()
-      : generateDefaultPoNumber();
+      : (await generateNextPoNumber()).poNumber;
 
     // Duplicate PO check
     const existingDuplicate = await prisma.poSubmission.findFirst({
@@ -414,6 +413,14 @@ export class PoSubmissionsService {
         },
         attachments: true,
         acknowledgement: true,
+        b2bPurchaseOrder: {
+          include: {
+            receipts: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
+            packingList: true,
+            dispatch: true,
+            invoice: true,
+          },
+        },
         logs: {
           orderBy: { timestamp: 'asc' },
           include: {
@@ -504,6 +511,15 @@ export class PoSubmissionsService {
           },
           acknowledgement: {
             select: { id: true, ackNumber: true, issuedAt: true },
+          },
+          b2bPurchaseOrder: {
+            select: {
+              id: true,
+              poNumber: true,
+              status: true,
+              advanceAmount: true,
+              balanceAmount: true,
+            },
           },
           lineItems: {
             select: { id: true, productId: true },
@@ -752,6 +768,9 @@ export class PoSubmissionsService {
         },
       });
 
+      // Automatically promote/ensure B2BPurchaseOrder in downstream fulfillment pipeline
+      const b2bPo = await this.ensureFulfillmentPurchaseOrder(submissionId, tx);
+
       await tx.poSubmissionLog.create({
         data: {
           submissionId,
@@ -759,17 +778,19 @@ export class PoSubmissionsService {
           action: PoSubmissionAction.APPROVED,
           fromStatus: po.status,
           toStatus: PoSubmissionStatus.APPROVED,
-          comment: `PO Approved by ${adminUser.firstName || adminUser.email}.${input.confirmMismatch ? ' [Variance explicitly confirmed by admin]' : ''}`,
+          comment: `PO Approved by ${adminUser.firstName || adminUser.email}.${input.confirmMismatch ? ' [Variance explicitly confirmed by admin]' : ''} -> Promoted to fulfillment PO #${b2bPo?.poNumber || ''}`,
           metadata: {
             mappedTotal: mapped,
             statedTotal: stated,
             varianceConfirmed: !!input.confirmMismatch,
+            b2bPurchaseOrderId: b2bPo?.id,
+            b2bPoNumber: b2bPo?.poNumber,
           },
           ipAddress: ipAddress || null,
         },
       });
 
-      return res;
+      return { ...res, b2bPurchaseOrder: b2bPo };
     });
 
     // Fire email to customer
@@ -798,7 +819,7 @@ export class PoSubmissionsService {
 
     if (!po) throw new AppError('NOT_FOUND', 'Submission not found', 404);
 
-    if (po.status !== PoSubmissionStatus.APPROVED) {
+    if (po.status !== PoSubmissionStatus.APPROVED && po.status !== PoSubmissionStatus.ACKNOWLEDGED) {
       throw new AppError(
         'INVALID_STATE',
         `Acknowledgement can only be issued for APPROVED purchase orders (current: ${po.status})`,
@@ -889,6 +910,9 @@ export class PoSubmissionsService {
         },
       });
 
+      // Ensure B2BPurchaseOrder exists
+      const b2bPo = await this.ensureFulfillmentPurchaseOrder(po.id, tx);
+
       await tx.poSubmissionLog.create({
         data: {
           submissionId: po.id,
@@ -896,13 +920,13 @@ export class PoSubmissionsService {
           action: PoSubmissionAction.ACKNOWLEDGED,
           fromStatus: PoSubmissionStatus.APPROVED,
           toStatus: PoSubmissionStatus.ACKNOWLEDGED,
-          comment: `Formal Acknowledgement ${ackNumber} issued & dispatched to customer. Total: ₹${grandTotal.toFixed(2)}`,
-          metadata: { ackNumber, grandTotal },
+          comment: `Formal Acknowledgement ${ackNumber} issued & dispatched to customer. Total: ₹${grandTotal.toFixed(2)} (Fulfillment PO #${b2bPo?.poNumber || ''})`,
+          metadata: { ackNumber, grandTotal, b2bPurchaseOrderId: b2bPo?.id, b2bPoNumber: b2bPo?.poNumber },
           ipAddress: ipAddress || null,
         },
       });
 
-      return { ack, po: updatedPo };
+      return { ack, po: updatedPo, b2bPurchaseOrder: b2bPo };
     });
 
     // Send email with PDF attached
@@ -918,6 +942,422 @@ export class PoSubmissionsService {
     }).catch(() => {});
 
     return result;
+  }
+
+  /**
+   * Promotes an approved/acknowledged PoSubmission into the downstream B2BPurchaseOrder fulfillment pipeline.
+   * Idempotent: returns existing B2BPurchaseOrder if already linked.
+   */
+  async ensureFulfillmentPurchaseOrder(submissionId: string, txClient?: Prisma.TransactionClient): Promise<any> {
+    const db = txClient || prisma;
+
+    const existingPo = await db.b2BPurchaseOrder.findFirst({
+      where: { poSubmissionId: submissionId },
+      include: { items: true },
+    });
+    if (existingPo) return existingPo;
+
+    const submission = await db.poSubmission.findUnique({
+      where: { id: submissionId },
+      include: {
+        lineItems: { orderBy: { sortOrder: 'asc' } },
+        customer: true,
+      },
+    });
+    if (!submission) return null;
+
+    let masterPoNumber = submission.customerPoNumber;
+    if (!masterPoNumber || !masterPoNumber.startsWith('PRC-PO-')) {
+      const seq = await generateNextPoNumber(new Date(), db);
+      masterPoNumber = seq.poNumber;
+    }
+
+    let subtotal = 0;
+    let taxTotal = 0;
+    const itemsSnapshot = submission.lineItems.map((item, idx) => {
+      const qty = Number(item.quantity) || 1;
+      const rate = Number(item.unitPrice) || 0;
+      const amount = Math.round(qty * rate * 100) / 100;
+      const taxRate = Number(item.taxRate || 18);
+      const taxAmount = Number(item.taxAmount || Math.round(amount * (taxRate / 100) * 100) / 100);
+      const total = Number(item.lineTotal || amount + taxAmount);
+
+      subtotal += amount;
+      taxTotal += taxAmount;
+
+      return {
+        slNo: idx + 1,
+        productId: item.productId || 'custom-mapped-item',
+        productName: item.description,
+        sku: item.sku || undefined,
+        variantId: item.variantId || undefined,
+        unit: item.unit || 'PCS',
+        quantity: qty,
+        rate: new Prisma.Decimal(rate),
+        amount: new Prisma.Decimal(amount),
+        taxRate: new Prisma.Decimal(taxRate),
+        taxAmount: new Prisma.Decimal(taxAmount),
+        total: new Prisma.Decimal(total),
+      };
+    });
+
+    const totalAmount = Math.round((subtotal + taxTotal) * 100) / 100;
+    const advancePercentage = 30;
+    const advanceAmount = Math.round((totalAmount * (advancePercentage / 100)) * 100) / 100;
+    const balanceAmount = Math.round((totalAmount - advanceAmount) * 100) / 100;
+
+    const billingAddress = submission.billToAddress || {
+      attentionTo: `${submission.customer.firstName} ${submission.customer.lastName}`.trim(),
+      companyName: submission.customer.companyName || '',
+      addressLine1: 'As per PO intake document',
+      city: 'Delhi',
+      state: 'Delhi',
+      postalCode: '110001',
+      country: 'IN',
+      phone: submission.customer.phone || '',
+      email: submission.customer.email,
+    };
+    const deliveryAddress = submission.shipToAddress || billingAddress;
+
+    const created = await db.b2BPurchaseOrder.create({
+      data: {
+        poNumber: masterPoNumber,
+        poSubmissionId: submission.id,
+        quotationId: null,
+        quotationNumber: submission.submissionNumber,
+        customerId: submission.customerId,
+        status: B2BPoStatus.AWAITING_ADVANCE_PAYMENT,
+        customerPoReferenceNumber: submission.customerPoNumber,
+        billingAddress: billingAddress as any,
+        deliveryAddress: deliveryAddress as any,
+        deliveryInstructions: submission.customerNote || null,
+        requestedDeliveryDate: submission.expectedDeliveryDate,
+        subtotal: new Prisma.Decimal(subtotal),
+        taxTotal: new Prisma.Decimal(taxTotal),
+        discountTotal: new Prisma.Decimal(0),
+        shippingCost: new Prisma.Decimal(0),
+        totalAmount: new Prisma.Decimal(totalAmount),
+        currency: submission.currency || 'INR',
+        advancePercentage: new Prisma.Decimal(advancePercentage),
+        advanceAmount: new Prisma.Decimal(advanceAmount),
+        balanceAmount: new Prisma.Decimal(balanceAmount),
+        submittedAt: submission.submittedAt,
+        validatedAt: new Date(),
+        createdBy: submission.customerId,
+        items: {
+          create: itemsSnapshot,
+        },
+      },
+      include: {
+        items: true,
+      },
+    });
+
+    return created;
+  }
+
+  /**
+   * Returns comprehensive 8-stage live tracking telemetry for a Purchase Order.
+   */
+  async getPoTracking(submissionId: string, userId: string, isAdmin = false) {
+    const submission = await prisma.poSubmission.findUnique({
+      where: { id: submissionId },
+      include: {
+        customer: {
+          select: { id: true, firstName: true, lastName: true, email: true, companyName: true, phone: true, gstin: true },
+        },
+        reviewer: { select: { id: true, firstName: true, lastName: true, email: true } },
+        approver: { select: { id: true, firstName: true, lastName: true, email: true } },
+        lineItems: { orderBy: { sortOrder: 'asc' } },
+        attachments: true,
+        acknowledgement: true,
+        logs: { orderBy: { timestamp: 'asc' } },
+        b2bPurchaseOrder: {
+          include: {
+            receipts: { where: { isDeleted: false }, orderBy: { createdAt: 'desc' } },
+            packingList: true,
+            dispatch: true,
+            invoice: true,
+            auditLogs: { orderBy: { performedAt: 'asc' } },
+          },
+        },
+      },
+    });
+
+    if (!submission) {
+      throw new AppError('NOT_FOUND', 'Purchase order submission not found', 404);
+    }
+
+    if (!isAdmin && submission.customerId !== userId) {
+      throw new AppError('FORBIDDEN', 'Access denied', 403);
+    }
+
+    const b2bPo = submission.b2bPurchaseOrder;
+    const isApproved = submission.status === PoSubmissionStatus.APPROVED || submission.status === PoSubmissionStatus.ACKNOWLEDGED || !!b2bPo;
+    const isAck = !!submission.acknowledgement;
+    const latestReceipt = b2bPo?.receipts?.[0];
+    const isPaymentVerified = latestReceipt?.status === 'VERIFIED' || b2bPo?.status === B2BPoStatus.PAYMENT_VERIFIED || b2bPo?.status === B2BPoStatus.PACKING_LIST_GENERATED || b2bPo?.status === B2BPoStatus.DISPATCHED || b2bPo?.status === B2BPoStatus.INVOICED;
+    const isPackingListReady = !!b2bPo?.packingList || b2bPo?.status === B2BPoStatus.PACKING_LIST_GENERATED || b2bPo?.status === B2BPoStatus.DISPATCHED || b2bPo?.status === B2BPoStatus.INVOICED;
+    const isDispatched = !!b2bPo?.dispatch || b2bPo?.status === B2BPoStatus.DISPATCHED || b2bPo?.status === B2BPoStatus.INVOICED;
+    const isInvoiced = !!b2bPo?.invoice || b2bPo?.status === B2BPoStatus.INVOICED;
+
+    // Determine current active stage index (1 to 8)
+    let currentStage = 1;
+    if (isInvoiced) currentStage = 8;
+    else if (isDispatched) currentStage = 7;
+    else if (isPackingListReady) currentStage = 6;
+    else if (isPaymentVerified) currentStage = 6;
+    else if (latestReceipt) currentStage = 5;
+    else if (isAck) currentStage = 5;
+    else if (isApproved) currentStage = 4;
+    else if (submission.status === PoSubmissionStatus.UNDER_REVIEW) currentStage = 2;
+    else if (submission.status === PoSubmissionStatus.CHANGES_REQUESTED) currentStage = 2;
+
+    const stages = [
+      // Stage 1: Intake & Document Upload
+      {
+        stage: 1,
+        code: 'INTAKE_SUBMITTED',
+        title: 'PO Intake & Document Upload',
+        description: submission.sourceType === PoSourceType.PDF_UPLOAD
+          ? 'Native ERP Purchase Order PDF uploaded and queued for engineering review.'
+          : 'Structured Commercial PO form submitted online.',
+        status: 'COMPLETED',
+        timestamp: submission.submittedAt,
+        actor: `${submission.customer.firstName} ${submission.customer.lastName}`.trim(),
+        metadata: {
+          sourceType: submission.sourceType,
+          statedTotal: submission.statedTotal ? Number(submission.statedTotal) : null,
+          customerPoNumber: submission.customerPoNumber,
+          submissionNumber: submission.submissionNumber,
+        },
+        artifacts: submission.attachments.map((att) => ({
+          type: 'ORIGINAL_PDF' as const,
+          label: att.originalFileName,
+          downloadUrl: `${env.API_PREFIX}/po-submissions/attachments/${att.id}`,
+          reference: att.checksum || undefined,
+        })),
+      },
+
+      // Stage 2: Catalog SKU Mapping
+      {
+        stage: 2,
+        code: 'CATALOG_MAPPING',
+        title: 'Catalog SKU Mapping & Review',
+        description: submission.lineItems.length > 0
+          ? `${submission.lineItems.length} line items verified and mapped to internal catalog products.`
+          : 'Engineering team reviewing specifications and catalog SKUs.',
+        status: (submission.status === PoSubmissionStatus.CHANGES_REQUESTED)
+          ? 'ACTION_REQUIRED'
+          : (submission.lineItems.length > 0 || isApproved)
+          ? 'COMPLETED'
+          : (submission.status === PoSubmissionStatus.UNDER_REVIEW)
+          ? 'IN_PROGRESS'
+          : 'PENDING',
+        timestamp: submission.logs.find((l) => l.action === PoSubmissionAction.MAPPED_LINE_ITEM)?.timestamp,
+        actor: submission.reviewer ? `${submission.reviewer.firstName} ${submission.reviewer.lastName}`.trim() : undefined,
+        metadata: {
+          itemsCount: submission.lineItems.length,
+          mappedTotal: submission.mappedTotal ? Number(submission.mappedTotal) : null,
+          changeRequestReason: submission.changeRequestReason || undefined,
+        },
+      },
+
+      // Stage 3: Commercial Verification & Approval
+      {
+        stage: 3,
+        code: 'COMMERCIAL_APPROVAL',
+        title: 'Commercial Verification & Approval',
+        description: isApproved
+          ? 'Purchase order specifications, catalog prices, and commercial terms approved.'
+          : submission.status === PoSubmissionStatus.REJECTED
+          ? `PO rejected: ${submission.rejectionReason || 'Commercial discrepancy'}`
+          : 'Awaiting commercial verification and manager approval.',
+        status: (submission.status === PoSubmissionStatus.REJECTED)
+          ? 'REJECTED'
+          : isApproved
+          ? 'COMPLETED'
+          : 'PENDING',
+        timestamp: submission.approvedAt || undefined,
+        actor: submission.approver ? `${submission.approver.firstName} ${submission.approver.lastName}`.trim() : undefined,
+        metadata: {
+          rejectionReason: submission.rejectionReason || undefined,
+          mappedTotal: submission.mappedTotal ? Number(submission.mappedTotal) : null,
+        },
+      },
+
+      // Stage 4: Order Acknowledgement
+      {
+        stage: 4,
+        code: 'ORDER_ACKNOWLEDGEMENT',
+        title: 'Formal Order Acknowledgement',
+        description: isAck
+          ? `Official binding Order Acknowledgement #${submission.acknowledgement?.ackNumber} generated with verification QR code.`
+          : 'Pending issuance of official Order Acknowledgement document.',
+        status: isAck ? 'COMPLETED' : isApproved ? 'IN_PROGRESS' : 'PENDING',
+        timestamp: submission.acknowledgement?.issuedAt,
+        actor: submission.acknowledgement?.issuedByName || undefined,
+        metadata: {
+          ackNumber: submission.acknowledgement?.ackNumber,
+        },
+        artifacts: isAck
+          ? [
+              {
+                type: 'ACKNOWLEDGEMENT_PDF' as const,
+                label: `Acknowledgement (${submission.acknowledgement?.ackNumber})`,
+                downloadUrl: `${env.API_PREFIX}/po-submissions/${submission.id}/acknowledgement`,
+                reference: submission.acknowledgement?.ackNumber,
+              },
+            ]
+          : [],
+      },
+
+      // Stage 5: Advance Payment & Verification
+      {
+        stage: 5,
+        code: 'ADVANCE_PAYMENT',
+        title: 'Advance Payment & Verification',
+        description: isPaymentVerified
+          ? `Bank payment receipt verified. Advance amount ₹${Number(b2bPo?.advanceAmount || 0).toLocaleString('en-IN')} confirmed.`
+          : latestReceipt?.status === 'PENDING_REVIEW' || latestReceipt?.status === 'ACKNOWLEDGED'
+          ? 'Payment receipt submitted by customer and under verification by accounts team.'
+          : 'Awaiting 30% advance payment receipt (NEFT / RTGS / Cheque / Bank Transfer).',
+        status: isPaymentVerified
+          ? 'COMPLETED'
+          : latestReceipt?.status === 'REJECTED'
+          ? 'ACTION_REQUIRED'
+          : latestReceipt
+          ? 'IN_PROGRESS'
+          : isApproved
+          ? 'ACTION_REQUIRED'
+          : 'PENDING',
+        timestamp: latestReceipt?.verifiedAt || latestReceipt?.uploadedAt,
+        actor: latestReceipt?.verifiedBy || undefined,
+        metadata: {
+          advancePercentage: Number(b2bPo?.advancePercentage || 30),
+          advanceAmount: Number(b2bPo?.advanceAmount || 0),
+          balanceAmount: Number(b2bPo?.balanceAmount || 0),
+          receiptStatus: latestReceipt?.status,
+          rejectionReason: latestReceipt?.rejectionReason || undefined,
+        },
+        artifacts: latestReceipt
+          ? [
+              {
+                type: 'PAYMENT_RECEIPT' as const,
+                label: `Payment Receipt (${latestReceipt.originalFileName})`,
+                downloadUrl: b2bPo ? `${env.API_PREFIX}/purchase-orders/${b2bPo.id}/receipts/${latestReceipt.id}/file` : undefined,
+                reference: latestReceipt.paymentReference || undefined,
+              },
+            ]
+          : [],
+      },
+
+      // Stage 6: Stock Allocation & Packing List
+      {
+        stage: 6,
+        code: 'PACKING_LIST_GENERATED',
+        title: 'Stock Allocation & Packing List',
+        description: isPackingListReady
+          ? `Stock allocated from warehouse. QR-coded Packing List generated with ${b2bPo?.packingList?.totalPackages || 1} packages.`
+          : 'Stock allocation and physical packaging in progress at warehouse.',
+        status: isPackingListReady ? 'COMPLETED' : isPaymentVerified ? 'IN_PROGRESS' : 'PENDING',
+        timestamp: b2bPo?.packingList?.generatedAt,
+        metadata: {
+          totalPackages: b2bPo?.packingList?.totalPackages || 1,
+          totalQuantity: b2bPo?.packingList?.totalQuantity || 0,
+        },
+        artifacts: b2bPo?.packingList
+          ? [
+              {
+                type: 'PACKING_LIST_PDF' as const,
+                label: `Packing List (${b2bPo.poNumber})`,
+                downloadUrl: `${env.API_PREFIX}/purchase-orders/${b2bPo.id}/packing-list/download`,
+              },
+            ]
+          : [],
+      },
+
+      // Stage 7: E-Way Bill & Dispatch Logistics
+      {
+        stage: 7,
+        code: 'DISPATCH_LOGISTICS',
+        title: 'E-Way Bill & Dispatch Logistics',
+        description: isDispatched
+          ? `Consignment dispatched via ${b2bPo?.dispatch?.carrierName || 'PRC Logistics'}. Tracking: ${b2bPo?.dispatch?.trackingNumber || 'In transit'}.`
+          : 'Awaiting transporter assignment, vehicle allocation, and E-Way Bill generation (IRIS).',
+        status: isDispatched ? 'COMPLETED' : isPackingListReady ? 'IN_PROGRESS' : 'PENDING',
+        timestamp: b2bPo?.dispatch?.dispatchedAt,
+        actor: b2bPo?.dispatch?.dispatchedByName || undefined,
+        metadata: {
+          carrierName: b2bPo?.dispatch?.carrierName,
+          trackingNumber: b2bPo?.dispatch?.trackingNumber,
+          dispatchNotes: b2bPo?.dispatch?.dispatchNotes,
+        },
+        artifacts: b2bPo?.dispatch?.trackingNumber
+          ? [
+              {
+                type: 'EWAY_BILL' as const,
+                label: `Courier Tracking (${b2bPo.dispatch.carrierName})`,
+                reference: b2bPo.dispatch.trackingNumber,
+              },
+            ]
+          : [],
+      },
+
+      // Stage 8: Commercial Invoicing & PI
+      {
+        stage: 8,
+        code: 'COMMERCIAL_INVOICE',
+        title: 'GST Tax Invoice & Proforma',
+        description: isInvoiced
+          ? `Official GST Tax Invoice #${b2bPo?.invoice?.invoiceNumber} generated with HSN breakdown and IRIS verification.`
+          : 'Final commercial invoice generated upon dispatch delivery.',
+        status: isInvoiced ? 'COMPLETED' : isDispatched ? 'IN_PROGRESS' : 'PENDING',
+        timestamp: b2bPo?.invoice?.generatedAt,
+        metadata: {
+          invoiceNumber: b2bPo?.invoice?.invoiceNumber,
+          amountInvoiced: Number(b2bPo?.invoice?.amountInvoiced || b2bPo?.totalAmount || 0),
+          balanceDue: Number(b2bPo?.invoice?.balanceDue || 0),
+          source: b2bPo?.invoice?.source || 'INTERNAL',
+        },
+        artifacts: b2bPo?.invoice
+          ? [
+              {
+                type: 'INVOICE_PDF' as const,
+                label: `GST Tax Invoice (${b2bPo.invoice.invoiceNumber})`,
+                downloadUrl: `${env.API_PREFIX}/purchase-orders/${b2bPo.id}/invoice/download`,
+                reference: b2bPo.invoice.invoiceNumber,
+              },
+            ]
+          : [],
+      },
+    ];
+
+    const grandTotal = Number(b2bPo?.totalAmount || submission.mappedTotal || submission.statedTotal || 0);
+    const advancePercentage = Number(b2bPo?.advancePercentage || 30);
+    const advanceAmount = Number(b2bPo?.advanceAmount || Math.round((grandTotal * (advancePercentage / 100)) * 100) / 100);
+    const balanceAmount = Number(b2bPo?.balanceAmount || Math.round((grandTotal - advanceAmount) * 100) / 100);
+
+    return {
+      submissionId: submission.id,
+      submissionNumber: submission.submissionNumber,
+      customerPoNumber: submission.customerPoNumber,
+      sourceType: submission.sourceType,
+      currentStage,
+      overallStatus: submission.status,
+      b2bPurchaseOrderId: b2bPo?.id,
+      masterPoNumber: b2bPo?.poNumber || submission.customerPoNumber,
+      commercials: {
+        statedTotal: submission.statedTotal ? Number(submission.statedTotal) : undefined,
+        mappedTotal: submission.mappedTotal ? Number(submission.mappedTotal) : undefined,
+        grandTotal,
+        advancePercentage,
+        advanceAmount,
+        balanceAmount,
+        currency: submission.currency || 'INR',
+      },
+      stages,
+    };
   }
 
   // ─── Admin Action: Reject PO ────────────────────────────────────────────────

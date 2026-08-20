@@ -2374,8 +2374,9 @@ model AppointmentStatusHistory {
 model B2BPurchaseOrder {
   id                        String              @id @default(uuid())
   poNumber                  String              @unique @map("po_number")
-  quotationId               String              @unique @map("quotation_id")
-  quotationNumber           String              @map("quotation_number")
+  quotationId               String?             @unique @map("quotation_id")
+  quotationNumber           String?             @map("quotation_number")
+  poSubmissionId            String?             @unique @map("po_submission_id")
   customerId                String              @map("customer_id")
   status                    B2BPoStatus         @default(SUBMITTED)
   customerPoReferenceNumber String?             @map("customer_po_reference_number")
@@ -2403,7 +2404,8 @@ model B2BPurchaseOrder {
 
   // Relations
   customer                  User                @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  quotation                 Quote               @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  quotation                 Quote?              @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  poSubmission              PoSubmission?       @relation(fields: [poSubmissionId], references: [id], onDelete: SetNull)
   items                     B2BPurchaseOrderItem[]
   receipts                  PaymentReceipt[]
   packingList               PackingList?
@@ -2415,6 +2417,7 @@ model B2BPurchaseOrder {
   @@index([poNumber])
   @@index([quotationId])
   @@index([quotationNumber])
+  @@index([poSubmissionId])
   @@index([customerId])
   @@index([status])
   @@index([createdAt])
@@ -2718,6 +2721,7 @@ model PoSubmission {
   attachments         PoSubmissionAttachment[]
   logs                PoSubmissionLog[]
   acknowledgement     PoAcknowledgement?
+  b2bPurchaseOrder    B2BPurchaseOrder?
 
   @@index([customerId])
   @@index([status])

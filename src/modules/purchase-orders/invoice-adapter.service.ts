@@ -189,7 +189,7 @@ export class InternalInvoiceAdapterService implements InvoiceServiceAdapter {
     await sendInvoiceReadyEmail({
       poId: po.id,
       poNumber: po.poNumber,
-      quotationNumber: po.quotationNumber,
+      quotationNumber: po.quotationNumber || po.poNumber,
       invoiceNumber: po.invoice.invoiceNumber,
       customerEmail: recipientEmail || po.customer.email,
       customerName: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim() || 'Valued Client',

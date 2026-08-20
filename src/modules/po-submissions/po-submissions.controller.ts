@@ -299,6 +299,31 @@ export class PoSubmissionsController {
       next(error);
     }
   };
+
+  // ─── Sequence: Next Sequential PO Number ────────────────────────────────────
+  getNextSequentialPoNumber = async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await poSubmissionsService.getNextSequentialPoNumber();
+      sendSuccess(res, result, 'Next sequential PO number retrieved');
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // ─── Tracking: 8-Stage Telemetry Tracker ────────────────────────────────────
+  getPoTracking = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+      const isAdmin =
+        req.user.roleSlug === 'super_admin' ||
+        req.user.roleSlug === 'admin' ||
+        (req.user.roles && req.user.roles.includes('ADMIN'));
+      const tracking = await poSubmissionsService.getPoTracking(req.params.id, req.user.id, isAdmin);
+      sendSuccess(res, tracking, 'Purchase Order tracking telemetry retrieved');
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
 export const poSubmissionsController = new PoSubmissionsController();

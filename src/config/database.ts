@@ -598,6 +598,16 @@ const PO_AUTO_HEAL_STATEMENTS = [
       CREATE UNIQUE INDEX "po_submission_sequences_prefix_fy_key" ON "po_submission_sequences"("prefix", "financial_year");
     END IF;
   END $$`,
+
+  // ─── LINK B2B_PURCHASE_ORDERS TO PO_SUBMISSIONS ───
+  `DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='b2b_purchase_orders') THEN
+      ALTER TABLE "b2b_purchase_orders" ALTER COLUMN "quotation_id" DROP NOT NULL;
+      ALTER TABLE "b2b_purchase_orders" ALTER COLUMN "quotation_number" DROP NOT NULL;
+      ALTER TABLE "b2b_purchase_orders" ADD COLUMN IF NOT EXISTS "po_submission_id" TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS "b2b_purchase_orders_po_submission_id_key" ON "b2b_purchase_orders"("po_submission_id");
+    END IF;
+  END $$`,
 ];
 
 export const autoHealDatabaseSchema = async () => {

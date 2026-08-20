@@ -477,7 +477,7 @@ export class PurchaseOrdersService {
       customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
       companyName: po.customer.companyName || undefined,
       poNumber: po.poNumber,
-      quotationNumber: po.quotationNumber,
+      quotationNumber: po.quotationNumber || po.poNumber,
       totalAmount,
       currency: 'INR',
       advancePercentage,
@@ -940,7 +940,7 @@ export class PurchaseOrdersService {
       to: po.customer.email,
       customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
       poNumber: po.poNumber,
-      quotationNumber: po.quotationNumber,
+      quotationNumber: po.quotationNumber || po.poNumber,
       amountReceived: input.amountReceived,
       currency: po.currency,
       paymentDate: input.paymentDate ? new Date(input.paymentDate).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN'),
@@ -1092,7 +1092,7 @@ export class PurchaseOrdersService {
     // Generate PDF buffer using pdfmake
     const pdfBuffer = await generatePackingListPdfBuffer({
       poNumber: po.poNumber,
-      quotationNumber: po.quotationNumber,
+      quotationNumber: po.quotationNumber || po.poNumber,
       customerPoReferenceNumber: po.customerPoReferenceNumber,
       createdAt: po.createdAt,
       requestedDeliveryDate: po.requestedDeliveryDate,
@@ -1140,7 +1140,7 @@ export class PurchaseOrdersService {
         },
         create: {
           purchaseOrderId: po.id,
-          quotationNumber: po.quotationNumber,
+          quotationNumber: po.quotationNumber || po.poNumber,
           poNumber: po.poNumber,
           fileStorageKey: pdfFileName,
           fileHash: pdfHash,
@@ -1180,7 +1180,7 @@ export class PurchaseOrdersService {
       to: po.customer.email,
       customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
       poNumber: po.poNumber,
-      quotationNumber: po.quotationNumber,
+      quotationNumber: po.quotationNumber || po.poNumber,
       totalPackages,
       totalQuantity,
     }).catch((err) => console.error('[Packing List Email Error]:', err));
@@ -1415,7 +1415,7 @@ export class PurchaseOrdersService {
 
     const pdfBuffer = await generatePurchaseOrderPdfBuffer({
       poNumber: po.poNumber,
-      quotationNumber: po.quotationNumber,
+      quotationNumber: po.quotationNumber || po.poNumber,
       customerPoReferenceNumber: po.customerPoReferenceNumber,
       status: po.status,
       createdAt: po.createdAt,
@@ -1933,7 +1933,7 @@ export class PurchaseOrdersService {
         const invoiceResult = await invoiceServiceAdapter.createInvoice({
           purchaseOrderId: po.id,
           poNumber: po.poNumber,
-          quotationNumber: po.quotationNumber,
+          quotationNumber: po.quotationNumber || po.poNumber,
           customerPoReferenceNumber: po.customerPoReferenceNumber,
           customer: {
             id: po.customerId,
@@ -2006,7 +2006,7 @@ export class PurchaseOrdersService {
         await sendInvoiceReadyEmail({
           poId: po.id,
           poNumber: po.poNumber,
-          quotationNumber: po.quotationNumber,
+          quotationNumber: po.quotationNumber || po.poNumber,
           invoiceNumber: invoiceResult.invoiceNumber,
           customerEmail: po.customer.email,
           customerName: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim() || 'Valued Client',

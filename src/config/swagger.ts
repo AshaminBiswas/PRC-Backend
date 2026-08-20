@@ -7083,6 +7083,164 @@ export const openApiSpec = {
       },
       "security": [{ "BearerAuth": [] }]
     }
+  },
+  "/po-submissions/next-po-number": {
+    "get": {
+      "summary": "Fetch Next Sequential PO Number (FY atomic generator)",
+      "tags": ["36. Purchase Order Intake (Customer)"],
+      "responses": {
+        "200": { "description": "Next sequential PO reference number (e.g. PRC-PO-2026-27/001)" }
+      }
+    }
+  },
+  "/po-submissions": {
+    "post": {
+      "summary": "Submit Structured Commercial Purchase Order",
+      "tags": ["36. Purchase Order Intake (Customer)"],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["lineItems", "billToAddress"],
+              "properties": {
+                "customerPoNumber": { "type": "string", "example": "PRC-PO-2026-27/001" },
+                "currency": { "type": "string", "default": "INR" },
+                "lineItems": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["description", "quantity", "unitPrice"],
+                    "properties": {
+                      "description": { "type": "string" },
+                      "sku": { "type": "string" },
+                      "quantity": { "type": "integer" },
+                      "unitPrice": { "type": "number" },
+                      "taxRate": { "type": "number", "default": 18 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": { "201": { "description": "PO Submission created with sequential POS number" } },
+      "security": [{ "BearerAuth": [] }]
+    },
+    "get": {
+      "summary": "List Customer's Purchase Order Submissions",
+      "tags": ["36. Purchase Order Intake (Customer)"],
+      "responses": { "200": { "description": "Paginated customer PO submissions" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/po-submissions/upload": {
+    "post": {
+      "summary": "Upload Native ERP Purchase Order PDF (SAP / Tally / Zoho ≤10MB)",
+      "tags": ["36. Purchase Order Intake (Customer)"],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "type": "object",
+              "required": ["file"],
+              "properties": {
+                "file": { "type": "string", "format": "binary", "description": "Native PO PDF (Max 10 MB)" },
+                "customerPoNumber": { "type": "string" },
+                "statedTotal": { "type": "number" }
+              }
+            }
+          }
+        }
+      },
+      "responses": { "201": { "description": "PDF PO successfully queued for catalog mapping" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/po-submissions/{id}": {
+    "get": {
+      "summary": "Get Purchase Order Intake Dossier by ID",
+      "tags": ["36. Purchase Order Intake (Customer)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "PO Submission detail with line items and linked fulfillment PO" } },
+      "security": [{ "BearerAuth": [] }]
+    },
+    "delete": {
+      "summary": "Cancel / Delete Pending PO Submission",
+      "tags": ["36. Purchase Order Intake (Customer)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Submission cancelled" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/po-submissions/{id}/tracking": {
+    "get": {
+      "summary": "Get Unified 8-Stage Live Tracking Telemetry",
+      "tags": ["36. Purchase Order Intake (Customer)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": {
+        "200": {
+          "description": "8-stage tracking pipeline: Intake -> SKU Map -> Approval -> Acknowledgement -> Advance Payment -> Packing List -> E-Way Bill -> GST Tax Invoice"
+        }
+      },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/po-submissions/{id}/acknowledgement": {
+    "get": {
+      "summary": "Download Formal Order Acknowledgement PDF with QR Verification",
+      "tags": ["36. Purchase Order Intake (Customer)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Binding Order Acknowledgement PDF stream" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/po-submissions": {
+    "get": {
+      "summary": "Admin Unified Purchase Order Intake Queue",
+      "tags": ["37. PO Intake Desk (Admin)"],
+      "responses": { "200": { "description": "Queue with filters and status aggregates" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/po-submissions/{id}/map-items": {
+    "put": {
+      "summary": "Map Native PDF Line Items to Catalog SKUs and Set Rates",
+      "tags": ["37. PO Intake Desk (Admin)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Catalog items mapped and variance recomputed" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/po-submissions/{id}/approve": {
+    "post": {
+      "summary": "Approve Intake PO and Automatically Promote to Fulfillment Engine",
+      "tags": ["37. PO Intake Desk (Admin)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "PO approved, promoted to B2BPurchaseOrder in AWAITING_ADVANCE_PAYMENT" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/po-submissions/{id}/issue-acknowledgement": {
+    "post": {
+      "summary": "Generate & Issue Formal Order Acknowledgement PDF with QR Code",
+      "tags": ["37. PO Intake Desk (Admin)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Acknowledgement PDF generated, emailed, and linked" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/po-submissions/{id}/tracking": {
+    "get": {
+      "summary": "Admin 8-Stage Live Tracking Telemetry",
+      "tags": ["37. PO Intake Desk (Admin)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Complete milestone telemetry" } },
+      "security": [{ "BearerAuth": [] }]
+    }
   }
 }
 };

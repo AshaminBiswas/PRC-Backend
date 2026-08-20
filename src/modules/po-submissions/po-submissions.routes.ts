@@ -45,6 +45,9 @@ export const customerPoSubmissionsRouter = Router();
 // Public token stream (iframe PDF viewer)
 customerPoSubmissionsRouter.get('/view-attachment', poSubmissionsController.viewAttachmentByToken);
 
+// Sequential number generator (customer/intake)
+customerPoSubmissionsRouter.get('/next-po-number', poSubmissionsController.getNextSequentialPoNumber);
+
 // Customer endpoints
 customerPoSubmissionsRouter.post(
   '/',
@@ -66,6 +69,13 @@ customerPoSubmissionsRouter.get(
   authenticate,
   validate(CustomerListQuerySchema, 'query'),
   poSubmissionsController.getMySubmissions
+);
+
+customerPoSubmissionsRouter.get(
+  '/:id/tracking',
+  authenticate,
+  validate(IdParamSchema, 'params'),
+  poSubmissionsController.getPoTracking
 );
 
 customerPoSubmissionsRouter.get(
@@ -104,6 +114,13 @@ adminPoSubmissionsRouter.get(
   authenticate,
   validate(AdminQueueQuerySchema, 'query'),
   poSubmissionsController.adminGetQueue
+);
+
+adminPoSubmissionsRouter.get(
+  '/:id/tracking',
+  authenticate,
+  validate(IdParamSchema, 'params'),
+  poSubmissionsController.getPoTracking
 );
 
 adminPoSubmissionsRouter.get(
