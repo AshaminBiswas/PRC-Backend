@@ -542,8 +542,17 @@ export class PurchaseOrdersService {
         { poNumber: { contains: q, mode: 'insensitive' } },
         { quotationNumber: { contains: q, mode: 'insensitive' } },
         { customerPoReferenceNumber: { contains: q, mode: 'insensitive' } },
-        { customer: { companyName: { contains: q, mode: 'insensitive' } } },
         { customer: { email: { contains: q, mode: 'insensitive' } } },
+        { customer: { phone: { contains: q } } },
+        { customer: { firstName: { contains: q, mode: 'insensitive' } } },
+        { customer: { lastName: { contains: q, mode: 'insensitive' } } },
+        { customer: { companyName: { contains: q, mode: 'insensitive' } } },
+        { customer: { gstin: { contains: q, mode: 'insensitive' } } },
+        { quotation: { referenceNo: { contains: q, mode: 'insensitive' } } },
+        { quotation: { quoteNumber: { contains: q, mode: 'insensitive' } } },
+        { quotation: { projectName: { contains: q, mode: 'insensitive' } } },
+        { quotation: { email: { contains: q, mode: 'insensitive' } } },
+        { quotation: { phone: { contains: q } } },
       ];
     }
 
