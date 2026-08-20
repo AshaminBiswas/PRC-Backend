@@ -7,8 +7,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
@@ -172,59 +172,50 @@ enum PoSubmissionAction {
 // ─── User & Auth ─────────────────────────────────────────────────────────────
 
 model User {
-  id           String     @id @default(uuid())
-  email        String     @unique
-  passwordHash String
-  firstName    String
-  lastName     String
-  phone        String?
+  id                   String     @id @default(uuid())
+  email                String     @unique
+  passwordHash         String
+  firstName            String
+  lastName             String
+  phone                String?
   companyName          String?
   gstin                String?    @db.VarChar(15)
-  b2bAdvancePercentage Decimal?   @db.Decimal(5, 2) @map("b2b_advance_percentage")
+  b2bAdvancePercentage Decimal?   @map("b2b_advance_percentage") @db.Decimal(5, 2)
   avatar               String?
-  status             UserStatus @default(ACTIVE)
-  isVerified         Boolean    @default(false)
-  mustChangePassword Boolean    @default(false)
-  lastLoginAt        DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  deletedAt    DateTime?
+  status               UserStatus @default(ACTIVE)
+  isVerified           Boolean    @default(false)
+  mustChangePassword   Boolean    @default(false)
+  lastLoginAt          DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  deletedAt            DateTime?
 
   // Relations
-  userRoles          UserRole[]
-  refreshTokens      RefreshToken[]
-  emailVerifications EmailVerification[]
-  passwordResets     PasswordReset[]
-  activityLogs       UserActivityLog[]
-  addresses          Address[]
-  wishlist           Wishlist?
-  cart               Cart?
-  orders             Order[]
-  quotes             Quote[]
-  couponUsages       CouponUsage[]
-  payments           Payment[]
-  reviews            Review[]
-  enquiries          Enquiry[]
-  blogPosts          BlogPost[]
-  notifications      Notification[]
-  auditLogs          AuditLog[]
-  ventureUsers       VentureUser[]
-  staffAvailabilities StaffAvailability[]
-  customerAppointments Appointment[] @relation("CustomerAppointments")
-  staffAppointments    Appointment[] @relation("StaffAppointments")
+  userRoles            UserRole[]
+  refreshTokens        RefreshToken[]
+  emailVerifications   EmailVerification[]
+  passwordResets       PasswordReset[]
+  activityLogs         UserActivityLog[]
+  addresses            Address[]
+  wishlist             Wishlist?
+  cart                 Cart?
+  orders               Order[]
+  quotes               Quote[]
+  couponUsages         CouponUsage[]
+  payments             Payment[]
+  reviews              Review[]
+  enquiries            Enquiry[]
+  blogPosts            BlogPost[]
+  notifications        Notification[]
+  auditLogs            AuditLog[]
+  ventureUsers         VentureUser[]
+  staffAvailabilities  StaffAvailability[]
+  customerAppointments Appointment[]       @relation("CustomerAppointments")
+  staffAppointments    Appointment[]       @relation("StaffAppointments")
   invoices             Invoice[]
   b2bCustomerPrices    B2BCustomerPrice[]
-  quoteActivityLogs    QuoteActivityLog[] @relation("AdminQuoteActivity")
-  b2bPurchaseOrders    B2BPurchaseOrder[]
-  savedAddresses       SavedAddress[]
-  poAuditLogs          PoAuditLog[]       @relation("AdminPoAuditLogs")
-  verifiedReceipts     PaymentReceipt[]   @relation("AdminVerifiedReceipts")
-  acknowledgedReceipts PaymentReceipt[]   @relation("AdminAcknowledgedReceipts")
-  customerPoSubmissions PoSubmission[]     @relation("CustomerPoSubmissions")
-  reviewedPoSubmissions PoSubmission[]     @relation("ReviewerPoSubmissions")
-  assignedPoSubmissions PoSubmission[]     @relation("AssigneePoSubmissions")
-  approvedPoSubmissions PoSubmission[]     @relation("ApproverPoSubmissions")
-  poSubmissionLogs      PoSubmissionLog[]  @relation("PoSubmissionLogActor")
+  quoteActivityLogs    QuoteActivityLog[]  @relation("AdminQuoteActivity")
+  SavedAddress         SavedAddress[]
 
   @@index([email])
   @@index([status])
@@ -405,45 +396,45 @@ model Category {
 // ─── Product ──────────────────────────────────────────────────────────────────
 
 model Product {
-  id              String        @id @default(uuid())
-  name            String
-  slug            String        @unique
-  description     String?
-  shortDesc       String?
-  sku             String        @unique
-  price           Decimal       @db.Decimal(12, 2)
-  salePrice       Decimal?      @db.Decimal(12, 2)
-  offerPrice      Decimal?      @db.Decimal(12, 2)
-  thumbnail       String?
-  images          String[]      @default([])
-  categoryId      String?
-  stock           Int           @default(0)
-  reorderLevel    Int           @default(10)
-  status          ProductStatus @default(DRAFT)
-  isVisible       Boolean       @default(true)
-  isFeatured      Boolean       @default(false)
-  isBestseller    Boolean       @default(false)
-  isInOffer       Boolean       @default(false)
-  isNewArrival    Boolean       @default(false)
-  compatibleFor   String[]      @default([])
-  warranty        String?       @default("2 years")
-  rating          Decimal       @default(0) @db.Decimal(3, 2)
-  reviewCount     Int           @default(0)
-  weight          Decimal?      @db.Decimal(8, 3)
-  dimensions      Json?
-  attributes      Json?
-  specification   Json?
+  id               String        @id @default(uuid())
+  name             String
+  slug             String        @unique
+  description      String?
+  shortDesc        String?
+  sku              String        @unique
+  price            Decimal       @db.Decimal(12, 2)
+  salePrice        Decimal?      @db.Decimal(12, 2)
+  offerPrice       Decimal?      @db.Decimal(12, 2)
+  thumbnail        String?
+  images           String[]      @default([])
+  categoryId       String?
+  stock            Int           @default(0)
+  reorderLevel     Int           @default(10)
+  status           ProductStatus @default(DRAFT)
+  isVisible        Boolean       @default(true)
+  isFeatured       Boolean       @default(false)
+  isBestseller     Boolean       @default(false)
+  isInOffer        Boolean       @default(false)
+  isNewArrival     Boolean       @default(false)
+  compatibleFor    String[]      @default([])
+  warranty         String?       @default("2 years")
+  rating           Decimal       @default(0) @db.Decimal(3, 2)
+  reviewCount      Int           @default(0)
+  weight           Decimal?      @db.Decimal(8, 3)
+  dimensions       Json?
+  attributes       Json?
+  specification    Json?
   manufacturerInfo Json?
-  colours         String[]      @default([])
-  tags            String[]      @default([])
-  metaTitle       String?
-  metaDescription String?
-  metaKeywords    String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  deletedAt       DateTime?
+  colours          String[]      @default([])
+  tags             String[]      @default([])
+  metaTitle        String?
+  metaDescription  String?
+  metaKeywords     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
 
-  category          Category?        @relation(fields: [categoryId], references: [id])
+  category          Category?          @relation(fields: [categoryId], references: [id])
   variants          ProductVariant[]
   wishlistItems     WishlistItem[]
   cartItems         CartItem[]
@@ -593,29 +584,29 @@ model CartItem {
 // ─── Order, OrderItem & OrderStatusHistory ────────────────────────────────────
 
 model Order {
-  id                String        @id @default(uuid())
-  orderNumber       String        @unique
-  userId            String
-  status            OrderStatus   @default(PENDING)
-  paymentStatus     PaymentStatus @default(PENDING)
-  paymentMethod     PaymentMethod @default(RAZORPAY)
-  subtotal          Decimal       @db.Decimal(12, 2)
-  discountTotal     Decimal       @default(0) @db.Decimal(12, 2)
-  shippingTotal     Decimal       @default(0) @db.Decimal(12, 2)
-  taxTotal          Decimal       @default(0) @db.Decimal(12, 2)
-  grandTotal        Decimal       @db.Decimal(12, 2)
-  couponId          String?
-  shippingAddressId String?
-  billingAddressId  String?
-  shippingAddress   Json?
-  billingAddress    Json?
-  notes             String?
-  trackingNumber    String?
-  carrier           String?
-  shippedAt         DateTime?
-  deliveredAt       DateTime?
-  cancelledAt       DateTime?
-  cancelReason      String?
+  id                   String        @id @default(uuid())
+  orderNumber          String        @unique
+  userId               String
+  status               OrderStatus   @default(PENDING)
+  paymentStatus        PaymentStatus @default(PENDING)
+  paymentMethod        PaymentMethod @default(RAZORPAY)
+  subtotal             Decimal       @db.Decimal(12, 2)
+  discountTotal        Decimal       @default(0) @db.Decimal(12, 2)
+  shippingTotal        Decimal       @default(0) @db.Decimal(12, 2)
+  taxTotal             Decimal       @default(0) @db.Decimal(12, 2)
+  grandTotal           Decimal       @db.Decimal(12, 2)
+  couponId             String?
+  shippingAddressId    String?
+  billingAddressId     String?
+  shippingAddress      Json?
+  billingAddress       Json?
+  notes                String?
+  trackingNumber       String?
+  carrier              String?
+  shippedAt            DateTime?
+  deliveredAt          DateTime?
+  cancelledAt          DateTime?
+  cancelReason         String?
   allocatedWarehouseId String?
   allocatedCourierId   String?
   allocatedZoneId      String?
@@ -623,8 +614,8 @@ model Order {
   allocationDistance   Float?
   allocationScore      Float?
   allocationReason     String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   // Relations
   user               User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -692,52 +683,51 @@ model OrderStatusHistory {
 // ─── Quote & QuoteItem (B2B RFQ Module) ──────────────────────────────────────
 
 model Quote {
-  id                    String              @id @default(uuid())
-  quoteNumber           String              @unique @map("quote_number")
-  referenceNo           String?             @unique @map("reference_no")
-  financialYear         String?             @map("financial_year")
-  sequenceNo            Int?                @map("sequence_no")
-  projectName           String?             @map("project_name")
-  firstName             String?             @map("first_name")
-  lastName              String?             @map("last_name")
-  companyName           String?             @map("company_name")
-  gstNo                 String?             @map("gst_no")
+  id                    String      @id @default(uuid())
+  quoteNumber           String      @unique @map("quote_number")
+  referenceNo           String?     @unique @map("reference_no")
+  financialYear         String?     @map("financial_year")
+  sequenceNo            Int?        @map("sequence_no")
+  projectName           String?     @map("project_name")
+  firstName             String?     @map("first_name")
+  lastName              String?     @map("last_name")
+  companyName           String?     @map("company_name")
+  gstNo                 String?     @map("gst_no")
   email                 String?
   phone                 String?
-  userId                String?             @map("user_id")
-  status                QuoteStatus         @default(PENDING)
-  statusReason          String?             @map("status_reason")
-  basicPrice            Decimal?            @db.Decimal(12, 2) @map("basic_price")
-  gstAmount             Decimal?            @db.Decimal(12, 2) @map("gst_amount")
-  shippingCost          Decimal?            @db.Decimal(12, 2) @map("shipping_cost")
-  subtotal              Decimal?            @db.Decimal(12, 2)
-  discountTotal         Decimal?            @db.Decimal(12, 2) @map("discount_total")
-  taxTotal              Decimal?            @db.Decimal(12, 2) @map("tax_total")
-  grandTotal            Decimal?            @db.Decimal(12, 2) @map("grand_total")
-  advancePercentage     Decimal?            @db.Decimal(5, 2) @map("advance_percentage")
-  notes                 String?             @db.VarChar(500)
-  adminNotes            String?             @map("admin_notes")
-  termsAccepted         Boolean             @default(false) @map("terms_accepted")
-  customerResponse      String              @default("pending") @map("customer_response") // 'pending' | 'accepted' | 'declined'
-  customerResponseNotes String?             @map("customer_response_notes")
-  customerResponseAt    DateTime?           @map("customer_response_at")
-  accessToken           String?             @unique @map("access_token")
-  digitalSignature      String?             @map("digital_signature")
-  signedBy              String?             @map("signed_by")
-  signedAt              DateTime?           @map("signed_at")
-  qrCodeData            String?             @map("qr_code_data")
-  validUntil            DateTime?           @map("valid_until")
-  convertedOrderId      String?             @map("converted_order_id")
-  isDeleted             Boolean             @default(false) @map("is_deleted")
-  deletedAt             DateTime?           @map("deleted_at")
-  createdAt             DateTime            @default(now()) @map("created_at")
-  updatedAt             DateTime            @updatedAt @map("updated_at")
+  userId                String?     @map("user_id")
+  status                QuoteStatus @default(PENDING)
+  statusReason          String?     @map("status_reason")
+  basicPrice            Decimal?    @map("basic_price") @db.Decimal(12, 2)
+  gstAmount             Decimal?    @map("gst_amount") @db.Decimal(12, 2)
+  shippingCost          Decimal?    @map("shipping_cost") @db.Decimal(12, 2)
+  subtotal              Decimal?    @db.Decimal(12, 2)
+  discountTotal         Decimal?    @map("discount_total") @db.Decimal(12, 2)
+  taxTotal              Decimal?    @map("tax_total") @db.Decimal(12, 2)
+  grandTotal            Decimal?    @map("grand_total") @db.Decimal(12, 2)
+  advancePercentage     Decimal?    @map("advance_percentage") @db.Decimal(5, 2)
+  notes                 String?     @db.VarChar(500)
+  adminNotes            String?     @map("admin_notes")
+  termsAccepted         Boolean     @default(false) @map("terms_accepted")
+  customerResponse      String      @default("pending") @map("customer_response") // 'pending' | 'accepted' | 'declined'
+  customerResponseNotes String?     @map("customer_response_notes")
+  customerResponseAt    DateTime?   @map("customer_response_at")
+  accessToken           String?     @unique @map("access_token")
+  digitalSignature      String?     @map("digital_signature")
+  signedBy              String?     @map("signed_by")
+  signedAt              DateTime?   @map("signed_at")
+  qrCodeData            String?     @map("qr_code_data")
+  validUntil            DateTime?   @map("valid_until")
+  convertedOrderId      String?     @map("converted_order_id")
+  isDeleted             Boolean     @default(false) @map("is_deleted")
+  deletedAt             DateTime?   @map("deleted_at")
+  createdAt             DateTime    @default(now()) @map("created_at")
+  updatedAt             DateTime    @updatedAt @map("updated_at")
 
   // Relations
-  user                  User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
-  items                 QuoteItem[]
-  activityLogs          QuoteActivityLog[]
-  b2bPurchaseOrder      B2BPurchaseOrder?
+  user         User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items        QuoteItem[]
+  activityLogs QuoteActivityLog[]
 
   @@index([userId])
   @@index([quoteNumber])
@@ -752,53 +742,53 @@ model Quote {
 }
 
 model QuoteItem {
-  id                  String          @id @default(uuid())
-  quoteId             String          @map("quote_id")
-  slNo                Int             @default(1) @map("sl_no")
-  productId           String          @map("product_id")
-  productNameSnapshot String?         @map("product_name_snapshot")
-  variantId           String?         @map("variant_id")
-  unit                String          @default("PCS")
+  id                  String   @id @default(uuid())
+  quoteId             String   @map("quote_id")
+  slNo                Int      @default(1) @map("sl_no")
+  productId           String   @map("product_id")
+  productNameSnapshot String?  @map("product_name_snapshot")
+  variantId           String?  @map("variant_id")
+  unit                String   @default("PCS")
   quantity            Int
-  rate                Decimal?        @db.Decimal(12, 2)
-  amount              Decimal?        @db.Decimal(12, 2)
-  requestedPrice      Decimal?        @db.Decimal(12, 2) @map("requested_price")
-  offeredPrice        Decimal?        @db.Decimal(12, 2) @map("offered_price")
-  total               Decimal?        @db.Decimal(12, 2)
-  createdAt           DateTime        @default(now()) @map("created_at")
+  rate                Decimal? @db.Decimal(12, 2)
+  amount              Decimal? @db.Decimal(12, 2)
+  requestedPrice      Decimal? @map("requested_price") @db.Decimal(12, 2)
+  offeredPrice        Decimal? @map("offered_price") @db.Decimal(12, 2)
+  total               Decimal? @db.Decimal(12, 2)
+  createdAt           DateTime @default(now()) @map("created_at")
 
   // Relations
-  quote               Quote           @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  product             Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
-  variant             ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  quote   Quote           @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
 
   @@index([quoteId])
   @@map("quote_items")
 }
 
 model QuoteActivityLog {
-  id           String     @id @default(uuid())
-  quoteId      String     @map("quote_id")
-  changedBy    String?    @map("changed_by")
-  changeType   String     @map("change_type") // 'status_change' | 'item_edit' | 'shipping_update' | 'signed' | 'deleted' | 'customer_response'
-  oldValue     Json?      @map("old_value")
-  newValue     Json?      @map("new_value")
-  note         String?
-  createdAt    DateTime   @default(now()) @map("created_at")
+  id         String   @id @default(uuid())
+  quoteId    String   @map("quote_id")
+  changedBy  String?  @map("changed_by")
+  changeType String   @map("change_type") // 'status_change' | 'item_edit' | 'shipping_update' | 'signed' | 'deleted' | 'customer_response'
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  quote        Quote      @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  adminUser    User?      @relation("AdminQuoteActivity", fields: [changedBy], references: [id], onDelete: SetNull)
+  quote     Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  adminUser User? @relation("AdminQuoteActivity", fields: [changedBy], references: [id], onDelete: SetNull)
 
   @@index([quoteId])
   @@map("quote_activity_logs")
 }
 
 model QuoteSequence {
-  id            String    @id @default(uuid())
-  financialYear String    @unique @map("financial_year")
-  nextNumber    Int       @default(1) @map("next_number")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id            String   @id @default(uuid())
+  financialYear String   @unique @map("financial_year")
+  nextNumber    Int      @default(1) @map("next_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("quote_sequences")
 }
@@ -1278,14 +1268,14 @@ model FaqCategory {
 }
 
 model Faq {
-  id         String      @id @default(uuid())
+  id         String   @id @default(uuid())
   categoryId String
   question   String
-  answer     String      @db.Text
-  position   Int         @default(0)
-  isActive   Boolean     @default(true)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  answer     String   @db.Text
+  position   Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Relations
   category FaqCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -1512,18 +1502,18 @@ model Venture {
   deletedAt          DateTime?
 
   // Relations
-  ventureUsers      VentureUser[]
-  warehouses        Warehouse[]
-  inventoryProducts InventoryProduct[]
-  suppliers         Supplier[]
-  purchaseOrders    PurchaseOrder[]
-  stockTransfers    StockTransfer[]   @relation("VentureTransfers")
-  stockTransfersFrom StockTransfer[]   @relation("TransferFromVenture")
-  stockTransfersTo   StockTransfer[]   @relation("TransferToVenture")
-  dispatches        Dispatch[]
-  posStores         PosStore[]
-  stockMovements    StockMovement[]
-  activityLogs      InventoryActivityLog[]
+  ventureUsers       VentureUser[]
+  warehouses         Warehouse[]
+  inventoryProducts  InventoryProduct[]
+  suppliers          Supplier[]
+  purchaseOrders     PurchaseOrder[]
+  stockTransfers     StockTransfer[]        @relation("VentureTransfers")
+  stockTransfersFrom StockTransfer[]        @relation("TransferFromVenture")
+  stockTransfersTo   StockTransfer[]        @relation("TransferToVenture")
+  dispatches         Dispatch[]
+  posStores          PosStore[]
+  stockMovements     StockMovement[]
+  activityLogs       InventoryActivityLog[]
 
   @@index([slug])
   @@index([code])
@@ -1577,45 +1567,45 @@ model PinCode {
 // ─── Warehouse ────────────────────────────────────────────────────────────────
 
 model Warehouse {
-  id           String          @id @default(uuid())
-  ventureId    String
-  name         String
-  code         String          @unique
-  type         String          @default("MAIN")
-  address      String?
-  city         String?
-  state        String?
-  pincode      String?
-  country      String          @default("India")
-  latitude     Float?
-  longitude    Float?
-  isActive     Boolean         @default(true)
-  priority     Int             @default(0)
-  dailyCapacity Int            @default(500)
-  currentLoad  Int             @default(0)
-  geohash      String?
-  managerId    String?
-  contactPhone String?
-  isDefault    Boolean         @default(false)
-  status       WarehouseStatus @default(ACTIVE)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  deletedAt    DateTime?
+  id            String          @id @default(uuid())
+  ventureId     String
+  name          String
+  code          String          @unique
+  type          String          @default("MAIN")
+  address       String?
+  city          String?
+  state         String?
+  pincode       String?
+  country       String          @default("India")
+  latitude      Float?
+  longitude     Float?
+  isActive      Boolean         @default(true)
+  priority      Int             @default(0)
+  dailyCapacity Int             @default(500)
+  currentLoad   Int             @default(0)
+  geohash       String?
+  managerId     String?
+  contactPhone  String?
+  isDefault     Boolean         @default(false)
+  status        WarehouseStatus @default(ACTIVE)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deletedAt     DateTime?
 
-  venture         Venture                @relation(fields: [ventureId], references: [id], onDelete: Cascade)
-  stocks          InventoryStock[]
+  venture          Venture                @relation(fields: [ventureId], references: [id], onDelete: Cascade)
+  stocks           InventoryStock[]
   stockMovements   StockMovement[]
-  transfersFrom   StockTransfer[]        @relation("TransferFromWarehouse")
-  transfersTo     StockTransfer[]        @relation("TransferToWarehouse")
-  purchaseOrders  PurchaseOrder[]
+  transfersFrom    StockTransfer[]        @relation("TransferFromWarehouse")
+  transfersTo      StockTransfer[]        @relation("TransferToWarehouse")
+  purchaseOrders   PurchaseOrder[]
   purchaseReceives PurchaseReceive[]
-  dispatches      Dispatch[]
-  posStores       PosStore[]
-  allocatedOrders Order[]                @relation("OrderAllocatedWarehouse")
-  zoneMappings    WarehouseZoneMapping[]
-  shipments       Shipment[]
-  invoices        Invoice[]
-  allocationLogs  AllocationLog[]
+  dispatches       Dispatch[]
+  posStores        PosStore[]
+  allocatedOrders  Order[]                @relation("OrderAllocatedWarehouse")
+  zoneMappings     WarehouseZoneMapping[]
+  shipments        Shipment[]
+  invoices         Invoice[]
+  allocationLogs   AllocationLog[]
 
   @@index([ventureId])
   @@index([code])
@@ -1633,8 +1623,8 @@ model AllocationLog {
   customerLongitude    Float
   warehouseId          String
   calculatedDistanceKm Float
-  durationMinutes      Float?   // Driving duration in minutes (OSRM only; null for legacy Haversine logs)
-  routeSource          String?  // 'OSRM' | 'CACHE' | 'HAVERSINE_FALLBACK'
+  durationMinutes      Float? // Driving duration in minutes (OSRM only; null for legacy Haversine logs)
+  routeSource          String? // 'OSRM' | 'CACHE' | 'HAVERSINE_FALLBACK'
   allocationMethod     String   @default("ROAD_DISTANCE")
   allocationReason     String?
   createdAt            DateTime @default(now())
@@ -1648,7 +1638,6 @@ model AllocationLog {
   @@index([createdAt])
   @@map("warehouse_allocation_logs")
 }
-
 
 // ─── Inventory Product & Stock ────────────────────────────────────────────────
 
@@ -1685,15 +1674,15 @@ model InventoryProduct {
   updatedAt       DateTime               @updatedAt
   deletedAt       DateTime?
 
-  product            Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
-  venture            Venture              @relation(fields: [ventureId], references: [id], onDelete: Cascade)
-  stocks             InventoryStock[]
-  stockMovements     StockMovement[]
-  purchaseOrderItems PurchaseOrderItem[]
+  product              Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  venture              Venture               @relation(fields: [ventureId], references: [id], onDelete: Cascade)
+  stocks               InventoryStock[]
+  stockMovements       StockMovement[]
+  purchaseOrderItems   PurchaseOrderItem[]
   purchaseReceiveItems PurchaseReceiveItem[]
-  transferItems      StockTransferItem[]
-  dispatchItems      DispatchItem[]
-  posSaleItems       PosSaleItem[]
+  transferItems        StockTransferItem[]
+  dispatchItems        DispatchItem[]
+  posSaleItems         PosSaleItem[]
 
   @@index([productId])
   @@index([ventureId])
@@ -1737,7 +1726,7 @@ model StockMovement {
   qtyAfter           Int
   movementType       StockMovementType
   channel            String            @default("SYSTEM") // ONLINE, POS, MANUAL, SYSTEM
-  referenceType      String?           // ORDER, POS_SALE, PURCHASE, TRANSFER, ADJUSTMENT
+  referenceType      String? // ORDER, POS_SALE, PURCHASE, TRANSFER, ADJUSTMENT
   referenceId        String?
   createdBy          String?
   reason             String?
@@ -1798,10 +1787,10 @@ model SupplierLedger {
   id            String   @id @default(uuid())
   supplierId    String
   ventureId     String
-  entryType     String   // DEBIT, CREDIT
+  entryType     String // DEBIT, CREDIT
   amount        Decimal  @db.Decimal(12, 2)
   balance       Decimal  @db.Decimal(12, 2)
-  referenceType String?  // PURCHASE_ORDER, PAYMENT, RETURN
+  referenceType String? // PURCHASE_ORDER, PAYMENT, RETURN
   referenceId   String?
   description   String?
   entryDate     DateTime @default(now())
@@ -1832,13 +1821,13 @@ model PurchaseOrder {
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
-  venture          Venture           @relation(fields: [ventureId], references: [id], onDelete: Cascade)
-  supplier         Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  warehouse        Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
-  items            PurchaseOrderItem[]
-  receives         PurchaseReceive[]
-  returns          PurchaseReturn[]
-  payments         PurchasePayment[]
+  venture   Venture             @relation(fields: [ventureId], references: [id], onDelete: Cascade)
+  supplier  Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  warehouse Warehouse           @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  items     PurchaseOrderItem[]
+  receives  PurchaseReceive[]
+  returns   PurchaseReturn[]
+  payments  PurchasePayment[]
 
   @@index([ventureId])
   @@index([supplierId])
@@ -1848,19 +1837,19 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderItem {
-  id                 String   @id @default(uuid())
+  id                 String  @id @default(uuid())
   purchaseOrderId    String
   inventoryProductId String
   orderedQty         Int
-  receivedQty        Int      @default(0)
+  receivedQty        Int     @default(0)
   remainingQty       Int
-  unitPrice          Decimal  @db.Decimal(12, 2)
-  taxRate            Decimal  @default(0) @db.Decimal(5, 2)
-  taxAmount          Decimal  @default(0) @db.Decimal(12, 2)
-  totalPrice         Decimal  @db.Decimal(12, 2)
+  unitPrice          Decimal @db.Decimal(12, 2)
+  taxRate            Decimal @default(0) @db.Decimal(5, 2)
+  taxAmount          Decimal @default(0) @db.Decimal(12, 2)
+  totalPrice         Decimal @db.Decimal(12, 2)
 
-  purchaseOrder    PurchaseOrder        @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  inventoryProduct InventoryProduct     @relation(fields: [inventoryProductId], references: [id], onDelete: Restrict)
+  purchaseOrder    PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  inventoryProduct InventoryProduct      @relation(fields: [inventoryProductId], references: [id], onDelete: Restrict)
   receiveItems     PurchaseReceiveItem[]
 
   @@index([purchaseOrderId])
@@ -1869,15 +1858,15 @@ model PurchaseOrderItem {
 }
 
 model PurchaseReceive {
-  id              String    @id @default(uuid())
+  id              String   @id @default(uuid())
   purchaseOrderId String
   ventureId       String
   warehouseId     String
-  grnNumber       String    @unique
-  receivedDate    DateTime  @default(now())
+  grnNumber       String   @unique
+  receivedDate    DateTime @default(now())
   notes           String?
   createdBy       String?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime @default(now())
 
   purchaseOrder PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   warehouse     Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
@@ -1889,13 +1878,13 @@ model PurchaseReceive {
 }
 
 model PurchaseReceiveItem {
-  id                  String @id @default(uuid())
+  id                  String  @id @default(uuid())
   purchaseReceiveId   String
   purchaseOrderItemId String
   inventoryProductId  String
   receivedQty         Int
   acceptedQty         Int
-  rejectedQty         Int    @default(0)
+  rejectedQty         Int     @default(0)
   unitPrice           Decimal @db.Decimal(12, 2)
 
   purchaseReceive   PurchaseReceive   @relation(fields: [purchaseReceiveId], references: [id], onDelete: Cascade)
@@ -1971,12 +1960,12 @@ model StockTransfer {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  venture       Venture             @relation("VentureTransfers", fields: [ventureId], references: [id], onDelete: Cascade)
-  fromWarehouse Warehouse           @relation("TransferFromWarehouse", fields: [fromWarehouseId], references: [id], onDelete: Restrict)
-  toWarehouse   Warehouse           @relation("TransferToWarehouse", fields: [toWarehouseId], references: [id], onDelete: Restrict)
-  fromVentureRef Venture?           @relation("TransferFromVenture", fields: [fromVentureId], references: [id], onDelete: SetNull)
-  toVentureRef   Venture?           @relation("TransferToVenture", fields: [toVentureId], references: [id], onDelete: SetNull)
-  items         StockTransferItem[]
+  venture        Venture             @relation("VentureTransfers", fields: [ventureId], references: [id], onDelete: Cascade)
+  fromWarehouse  Warehouse           @relation("TransferFromWarehouse", fields: [fromWarehouseId], references: [id], onDelete: Restrict)
+  toWarehouse    Warehouse           @relation("TransferToWarehouse", fields: [toWarehouseId], references: [id], onDelete: Restrict)
+  fromVentureRef Venture?            @relation("TransferFromVenture", fields: [fromVentureId], references: [id], onDelete: SetNull)
+  toVentureRef   Venture?            @relation("TransferToVenture", fields: [toVentureId], references: [id], onDelete: SetNull)
+  items          StockTransferItem[]
 
   @@index([ventureId])
   @@index([transferNumber])
@@ -2105,24 +2094,24 @@ model PosTerminal {
 }
 
 model PosSession {
-  id              String           @id @default(uuid())
-  terminalId      String
-  storeId         String
-  ventureId       String
-  cashierId       String
-  status          PosSessionStatus @default(OPEN)
-  openingBalance  Decimal          @db.Decimal(12, 2)
-  closingBalance  Decimal?         @db.Decimal(12, 2)
-  totalCashSales  Decimal          @default(0) @db.Decimal(12, 2)
-  totalCardSales  Decimal          @default(0) @db.Decimal(12, 2)
-  totalUpiSales   Decimal          @default(0) @db.Decimal(12, 2)
-  totalSales      Decimal          @default(0) @db.Decimal(12, 2)
-  expectedCash    Decimal?         @db.Decimal(12, 2)
-  actualCash      Decimal?         @db.Decimal(12, 2)
-  cashDifference  Decimal?         @db.Decimal(12, 2)
-  openedAt        DateTime         @default(now())
-  closedAt        DateTime?
-  notes           String?
+  id             String           @id @default(uuid())
+  terminalId     String
+  storeId        String
+  ventureId      String
+  cashierId      String
+  status         PosSessionStatus @default(OPEN)
+  openingBalance Decimal          @db.Decimal(12, 2)
+  closingBalance Decimal?         @db.Decimal(12, 2)
+  totalCashSales Decimal          @default(0) @db.Decimal(12, 2)
+  totalCardSales Decimal          @default(0) @db.Decimal(12, 2)
+  totalUpiSales  Decimal          @default(0) @db.Decimal(12, 2)
+  totalSales     Decimal          @default(0) @db.Decimal(12, 2)
+  expectedCash   Decimal?         @db.Decimal(12, 2)
+  actualCash     Decimal?         @db.Decimal(12, 2)
+  cashDifference Decimal?         @db.Decimal(12, 2)
+  openedAt       DateTime         @default(now())
+  closedAt       DateTime?
+  notes          String?
 
   terminal PosTerminal @relation(fields: [terminalId], references: [id], onDelete: Cascade)
   store    PosStore    @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -2276,20 +2265,20 @@ enum AppointmentStatus {
 }
 
 model AppointmentService {
-  id                  String        @id @default(uuid())
+  id                  String   @id @default(uuid())
   name                String
-  slug                String        @unique
+  slug                String   @unique
   description         String?
-  durationMinutes     Int           @default(30)
-  bufferMinutes       Int           @default(15)
-  maxParallelBookings Int           @default(1)
-  price               Decimal       @default(0) @db.Decimal(12, 2)
-  isPaid              Boolean       @default(false)
-  isActive            Boolean       @default(true)
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
+  durationMinutes     Int      @default(30)
+  bufferMinutes       Int      @default(15)
+  maxParallelBookings Int      @default(1)
+  price               Decimal  @default(0) @db.Decimal(12, 2)
+  isPaid              Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  appointments        Appointment[]
+  appointments Appointment[]
 
   @@map("appointment_services")
 }
@@ -2305,7 +2294,7 @@ model StaffAvailability {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  staffUser   User     @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+  staffUser User @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
 
   @@index([staffUserId, dayOfWeek])
   @@map("staff_availabilities")
@@ -2324,9 +2313,9 @@ model BlackoutDate {
 }
 
 model Appointment {
-  id                String                   @id @default(uuid())
-  appointmentNumber String                   @unique
-  trackingId        String                   @unique
+  id                String            @id @default(uuid())
+  appointmentNumber String            @unique
+  trackingId        String            @unique
   serviceId         String
   locationId        String?
   customerUserId    String?
@@ -2334,24 +2323,24 @@ model Appointment {
   customerName      String
   customerEmail     String
   customerPhone     String
-  date              DateTime                 @db.Date
+  date              DateTime          @db.Date
   startTime         String
   endTime           String
-  timezone          String                   @default("Asia/Kolkata")
-  status            AppointmentStatus        @default(PENDING)
-  paidAmount        Decimal                  @default(0) @db.Decimal(12, 2)
+  timezone          String            @default("Asia/Kolkata")
+  status            AppointmentStatus @default(PENDING)
+  paidAmount        Decimal           @default(0) @db.Decimal(12, 2)
   customFields      Json?
   notes             String?
   cancelReason      String?
   cancelledAt       DateTime?
   completedAt       DateTime?
-  createdAt         DateTime                 @default(now())
-  updatedAt         DateTime                 @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-  service           AppointmentService       @relation(fields: [serviceId], references: [id])
-  customerUser      User?                    @relation("CustomerAppointments", fields: [customerUserId], references: [id])
-  staffUser         User?                    @relation("StaffAppointments", fields: [staffUserId], references: [id])
-  statusHistory     AppointmentStatusHistory[]
+  service       AppointmentService         @relation(fields: [serviceId], references: [id])
+  customerUser  User?                      @relation("CustomerAppointments", fields: [customerUserId], references: [id])
+  staffUser     User?                      @relation("StaffAppointments", fields: [staffUserId], references: [id])
+  statusHistory AppointmentStatusHistory[]
 
   @@index([trackingId])
   @@index([appointmentNumber])
@@ -2368,7 +2357,7 @@ model AppointmentStatusHistory {
   changedBy     String?
   createdAt     DateTime          @default(now())
 
-  appointment   Appointment       @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
 
   @@index([appointmentId])
   @@map("appointment_status_histories")
@@ -2376,547 +2365,29 @@ model AppointmentStatusHistory {
 
 // ─── Purchase Order (PO) Module ──────────────────────────────────────────────
 
-model B2BPurchaseOrder {
-  id                        String              @id @default(uuid())
-  poNumber                  String              @unique @map("po_number")
-  quotationId               String?             @unique @map("quotation_id")
-  quotationNumber           String?             @map("quotation_number")
-  poSubmissionId            String?             @unique @map("po_submission_id")
-  customerId                String              @map("customer_id")
-  status                    B2BPoStatus         @default(SUBMITTED)
-  customerPoReferenceNumber String?             @map("customer_po_reference_number")
-  billingAddress            Json                @map("billing_address")
-  deliveryAddress           Json                @map("delivery_address")
-  deliveryInstructions      String?             @map("delivery_instructions")
-  requestedDeliveryDate     DateTime?           @map("requested_delivery_date")
-  subtotal                  Decimal             @db.Decimal(12, 2)
-  taxTotal                  Decimal             @db.Decimal(12, 2) @map("tax_total")
-  discountTotal             Decimal             @default(0) @db.Decimal(12, 2) @map("discount_total")
-  shippingCost              Decimal             @default(0) @db.Decimal(12, 2) @map("shipping_cost")
-  totalAmount               Decimal             @db.Decimal(12, 2) @map("total_amount")
-  currency                  String              @default("INR")
-  advancePercentage         Decimal             @default(30) @db.Decimal(5, 2) @map("advance_percentage")
-  advanceAmount             Decimal             @db.Decimal(12, 2) @map("advance_amount")
-  balanceAmount             Decimal             @db.Decimal(12, 2) @map("balance_amount")
-  validationErrors          Json?               @map("validation_errors")
-  submittedAt               DateTime            @default(now()) @map("submitted_at")
-  validatedAt               DateTime?           @map("validated_at")
-  rejectedAt                DateTime?           @map("rejected_at")
-  rejectionReason           String?             @map("rejection_reason")
-  createdBy                 String?             @map("created_by")
-  createdAt                 DateTime            @default(now()) @map("created_at")
-  updatedAt                 DateTime            @updatedAt @map("updated_at")
-
-  // Relations
-  customer                  User                @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  quotation                 Quote?              @relation(fields: [quotationId], references: [id], onDelete: SetNull)
-  poSubmission              PoSubmission?       @relation(fields: [poSubmissionId], references: [id], onDelete: SetNull)
-  items                     B2BPurchaseOrderItem[]
-  receipts                  PaymentReceipt[]
-  packingList               PackingList?
-  dispatch                  PoDispatch?
-  invoice                   B2BPoInvoice?
-  proformaInvoice           B2BProformaInvoice?
-  ewayBill                  B2BEwayBill?
-  issueList                 B2BIssueList?
-  auditLogs                 PoAuditLog[]
-  notificationLogs          PoNotificationLog[]
-
-  @@index([poNumber])
-  @@index([quotationId])
-  @@index([quotationNumber])
-  @@index([poSubmissionId])
-  @@index([customerId])
-  @@index([status])
-  @@index([createdAt])
-  @@map("b2b_purchase_orders")
-}
-
-model B2BPurchaseOrderItem {
-  id              String           @id @default(uuid())
-  purchaseOrderId String           @map("purchase_order_id")
-  slNo            Int              @default(1) @map("sl_no")
-  productId       String           @map("product_id")
-  productName     String           @map("product_name")
-  sku             String?
-  variantId       String?          @map("variant_id")
-  unit            String           @default("PCS")
-  quantity        Int
-  rate            Decimal          @db.Decimal(12, 2)
-  amount          Decimal          @db.Decimal(12, 2)
-  taxRate         Decimal?         @db.Decimal(5, 2) @map("tax_rate")
-  taxAmount       Decimal?         @db.Decimal(12, 2) @map("tax_amount")
-  total           Decimal          @db.Decimal(12, 2)
-  createdAt       DateTime         @default(now()) @map("created_at")
-
-  purchaseOrder   B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-
-  @@index([purchaseOrderId])
-  @@index([productId])
-  @@map("b2b_purchase_order_items")
-}
-
-model B2BPoSequence {
-  id            String    @id @default(uuid())
-  financialYear String    @unique @map("financial_year")
-  nextNumber    Int       @default(1) @map("next_number")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-
-  @@map("b2b_po_sequences")
-}
-
-model AdvancePaymentSetting {
-  id                 String   @id @default(uuid())
-  defaultPercentage  Decimal  @default(30) @db.Decimal(5, 2) @map("default_percentage")
-  minPercentage      Decimal  @default(10) @db.Decimal(5, 2) @map("min_percentage")
-  maxPercentage      Decimal  @default(100) @db.Decimal(5, 2) @map("max_percentage")
-  allowPerPoOverride Boolean  @default(true) @map("allow_per_po_override")
-  updatedBy          String?  @map("updated_by")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-
-  @@map("advance_payment_settings")
-}
-
-model BankAccountSetting {
-  id                  String   @id @default(uuid())
-  accountHolderName   String   @map("account_holder_name")
-  bankName            String   @map("bank_name")
-  accountNumber       String   @map("account_number")
-  ifscOrRoutingNumber String   @map("ifsc_or_routing_number")
-  swiftCode           String?  @map("swift_code")
-  branch              String?  @map("branch")
-  currency            String   @default("INR")
-  isActive            Boolean  @default(true) @map("is_active")
-  updatedBy           String?  @map("updated_by")
-  updatedAt           DateTime @updatedAt @map("updated_at")
-
-  @@map("bank_account_settings")
-}
-
-model PaymentReceipt {
-  id                String               @id @default(uuid())
-  purchaseOrderId   String               @map("purchase_order_id")
-  status            PaymentReceiptStatus @default(PENDING_REVIEW)
-  fileStorageKey    String               @map("file_storage_key")
-  originalFileName  String               @map("original_file_name")
-  fileSizeBytes     Int                  @map("file_size_bytes")
-  mimeType          String               @map("mime_type")
-  fileHash          String               @map("file_hash") // SHA-256
-  uploadedBy        String               @map("uploaded_by")
-  uploadedAt        DateTime             @default(now()) @map("uploaded_at")
-  version           Int                  @default(1)
-  amountReceived    Decimal?             @db.Decimal(12, 2) @map("amount_received")
-  paymentDate       DateTime?            @map("payment_date")
-  paymentReference  String?              @map("payment_reference")
-  paymentMethod     String?              @map("payment_method")
-  remarks           String?
-  acknowledgedBy    String?              @map("acknowledged_by")
-  acknowledgedAt    DateTime?            @map("acknowledged_at")
-  verifiedBy        String?              @map("verified_by")
-  verifiedAt        DateTime?            @map("verified_at")
-  verificationNotes String?              @map("verification_notes")
-  rejectedBy        String?              @map("rejected_by")
-  rejectedAt        DateTime?            @map("rejected_at")
-  rejectionReason   String?              @map("rejection_reason")
-  isDeleted         Boolean              @default(false) @map("is_deleted")
-  createdAt         DateTime             @default(now()) @map("created_at")
-  updatedAt         DateTime             @updatedAt @map("updated_at")
-
-  purchaseOrder      B2BPurchaseOrder    @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  verifiedByUser     User?               @relation("AdminVerifiedReceipts", fields: [verifiedBy], references: [id], onDelete: SetNull)
-  acknowledgedByUser User?               @relation("AdminAcknowledgedReceipts", fields: [acknowledgedBy], references: [id], onDelete: SetNull)
-  history            PaymentReceiptHistory[]
-
-  @@index([purchaseOrderId])
-  @@index([status])
-  @@map("payment_receipts")
-}
-
-model PaymentReceiptHistory {
-  id                String         @id @default(uuid())
-  receiptId         String         @map("receipt_id")
-  purchaseOrderId   String         @map("purchase_order_id")
-  fileStorageKey    String         @map("file_storage_key")
-  originalFileName  String         @map("original_file_name")
-  fileSizeBytes     Int            @map("file_size_bytes")
-  mimeType          String         @map("mime_type")
-  fileHash          String         @map("file_hash")
-  version           Int
-  uploadedBy        String         @map("uploaded_by")
-  uploadedAt        DateTime       @map("uploaded_at")
-  archivedAt        DateTime       @default(now()) @map("archived_at")
-
-  receipt           PaymentReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
-
-  @@index([receiptId])
-  @@index([purchaseOrderId])
-  @@map("payment_receipt_histories")
-}
-
-model PackingList {
-  id              String           @id @default(uuid())
-  purchaseOrderId String           @unique @map("purchase_order_id")
-  quotationNumber String           @map("quotation_number")
-  poNumber        String           @map("po_number")
-  fileStorageKey  String           @map("file_storage_key")
-  fileHash        String?          @map("file_hash")
-  totalPackages   Int              @default(1) @map("total_packages")
-  totalQuantity   Int              @default(0) @map("total_quantity")
-  qrCodeData      String?          @map("qr_code_data")
-  notes           String?
-  generatedAt     DateTime         @default(now()) @map("generated_at")
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-
-  purchaseOrder   B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-
-  @@index([purchaseOrderId])
-  @@index([poNumber])
-  @@index([quotationNumber])
-  @@map("packing_lists")
-}
-
-model PoAuditLog {
-  id              String           @id @default(uuid())
-  purchaseOrderId String           @map("purchase_order_id")
-  entityType      String           @default("PURCHASE_ORDER") @map("entity_type")
-  action          String
-  fromStatus      String?          @map("from_status")
-  toStatus        String?          @map("to_status")
-  performedBy     String?          @map("performed_by")
-  performedAt     DateTime         @default(now()) @map("performed_at")
-  metadata        Json?
-  ipAddress       String?          @map("ip_address")
-
-  purchaseOrder   B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-  adminUser       User?            @relation("AdminPoAuditLogs", fields: [performedBy], references: [id], onDelete: SetNull)
-
-  @@index([purchaseOrderId])
-  @@index([action])
-  @@index([performedAt])
-  @@map("po_audit_logs")
-}
-
-model PoNotificationLog {
-  id                String               @id @default(uuid())
-  purchaseOrderId   String               @map("purchase_order_id")
-  type              PoNotificationType
-  recipient         String
-  status            PoNotificationStatus @default(QUEUED)
-  providerMessageId String?              @map("provider_message_id")
-  error             String?
-  attempts          Int                  @default(1)
-  sentAt            DateTime?            @map("sent_at")
-  createdAt         DateTime             @default(now()) @map("created_at")
-
-  purchaseOrder     B2BPurchaseOrder     @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-
-  @@index([purchaseOrderId])
-  @@index([type])
-  @@index([status])
-  @@map("po_notification_logs")
-}
-
 model SavedAddress {
-  id                String       @id @default(uuid())
-  customerId        String       @map("customer_id")
-  label             String?      @default("Default")
-  attentionTo       String       @map("attention_to")
-  companyName       String?      @map("company_name")
-  addressLine1      String       @map("address_line1")
-  addressLine2      String?      @map("address_line2")
+  id                String   @id @default(uuid())
+  customerId        String   @map("customer_id")
+  label             String?  @default("Default")
+  attentionTo       String   @map("attention_to")
+  companyName       String?  @map("company_name")
+  addressLine1      String   @map("address_line1")
+  addressLine2      String?  @map("address_line2")
   city              String
   state             String
-  postalCode        String       @map("postal_code")
-  country           String       @default("IN")
+  postalCode        String   @map("postal_code")
+  country           String   @default("IN")
   phone             String
   email             String
-  isDefaultBilling  Boolean      @default(false) @map("is_default_billing")
-  isDefaultDelivery Boolean      @default(false) @map("is_default_delivery")
-  createdAt         DateTime     @default(now()) @map("created_at")
-  updatedAt         DateTime     @updatedAt @map("updated_at")
+  isDefaultBilling  Boolean  @default(false) @map("is_default_billing")
+  isDefaultDelivery Boolean  @default(false) @map("is_default_delivery")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
-  customer          User         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
   @@map("saved_addresses")
 }
 
-model PoDispatch {
-  id              String           @id @default(uuid())
-  purchaseOrderId String           @unique @map("purchase_order_id")
-  dispatchedAt    DateTime         @default(now()) @map("dispatched_at")
-  dispatchedBy    String           @map("dispatched_by")
-  dispatchedByName String?         @map("dispatched_by_name")
-  carrierName     String           @map("carrier_name")
-  trackingNumber  String?          @map("tracking_number")
-  dispatchNotes   String?          @map("dispatch_notes")
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
-
-  purchaseOrder   B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-
-  @@index([purchaseOrderId])
-  @@index([trackingNumber])
-  @@map("po_dispatches")
-}
-
-model B2BPoInvoice {
-  id                  String           @id @default(uuid())
-  purchaseOrderId     String           @unique @map("purchase_order_id")
-  quotationNumber     String           @map("quotation_number")
-  poNumber            String           @map("po_number")
-  invoiceNumber       String           @unique @map("invoice_number")
-  source              String           @default("INTERNAL") // "LINKED_EXTERNAL" | "INTERNAL"
-  externalInvoiceId   String?          @map("external_invoice_id")
-  pdfStorageKeyOrUrl  String           @map("pdf_storage_key_or_url")
-  amountInvoiced      Decimal          @db.Decimal(12, 2) @map("amount_invoiced")
-  amountPaidAdvance   Decimal          @db.Decimal(12, 2) @map("amount_paid_advance")
-  balanceDue          Decimal          @db.Decimal(12, 2) @map("balance_due")
-  status              String           @default("GENERATED") // "GENERATED" | "SENT" | "FAILED"
-  fileHash            String?          @map("file_hash")
-  verificationToken   String?          @unique @map("verification_token")
-  generatedAt         DateTime         @default(now()) @map("generated_at")
-  sentAt              DateTime?        @map("sent_at")
-  createdAt           DateTime         @default(now()) @map("created_at")
-  updatedAt           DateTime         @updatedAt @map("updated_at")
-
-  purchaseOrder       B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-
-  @@index([purchaseOrderId])
-  @@index([invoiceNumber])
-  @@index([poNumber])
-  @@index([quotationNumber])
-  @@index([status])
-  @@map("b2b_po_invoices")
-}
-
-model B2BProformaInvoice {
-  id                    String           @id @default(uuid())
-  purchaseOrderId       String           @unique @map("purchase_order_id")
-  quotationNumber       String?          @map("quotation_number")
-  poNumber              String           @map("po_number")
-  piNumber              String           @unique @map("pi_number")
-  pdfStorageKeyOrUrl    String           @map("pdf_storage_key_or_url")
-  subtotal              Decimal          @db.Decimal(12, 2)
-  taxTotal              Decimal          @db.Decimal(12, 2) @map("tax_total")
-  discountTotal         Decimal          @default(0) @db.Decimal(12, 2) @map("discount_total")
-  shippingCost          Decimal          @default(0) @db.Decimal(12, 2) @map("shipping_cost")
-  grandTotal            Decimal          @db.Decimal(12, 2) @map("grand_total")
-  advanceAmountRequired Decimal          @db.Decimal(12, 2) @map("advance_amount_required")
-  balanceDue            Decimal          @db.Decimal(12, 2) @map("balance_due")
-  validUntil            DateTime?        @map("valid_until")
-  fileHash              String?          @map("file_hash")
-  verificationToken     String?          @unique @map("verification_token")
-  generatedAt           DateTime         @default(now()) @map("generated_at")
-  createdAt             DateTime         @default(now()) @map("created_at")
-  updatedAt             DateTime         @updatedAt @map("updated_at")
-
-  purchaseOrder         B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-
-  @@index([purchaseOrderId])
-  @@index([piNumber])
-  @@index([poNumber])
-  @@map("b2b_proforma_invoices")
-}
-
-model B2BEwayBill {
-  id                  String           @id @default(uuid())
-  purchaseOrderId     String           @unique @map("purchase_order_id")
-  poNumber            String           @map("po_number")
-  ewayBillNumber      String           @unique @map("eway_bill_number")
-  ewayBillDate        DateTime         @default(now()) @map("eway_bill_date")
-  validFrom           DateTime         @default(now()) @map("valid_from")
-  validUntil          DateTime?        @map("valid_until")
-  vehicleNumber       String?          @map("vehicle_number")
-  transporterId       String?          @map("transporter_id")
-  transporterName     String?          @map("transporter_name")
-  transporterDocNo    String?          @map("transporter_doc_no")
-  fromPincode         String?          @map("from_pincode")
-  toPincode           String?          @map("to_pincode")
-  approxDistanceKm    Int?             @map("approx_distance_km")
-  irisResponse        Json?            @map("iris_response")
-  qrCodeData          String?          @map("qr_code_data")
-  pdfStorageKeyOrUrl  String?          @map("pdf_storage_key_or_url")
-  status              String           @default("GENERATED")
-  createdAt           DateTime         @default(now()) @map("created_at")
-  updatedAt           DateTime         @updatedAt @map("updated_at")
-
-  purchaseOrder       B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-
-  @@index([purchaseOrderId])
-  @@index([ewayBillNumber])
-  @@index([poNumber])
-  @@map("b2b_eway_bills")
-}
-
-model B2BIssueList {
-  id                  String           @id @default(uuid())
-  purchaseOrderId     String           @unique @map("purchase_order_id")
-  poNumber            String           @map("po_number")
-  issueNumber         String           @unique @map("issue_number")
-  issuedAt            DateTime         @default(now()) @map("issued_at")
-  issuedBy            String           @map("issued_by")
-  issuedByName        String?          @map("issued_by_name")
-  receivedByName      String?          @map("received_by_name")
-  carrierName         String?          @map("carrier_name")
-  vehicleNumber       String?          @map("vehicle_number")
-  ewayBillRef         String?          @map("eway_bill_ref")
-  totalQuantity       Int              @default(0) @map("total_quantity")
-  totalValue          Decimal          @db.Decimal(12, 2) @map("total_value")
-  pdfStorageKeyOrUrl  String           @map("pdf_storage_key_or_url")
-  fileHash            String?          @map("file_hash")
-  notes               String?
-  createdAt           DateTime         @default(now()) @map("created_at")
-  updatedAt           DateTime         @updatedAt @map("updated_at")
-
-  purchaseOrder       B2BPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
-
-  @@index([purchaseOrderId])
-  @@index([issueNumber])
-  @@index([poNumber])
-  @@map("b2b_issue_lists")
-}
-
 // ─── PO Submissions (Dual-mode Intake: Form & Native PDF) ─────────────────────
-
-model PoSubmission {
-  id                  String             @id @default(uuid())
-  submissionNumber    String             @unique @map("submission_number")
-  customerId          String             @map("customer_id")
-  sourceType          PoSourceType       @default(FORM) @map("source_type")
-  status              PoSubmissionStatus @default(SUBMITTED)
-  customerPoNumber    String             @map("customer_po_number")
-  customerPoDate      DateTime?          @map("customer_po_date")
-  statedTotal         Decimal?           @db.Decimal(12, 2) @map("stated_total")
-  mappedTotal         Decimal?           @db.Decimal(12, 2) @map("mapped_total")
-  currency            String             @default("INR")
-  expectedDeliveryDate DateTime?         @map("expected_delivery_date")
-  reviewedBy          String?            @map("reviewed_by")
-  assignedTo          String?            @map("assigned_to")
-  approvedBy          String?            @map("approved_by")
-  approvedAt          DateTime?          @map("approved_at")
-  rejectionReason     String?            @map("rejection_reason")
-  changeRequestReason String?            @map("change_request_reason")
-  billToAddress       Json?              @map("bill_to_address")
-  shipToAddress       Json?              @map("ship_to_address")
-  paymentTerms        String?            @map("payment_terms")
-  customerNote        String?            @map("customer_note")
-  submittedAt         DateTime           @default(now()) @map("submitted_at")
-  createdAt           DateTime           @default(now()) @map("created_at")
-  updatedAt           DateTime           @updatedAt @map("updated_at")
-
-  customer            User               @relation("CustomerPoSubmissions", fields: [customerId], references: [id], onDelete: Cascade)
-  reviewer            User?              @relation("ReviewerPoSubmissions", fields: [reviewedBy], references: [id], onDelete: SetNull)
-  assignee            User?              @relation("AssigneePoSubmissions", fields: [assignedTo], references: [id], onDelete: SetNull)
-  approver            User?              @relation("ApproverPoSubmissions", fields: [approvedBy], references: [id], onDelete: SetNull)
-
-  lineItems           PoSubmissionLineItem[]
-  attachments         PoSubmissionAttachment[]
-  logs                PoSubmissionLog[]
-  acknowledgement     PoAcknowledgement?
-  b2bPurchaseOrder    B2BPurchaseOrder?
-
-  @@index([customerId])
-  @@index([status])
-  @@index([sourceType])
-  @@index([customerPoNumber])
-  @@index([assignedTo])
-  @@index([submittedAt])
-  @@map("po_submissions")
-}
-
-model PoSubmissionLineItem {
-  id                  String             @id @default(uuid())
-  submissionId        String             @map("submission_id")
-  slNo                Int                @default(1) @map("sl_no")
-  productId           String?            @map("product_id")
-  variantId           String?            @map("variant_id")
-  description         String
-  sku                 String?
-  unit                String             @default("PCS")
-  quantity            Int
-  unitPrice           Decimal            @db.Decimal(12, 2) @map("unit_price")
-  taxRate             Decimal?           @db.Decimal(5, 2) @map("tax_rate")
-  taxAmount           Decimal?           @db.Decimal(12, 2) @map("tax_amount")
-  lineTotal           Decimal            @db.Decimal(12, 2) @map("line_total")
-  source              LineItemSource     @default(CUSTOMER_ENTERED)
-  sortOrder           Int                @default(0) @map("sort_order")
-  createdAt           DateTime           @default(now()) @map("created_at")
-
-  submission          PoSubmission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-
-  @@index([submissionId])
-  @@index([productId])
-  @@map("po_submission_line_items")
-}
-
-model PoSubmissionAttachment {
-  id                  String             @id @default(uuid())
-  submissionId        String             @map("submission_id")
-  fileStorageKey      String             @map("file_storage_key")
-  originalFileName    String             @map("original_file_name")
-  fileSizeBytes       Int                @map("file_size_bytes")
-  mimeType            String             @map("mime_type")
-  checksum            String?            @map("checksum")
-  uploadedBy          String             @map("uploaded_by")
-  uploadedAt          DateTime           @default(now()) @map("uploaded_at")
-
-  submission          PoSubmission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-
-  @@index([submissionId])
-  @@map("po_submission_attachments")
-}
-
-model PoSubmissionLog {
-  id                  String             @id @default(uuid())
-  submissionId        String             @map("submission_id")
-  actorId             String?            @map("actor_id")
-  action              PoSubmissionAction
-  fromStatus          PoSubmissionStatus? @map("from_status")
-  toStatus            PoSubmissionStatus? @map("to_status")
-  comment             String?
-  isInternal          Boolean            @default(false) @map("is_internal")
-  metadata            Json?
-  ipAddress           String?            @map("ip_address")
-  timestamp           DateTime           @default(now())
-
-  submission          PoSubmission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  actor               User?              @relation("PoSubmissionLogActor", fields: [actorId], references: [id], onDelete: SetNull)
-
-  @@index([submissionId])
-  @@index([actorId])
-  @@index([action])
-  @@map("po_submission_logs")
-}
-
-model PoAcknowledgement {
-  id                  String             @id @default(uuid())
-  submissionId        String             @unique @map("submission_id")
-  ackNumber           String             @unique @map("ack_number")
-  fileStorageKey      String             @map("file_storage_key")
-  issuedBy            String             @map("issued_by")
-  issuedByName        String?            @map("issued_by_name")
-  issuedAt            DateTime           @default(now()) @map("issued_at")
-
-  submission          PoSubmission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-
-  @@index([submissionId])
-  @@index([ackNumber])
-  @@map("po_acknowledgements")
-}
-
-model PoSubmissionSequence {
-  id                  String             @id @default(uuid())
-  prefix              String             @default("POS")
-  financialYear       String             @map("financial_year")
-  nextNumber          Int                @default(1) @map("next_number")
-  createdAt           DateTime           @default(now()) @map("created_at")
-  updatedAt           DateTime           @updatedAt @map("updated_at")
-
-  @@unique([prefix, financialYear])
-  @@map("po_submission_sequences")
-}
-
-

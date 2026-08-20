@@ -44,8 +44,7 @@ import logisticsRoutes from './modules/logistics/logistics.routes';
 import invoiceRoutes from './modules/invoices/invoices.routes';
 import webhookRoutes from './modules/payments/webhook.routes';
 import b2bPricingRoutes from './modules/b2b-pricing/b2b-pricing.routes';
-import purchaseOrdersRoutes, { adminPurchaseOrdersRouter } from './modules/purchase-orders/purchase-orders.routes';
-import customerPoSubmissionsRouter, { adminPoSubmissionsRouter } from './modules/po-submissions/po-submissions.routes';
+
 import sseRoutes from './events/sse.routes';
 import { initEventBus } from './events/eventBus';
 import { startBullMQWorkers } from './queues/bullmq.worker';
@@ -263,11 +262,6 @@ app.use('/api/warehouse', allocationRoutes);
 app.use(`${prefix}/logistics`, logisticsRoutes);
 app.use(`${prefix}/invoices`, invoiceRoutes);
 app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
-app.use(`${prefix}/purchase-orders`, purchaseOrdersRoutes);
-app.use(`${prefix}/admin/purchase-orders`, adminPurchaseOrdersRouter);
-app.use(`${prefix}/po-submissions`, customerPoSubmissionsRouter);
-app.use(`${prefix}/admin/po-submissions`, adminPoSubmissionsRouter);
-app.use(`${prefix}/admin/invoices`, adminPurchaseOrdersRouter);
 app.use(`${prefix}/events`, sseRoutes);
 
 // ─── Razorpay Webhooks (raw body required) ───────────────────────────────────

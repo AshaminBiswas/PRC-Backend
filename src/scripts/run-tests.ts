@@ -1,8 +1,6 @@
 import { testHaversineUtils } from '../utils/__tests__/haversine.test';
 import { testAllocationLogic } from '../modules/allocation/__tests__/allocation.test';
 import { testInvoiceSystem } from '../modules/invoices/__tests__/invoices.test';
-import { testPurchaseOrderSystem } from '../modules/purchase-orders/__tests__/purchase-orders.test';
-
 async function runTests() {
   console.log('\n🧪 Running Enterprise Backend Complete Test Suite...\n');
 
@@ -18,10 +16,6 @@ async function runTests() {
   testInvoiceSystem();
   console.log('  ✓ All Invoice Management System tests passed.');
 
-  console.log('\n4. Enterprise Purchase Order (PO) Module Tests:');
-  await testPurchaseOrderSystem();
-  console.log('  ✓ All Purchase Order Module tests passed.');
-
   console.log('\n✅ All tests passed successfully!\n');
 }
 
@@ -29,3 +23,4 @@ runTests().catch(err => {
   console.error('Test execution failed:', err);
   process.exit(1);
 });
+
