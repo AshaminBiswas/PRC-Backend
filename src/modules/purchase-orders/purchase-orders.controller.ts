@@ -573,6 +573,183 @@ export class PurchaseOrdersController {
   }
 
   /**
+   * POST /api/v1/admin/purchase-orders/:id/generate-pi
+   */
+  async generateProformaInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const adminUser = (req as any).user;
+      const ip = req.ip || (req.headers['x-forwarded-for'] as string);
+
+      const result = await purchaseOrdersService.generateProformaInvoice(
+        req.params.id,
+        { id: adminUser.id, email: adminUser.email, name: `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() },
+        ip
+      );
+
+      sendSuccess(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/purchase-orders/:id/proforma-invoice/download
+   */
+  async downloadProformaInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = (req as any).user;
+      if (!user?.id) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+      const roles = user.roles || (user.roleSlug ? [user.roleSlug] : ['customer']);
+      const { filePath, fileName } = await purchaseOrdersService.getProformaInvoicePdf(req.params.id, {
+        id: user.id,
+        roles,
+      });
+
+      const fileBuffer = await fs.promises.readFile(filePath);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', fileBuffer.length);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+      res.status(200).send(fileBuffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/admin/purchase-orders/:id/generate-tax-invoice-iris
+   */
+  async generateTaxInvoiceIris(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const adminUser = (req as any).user;
+      const ip = req.ip || (req.headers['x-forwarded-for'] as string);
+
+      const result = await purchaseOrdersService.generateTaxInvoiceIris(
+        req.params.id,
+        { id: adminUser.id, email: adminUser.email, name: `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() },
+        ip
+      );
+
+      sendSuccess(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/admin/purchase-orders/:id/generate-eway-bill-iris
+   */
+  async generateEwayBillIris(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const adminUser = (req as any).user;
+      const ip = req.ip || (req.headers['x-forwarded-for'] as string);
+
+      const result = await purchaseOrdersService.generateEwayBillIris(
+        req.params.id,
+        { id: adminUser.id, email: adminUser.email, name: `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() },
+        req.body,
+        ip
+      );
+
+      sendSuccess(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/purchase-orders/:id/eway-bill/download
+   */
+  async downloadEwayBill(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = (req as any).user;
+      if (!user?.id) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+      const roles = user.roles || (user.roleSlug ? [user.roleSlug] : ['customer']);
+      const { filePath, fileName } = await purchaseOrdersService.getEwayBillPdf(req.params.id, {
+        id: user.id,
+        roles,
+      });
+
+      const fileBuffer = await fs.promises.readFile(filePath);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', fileBuffer.length);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+      res.status(200).send(fileBuffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/admin/purchase-orders/:id/generate-issue-list
+   */
+  async generateProductIssueList(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const adminUser = (req as any).user;
+      const ip = req.ip || (req.headers['x-forwarded-for'] as string);
+
+      const result = await purchaseOrdersService.generateProductIssueList(
+        req.params.id,
+        { id: adminUser.id, email: adminUser.email, name: `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() },
+        req.body,
+        ip
+      );
+
+      sendSuccess(res, result, result.message);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/purchase-orders/:id/issue-list/download
+   */
+  async downloadProductIssueList(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = (req as any).user;
+      if (!user?.id) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+      const roles = user.roles || (user.roleSlug ? [user.roleSlug] : ['customer']);
+      const { filePath, fileName } = await purchaseOrdersService.getProductIssueListPdf(req.params.id, {
+        id: user.id,
+        roles,
+      });
+
+      const fileBuffer = await fs.promises.readFile(filePath);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', fileBuffer.length);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+      res.status(200).send(fileBuffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH /api/v1/admin/users/:id/b2b-advance-percentage
+   */
+  async updateCustomerAdvancePercentage(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const adminUser = (req as any).user;
+      const { advancePercentage } = req.body;
+
+      const result = await purchaseOrdersService.updateCustomerAdvancePercentage(
+        req.params.id,
+        Number(advancePercentage),
+        adminUser.id
+      );
+
+      sendSuccess(res, result, 'Customer B2B advance percentage updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * DELETE /api/v1/purchase-orders/:id or DELETE /api/v1/admin/purchase-orders/:id
    */
   async deletePurchaseOrder(req: Request, res: Response, next: NextFunction): Promise<void> {

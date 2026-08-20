@@ -108,6 +108,21 @@ router.get('/:id/invoice/download', (req, res, next) =>
   purchaseOrdersController.downloadPoInvoice(req, res, next)
 );
 
+// Download Proforma Invoice PDF (Customer)
+router.get('/:id/proforma-invoice/download', (req, res, next) =>
+  purchaseOrdersController.downloadProformaInvoice(req, res, next)
+);
+
+// Download E-Way Bill PDF (Customer)
+router.get('/:id/eway-bill/download', (req, res, next) =>
+  purchaseOrdersController.downloadEwayBill(req, res, next)
+);
+
+// Download Product Issue List PDF (Customer)
+router.get('/:id/issue-list/download', (req, res, next) =>
+  purchaseOrdersController.downloadProductIssueList(req, res, next)
+);
+
 // Delete / Cancel Purchase Order (Customer)
 router.delete('/:id', (req, res, next) =>
   purchaseOrdersController.deletePurchaseOrder(req, res, next)
@@ -190,9 +205,46 @@ adminPurchaseOrdersRouter.get('/:id/packing-list', (req, res, next) =>
   purchaseOrdersController.downloadPackingList(req, res, next)
 );
 
-// Record PO Dispatch (triggers automatic invoice generation background job)
+// ── New Lifecycle Endpoints: PI, IRIS Tax Invoice, IRIS E-Way Bill, Issue List ──
+
+// Generate Proforma Invoice (PI)
+adminPurchaseOrdersRouter.post('/:id/generate-pi', (req, res, next) =>
+  purchaseOrdersController.generateProformaInvoice(req, res, next)
+);
+
+// Download Proforma Invoice PDF (Admin)
+adminPurchaseOrdersRouter.get('/:id/proforma-invoice/download', (req, res, next) =>
+  purchaseOrdersController.downloadProformaInvoice(req, res, next)
+);
+
+// Generate GST Tax Invoice via IRIS API
+adminPurchaseOrdersRouter.post('/:id/generate-tax-invoice-iris', (req, res, next) =>
+  purchaseOrdersController.generateTaxInvoiceIris(req, res, next)
+);
+
+// Generate E-Way Bill via IRIS API
+adminPurchaseOrdersRouter.post('/:id/generate-eway-bill-iris', (req, res, next) =>
+  purchaseOrdersController.generateEwayBillIris(req, res, next)
+);
+
+// Download E-Way Bill PDF (Admin)
+adminPurchaseOrdersRouter.get('/:id/eway-bill/download', (req, res, next) =>
+  purchaseOrdersController.downloadEwayBill(req, res, next)
+);
+
+// Record PO Dispatch
 adminPurchaseOrdersRouter.post('/:id/dispatch', (req, res, next) =>
   purchaseOrdersController.adminRecordDispatch(req, res, next)
+);
+
+// Generate Product Issue List / Delivery Challan
+adminPurchaseOrdersRouter.post('/:id/generate-issue-list', (req, res, next) =>
+  purchaseOrdersController.generateProductIssueList(req, res, next)
+);
+
+// Download Product Issue List PDF (Admin)
+adminPurchaseOrdersRouter.get('/:id/issue-list/download', (req, res, next) =>
+  purchaseOrdersController.downloadProductIssueList(req, res, next)
 );
 
 // Get PO Invoice metadata (Admin)
@@ -208,6 +260,11 @@ adminPurchaseOrdersRouter.get('/:id/invoice/download', (req, res, next) =>
 // Re-generate Invoice manually if job failed
 adminPurchaseOrdersRouter.post('/:id/invoice/regenerate', (req, res, next) =>
   purchaseOrdersController.adminRegenerateInvoice(req, res, next)
+);
+
+// Update Customer Specific B2B Advance Percentage
+adminPurchaseOrdersRouter.patch('/users/:id/b2b-advance-percentage', (req, res, next) =>
+  purchaseOrdersController.updateCustomerAdvancePercentage(req, res, next)
 );
 
 // Advance Payment Settings

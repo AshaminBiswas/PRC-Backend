@@ -608,6 +608,111 @@ const PO_AUTO_HEAL_STATEMENTS = [
       CREATE UNIQUE INDEX IF NOT EXISTS "b2b_purchase_orders_po_submission_id_key" ON "b2b_purchase_orders"("po_submission_id");
     END IF;
   END $$`,
+
+  // ─── USER B2B ADVANCE PERCENTAGE ───
+  `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "b2b_advance_percentage" DECIMAL(5,2)`,
+
+  // ─── ENUM EXTENSIONS FOR B2BPoStatus ───
+  `DO $$ BEGIN
+    ALTER TYPE "B2BPoStatus" ADD VALUE IF NOT EXISTS 'PI_GENERATED';
+    ALTER TYPE "B2BPoStatus" ADD VALUE IF NOT EXISTS 'TAX_INVOICE_GENERATED';
+    ALTER TYPE "B2BPoStatus" ADD VALUE IF NOT EXISTS 'EWAY_BILL_GENERATED';
+    ALTER TYPE "B2BPoStatus" ADD VALUE IF NOT EXISTS 'ISSUE_LIST_GENERATED';
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`,
+
+  // ─── B2B PROFORMA INVOICES TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='b2b_proforma_invoices') THEN
+      CREATE TABLE "b2b_proforma_invoices" (
+        "id"                      TEXT NOT NULL,
+        "purchase_order_id"       TEXT NOT NULL,
+        "quotation_number"        TEXT,
+        "po_number"               TEXT NOT NULL,
+        "pi_number"               TEXT NOT NULL,
+        "pdf_storage_key_or_url"  TEXT NOT NULL,
+        "subtotal"                DECIMAL(12,2) NOT NULL,
+        "tax_total"               DECIMAL(12,2) NOT NULL,
+        "discount_total"          DECIMAL(12,2) NOT NULL DEFAULT 0,
+        "shipping_cost"           DECIMAL(12,2) NOT NULL DEFAULT 0,
+        "grand_total"             DECIMAL(12,2) NOT NULL,
+        "advance_amount_required" DECIMAL(12,2) NOT NULL,
+        "balance_due"             DECIMAL(12,2) NOT NULL,
+        "valid_until"             TIMESTAMP(3),
+        "file_hash"               TEXT,
+        "verification_token"      TEXT,
+        "generated_at"            TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "created_at"              TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"              TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "b2b_proforma_invoices_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "b2b_proforma_invoices_purchase_order_id_key" ON "b2b_proforma_invoices"("purchase_order_id");
+      CREATE UNIQUE INDEX "b2b_proforma_invoices_pi_number_key" ON "b2b_proforma_invoices"("pi_number");
+      CREATE INDEX "b2b_proforma_invoices_po_number_idx" ON "b2b_proforma_invoices"("po_number");
+    END IF;
+  END $$`,
+
+  // ─── B2B EWAY BILLS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='b2b_eway_bills') THEN
+      CREATE TABLE "b2b_eway_bills" (
+        "id"                      TEXT NOT NULL,
+        "purchase_order_id"       TEXT NOT NULL,
+        "po_number"               TEXT NOT NULL,
+        "eway_bill_number"        TEXT NOT NULL,
+        "eway_bill_date"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "valid_from"              TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "valid_until"             TIMESTAMP(3),
+        "vehicle_number"          TEXT,
+        "transporter_id"          TEXT,
+        "transporter_name"        TEXT,
+        "transporter_doc_no"      TEXT,
+        "from_pincode"            TEXT,
+        "to_pincode"              TEXT,
+        "approx_distance_km"      INTEGER,
+        "iris_response"           JSONB,
+        "qr_code_data"            TEXT,
+        "pdf_storage_key_or_url"  TEXT,
+        "status"                  TEXT NOT NULL DEFAULT 'GENERATED',
+        "created_at"              TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"              TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "b2b_eway_bills_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "b2b_eway_bills_purchase_order_id_key" ON "b2b_eway_bills"("purchase_order_id");
+      CREATE UNIQUE INDEX "b2b_eway_bills_eway_bill_number_key" ON "b2b_eway_bills"("eway_bill_number");
+      CREATE INDEX "b2b_eway_bills_po_number_idx" ON "b2b_eway_bills"("po_number");
+    END IF;
+  END $$`,
+
+  // ─── B2B ISSUE LISTS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='b2b_issue_lists') THEN
+      CREATE TABLE "b2b_issue_lists" (
+        "id"                      TEXT NOT NULL,
+        "purchase_order_id"       TEXT NOT NULL,
+        "po_number"               TEXT NOT NULL,
+        "issue_number"            TEXT NOT NULL,
+        "issued_at"               TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "issued_by"               TEXT NOT NULL,
+        "issued_by_name"          TEXT,
+        "received_by_name"        TEXT,
+        "carrier_name"            TEXT,
+        "vehicle_number"          TEXT,
+        "eway_bill_ref"           TEXT,
+        "total_quantity"          INTEGER NOT NULL DEFAULT 0,
+        "total_value"             DECIMAL(12,2) NOT NULL,
+        "pdf_storage_key_or_url"  TEXT NOT NULL,
+        "file_hash"               TEXT,
+        "notes"                   TEXT,
+        "created_at"              TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"              TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "b2b_issue_lists_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "b2b_issue_lists_purchase_order_id_key" ON "b2b_issue_lists"("purchase_order_id");
+      CREATE UNIQUE INDEX "b2b_issue_lists_issue_number_key" ON "b2b_issue_lists"("issue_number");
+      CREATE INDEX "b2b_issue_lists_po_number_idx" ON "b2b_issue_lists"("po_number");
+    END IF;
+  END $$`,
 ];
 
 export const autoHealDatabaseSchema = async () => {

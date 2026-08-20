@@ -7241,6 +7241,78 @@ export const openApiSpec = {
       "responses": { "200": { "description": "Complete milestone telemetry" } },
       "security": [{ "BearerAuth": [] }]
     }
+  },
+  "/admin/purchase-orders/{id}/generate-pi": {
+    "post": {
+      "summary": "Generate Proforma Invoice (PI) PDF before dispatch",
+      "tags": ["38. PO Commercial Fulfillment (B2B)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Proforma Invoice generated" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/purchase-orders/{id}/proforma-invoice/download": {
+    "get": {
+      "summary": "Download Proforma Invoice (PI) PDF",
+      "tags": ["38. PO Commercial Fulfillment (B2B)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Binary PDF stream" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/{id}/generate-tax-invoice-iris": {
+    "post": {
+      "summary": "Generate GST Tax E-Invoice via IRIS API (IRN, Signed QR Code)",
+      "tags": ["38. PO Commercial Fulfillment (B2B)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "GST Tax Invoice generated via IRIS" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/{id}/generate-eway-bill-iris": {
+    "post": {
+      "summary": "Generate Official GST E-Way Bill via IRIS API (Part A + Part B Logistics)",
+      "tags": ["38. PO Commercial Fulfillment (B2B)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "GST E-Way Bill generated via IRIS" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/purchase-orders/{id}/eway-bill/download": {
+    "get": {
+      "summary": "Download Official GST E-Way Bill PDF",
+      "tags": ["38. PO Commercial Fulfillment (B2B)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Binary PDF stream" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/{id}/generate-issue-list": {
+    "post": {
+      "summary": "Generate Itemized Product Issue List / Delivery Challan with Rates & Quantities",
+      "tags": ["38. PO Commercial Fulfillment (B2B)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Product Issue List generated" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/purchase-orders/{id}/issue-list/download": {
+    "get": {
+      "summary": "Download Product Issue List / Delivery Challan PDF",
+      "tags": ["38. PO Commercial Fulfillment (B2B)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Binary PDF stream" } },
+      "security": [{ "BearerAuth": [] }]
+    }
+  },
+  "/admin/purchase-orders/users/{id}/b2b-advance-percentage": {
+    "patch": {
+      "summary": "Configure Customer-Specific B2B Advance Deposit Percentage",
+      "tags": ["38. PO Commercial Fulfillment (B2B)"],
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "responses": { "200": { "description": "Customer advance percentage updated" } },
+      "security": [{ "BearerAuth": [] }]
+    }
   }
 }
 };

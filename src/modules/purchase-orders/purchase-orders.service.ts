@@ -7,6 +7,10 @@ import { AppError } from '../../middleware/error.middleware';
 import { generateNextPoNumber } from './po-numbering.service';
 import { generatePackingListPdfBuffer } from './packing-list-pdf.service';
 import { generatePurchaseOrderPdfBuffer } from './po-pdf.service';
+import { generateProformaInvoicePdfBuffer } from './pi-pdf.service';
+import { irisInvoiceService } from './iris-invoice.service';
+import { irisEwayBillService } from './iris-ewaybill.service';
+import { generateIssueListPdfBuffer } from './issue-list-pdf.service';
 import {
   sendAdvancePaymentRequestEmail,
   sendPaymentAcknowledgedEmail,
@@ -29,9 +33,12 @@ const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 const RECEIPTS_DIR = path.join(UPLOADS_DIR, 'receipts');
 const PACKING_LISTS_DIR = path.join(UPLOADS_DIR, 'packing-lists');
 const PO_DOCS_DIR = path.join(UPLOADS_DIR, 'purchase-orders');
+const PI_DOCS_DIR = path.join(UPLOADS_DIR, 'proforma-invoices');
+const EWAY_DOCS_DIR = path.join(UPLOADS_DIR, 'eway-bills');
+const ISSUE_LISTS_DIR = path.join(UPLOADS_DIR, 'issue-lists');
 
 // Ensure directories exist
-[UPLOADS_DIR, RECEIPTS_DIR, PACKING_LISTS_DIR, PO_DOCS_DIR].forEach((dir) => {
+[UPLOADS_DIR, RECEIPTS_DIR, PACKING_LISTS_DIR, PO_DOCS_DIR, PI_DOCS_DIR, EWAY_DOCS_DIR, ISSUE_LISTS_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -172,6 +179,7 @@ export class PurchaseOrdersService {
         email: true,
         phone: true,
         gstin: true,
+        b2bAdvancePercentage: true,
         userRoles: { include: { role: true } },
       },
     });
@@ -244,9 +252,14 @@ export class PurchaseOrdersService {
 
     const advanceSetting = await this.getAdvancePaymentSetting();
     const grandTotal = Number(quote.grandTotal || quote.basicPrice || 0);
+    const customerAdvancePct = user?.b2bAdvancePercentage !== null && user?.b2bAdvancePercentage !== undefined
+      ? Number(user.b2bAdvancePercentage)
+      : null;
     const advancePercentage =
       quote.advancePercentage !== null && quote.advancePercentage !== undefined
         ? Number(quote.advancePercentage)
+        : customerAdvancePct !== null
+        ? customerAdvancePct
         : Number(advanceSetting.defaultPercentage || 30);
     const minPercentage = Number(advanceSetting.minPercentage || 1);
     const maxPercentage = Number(advanceSetting.maxPercentage || 100);
@@ -288,6 +301,7 @@ export class PurchaseOrdersService {
         email: true,
         phone: true,
         gstin: true,
+        b2bAdvancePercentage: true,
         userRoles: { include: { role: true } },
       },
     });
@@ -342,9 +356,14 @@ export class PurchaseOrdersService {
 
     // 2. Fetch Advance Payment Setting and compute requested percentage
     const advanceSetting = await this.getAdvancePaymentSetting();
+    const customerAdvancePct = user?.b2bAdvancePercentage !== null && user?.b2bAdvancePercentage !== undefined
+      ? Number(user.b2bAdvancePercentage)
+      : null;
     let advancePercentage =
       quote.advancePercentage !== null && quote.advancePercentage !== undefined
         ? Number(quote.advancePercentage)
+        : customerAdvancePct !== null
+        ? customerAdvancePct
         : Number(advanceSetting.defaultPercentage || 30);
 
     if (input.advancePercentage !== undefined && input.advancePercentage !== null && !isNaN(Number(input.advancePercentage))) {
@@ -592,6 +611,7 @@ export class PurchaseOrdersService {
               companyName: true,
               phone: true,
               gstin: true,
+              b2bAdvancePercentage: true,
             },
           },
           items: {
@@ -612,6 +632,9 @@ export class PurchaseOrdersService {
           packingList: true,
           dispatch: true,
           invoice: true,
+          proformaInvoice: true,
+          ewayBill: true,
+          issueList: true,
           auditLogs: {
             orderBy: { performedAt: 'desc' },
             include: {
@@ -2301,6 +2324,741 @@ export class PurchaseOrdersService {
     });
 
     return { success: true, message: `Purchase Order ${po.poNumber} has been deleted successfully.` };
+  }
+
+  // ─── Enhanced PO Lifecycle Operations (PI, IRIS Tax Invoice, E-Way Bill, Issue List) ───
+
+  /**
+   * 20. Generate Proforma Invoice (PI) before Dispatch
+   */
+  async generateProformaInvoice(
+    poId: string,
+    adminUser: { id: string; email?: string; name?: string },
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        items: { orderBy: { slNo: 'asc' } },
+        proformaInvoice: true,
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const piNumber = po.proformaInvoice?.piNumber || `PRC-PI-${po.poNumber.replace(/^PRC-PO-/, '')}`;
+    const bankSettings = await this.getPrimaryBankAccount();
+
+    const grandTotal = Number(po.totalAmount);
+    const advancePercentage = Number(po.advancePercentage || 30);
+    const advanceAmountRequired = Number(po.advanceAmount || (grandTotal * advancePercentage) / 100);
+    const balanceDue = Number(po.balanceAmount || grandTotal - advanceAmountRequired);
+
+    const pdfBuffer = await generateProformaInvoicePdfBuffer({
+      piNumber,
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber,
+      customerPoReferenceNumber: po.customerPoReferenceNumber,
+      issuedAt: new Date(),
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days validity
+      customerName: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim() || 'Commercial Client',
+      customerCompany: po.customer.companyName,
+      customerEmail: po.customer.email,
+      customerPhone: po.customer.phone || '',
+      customerGstin: po.customer.gstin,
+      billingAddress: po.billingAddress as any,
+      deliveryAddress: (po.deliveryAddress as any) || (po.billingAddress as any),
+      items: po.items.map((i) => ({
+        slNo: i.slNo,
+        productName: i.productName,
+        sku: i.sku,
+        hsnCode: '83024110',
+        unit: i.unit,
+        quantity: i.quantity,
+        rate: Number(i.rate),
+        amount: Number(i.amount),
+        taxRate: Number(i.taxRate || 18),
+        taxAmount: Number(i.taxAmount || 0),
+        total: Number(i.total),
+      })),
+      subtotal: Number(po.subtotal),
+      taxTotal: Number(po.taxTotal),
+      discountTotal: Number(po.discountTotal || 0),
+      shippingCost: Number(po.shippingCost || 0),
+      grandTotal,
+      advanceAmountRequired,
+      advancePercentage,
+      balanceDue,
+      bankDetails: bankSettings,
+    });
+
+    const pdfFileName = `ProformaInvoice_${piNumber.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
+    const pdfPath = path.join(PI_DOCS_DIR, pdfFileName);
+    await fs.promises.writeFile(pdfPath, pdfBuffer);
+    const fileHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+
+    const result = await prisma.$transaction(async (tx) => {
+      const pi = await tx.b2BProformaInvoice.upsert({
+        where: { purchaseOrderId: po.id },
+        update: {
+          piNumber,
+          pdfStorageKeyOrUrl: pdfFileName,
+          subtotal: po.subtotal,
+          taxTotal: po.taxTotal,
+          discountTotal: po.discountTotal,
+          shippingCost: po.shippingCost,
+          grandTotal: po.totalAmount,
+          advanceAmountRequired: new Prisma.Decimal(advanceAmountRequired),
+          balanceDue: new Prisma.Decimal(balanceDue),
+          fileHash,
+          generatedAt: new Date(),
+        },
+        create: {
+          purchaseOrderId: po.id,
+          quotationNumber: po.quotationNumber,
+          poNumber: po.poNumber,
+          piNumber,
+          pdfStorageKeyOrUrl: pdfFileName,
+          subtotal: po.subtotal,
+          taxTotal: po.taxTotal,
+          discountTotal: po.discountTotal,
+          shippingCost: po.shippingCost,
+          grandTotal: po.totalAmount,
+          advanceAmountRequired: new Prisma.Decimal(advanceAmountRequired),
+          balanceDue: new Prisma.Decimal(balanceDue),
+          fileHash,
+          generatedAt: new Date(),
+        },
+      });
+
+      // Advance PO status to PI_GENERATED if in preliminary stage
+      if (['PACKING_LIST_GENERATED', 'PAYMENT_VERIFIED', 'AWAITING_ADVANCE_PAYMENT'].includes(po.status)) {
+        await tx.b2BPurchaseOrder.update({
+          where: { id: po.id },
+          data: { status: B2BPoStatus.PI_GENERATED },
+        });
+      }
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PROFORMA_INVOICE_GENERATED',
+          fromStatus: po.status,
+          toStatus: B2BPoStatus.PI_GENERATED,
+          performedBy: adminUser.id,
+          metadata: {
+            piNumber,
+            pdfFileName,
+            grandTotal,
+            advanceAmountRequired,
+            balanceDue,
+          },
+          ipAddress,
+        },
+      });
+
+      return pi;
+    });
+
+    return {
+      success: true,
+      message: `Proforma Invoice ${piNumber} generated successfully.`,
+      proformaInvoice: result,
+    };
+  }
+
+  /**
+   * 21. Stream / Download Proforma Invoice PDF
+   */
+  async getProformaInvoicePdf(poId: string, user: { id: string; roles: string[] }) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: { proformaInvoice: true },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const isAdmin = isUserAdmin(user.roles);
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to download this Proforma Invoice', 403);
+    }
+
+    if (!po.proformaInvoice) {
+      // Auto generate on demand
+      await this.generateProformaInvoice(po.id, { id: user.id });
+    }
+
+    const reloaded = await prisma.b2BProformaInvoice.findUnique({ where: { purchaseOrderId: poId } });
+    if (!reloaded) {
+      throw new AppError('NOT_FOUND', 'Proforma invoice could not be retrieved', 404);
+    }
+
+    const filePath = path.join(PI_DOCS_DIR, reloaded.pdfStorageKeyOrUrl);
+    if (!fs.existsSync(filePath)) {
+      await this.generateProformaInvoice(po.id, { id: user.id });
+    }
+
+    return {
+      filePath,
+      fileName: `ProformaInvoice_${reloaded.piNumber.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`,
+    };
+  }
+
+  /**
+   * 22. Generate GST Tax Invoice via IRIS API
+   */
+  async generateTaxInvoiceIris(
+    poId: string,
+    adminUser: { id: string; email?: string; name?: string },
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        items: { orderBy: { slNo: 'asc' } },
+        invoice: true,
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const invoiceNumber = po.invoice?.invoiceNumber || `PRC-INV-${po.poNumber.replace(/^PRC-PO-/, '')}`;
+    const billingAddr = po.billingAddress as any;
+    const deliveryAddr = (po.deliveryAddress as any) || billingAddr;
+
+    // Call IRIS E-Invoicing Engine
+    const irisResult = await irisInvoiceService.generateEInvoice({
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber,
+      invoiceNumber,
+      issuedAt: new Date(),
+      customer: {
+        id: po.customerId,
+        name: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim() || 'Valued Client',
+        companyName: po.customer.companyName,
+        email: po.customer.email,
+        phone: po.customer.phone || billingAddr?.phone || '',
+        gstin: po.customer.gstin,
+      },
+      billingAddress: billingAddr,
+      deliveryAddress: deliveryAddr,
+      items: po.items.map((i) => ({
+        slNo: i.slNo,
+        productId: i.productId,
+        sku: i.sku,
+        hsnCode: '83024110',
+        productName: i.productName,
+        unit: i.unit,
+        quantity: i.quantity,
+        rate: Number(i.rate),
+        amount: Number(i.amount),
+        taxRate: Number(i.taxRate || 18),
+        taxAmount: Number(i.taxAmount || 0),
+        total: Number(i.total),
+      })),
+      subtotal: Number(po.subtotal),
+      taxTotal: Number(po.taxTotal),
+      discountTotal: Number(po.discountTotal || 0),
+      shippingCost: Number(po.shippingCost || 0),
+      grandTotal: Number(po.totalAmount),
+      advanceAmountPaid: Number(po.advanceAmount),
+      balanceDue: Number(po.balanceAmount),
+    });
+
+    // Also trigger local PDF storage adapter
+    const adapterRes = await invoiceServiceAdapter.createInvoice({
+      purchaseOrderId: po.id,
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber || po.poNumber,
+      customerPoReferenceNumber: po.customerPoReferenceNumber,
+      customer: {
+        id: po.customerId,
+        name: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim() || 'Commercial Client',
+        companyName: po.customer.companyName,
+        email: po.customer.email,
+        phone: po.customer.phone || billingAddr?.phone || '',
+        gstin: po.customer.gstin,
+      },
+      billingAddress: billingAddr,
+      deliveryAddress: deliveryAddr,
+      items: po.items.map((item) => ({
+        slNo: item.slNo,
+        productId: item.productId,
+        sku: item.sku,
+        productName: item.productName,
+        unit: item.unit,
+        quantity: item.quantity,
+        rate: Number(item.rate),
+        amount: Number(item.amount),
+        taxRate: Number(item.taxRate || 18),
+        taxAmount: Number(item.taxAmount || 0),
+        total: Number(item.total),
+      })),
+      subtotal: Number(po.subtotal),
+      taxTotal: Number(po.taxTotal),
+      discountTotal: Number(po.discountTotal),
+      shippingCost: Number(po.shippingCost),
+      grandTotal: Number(po.totalAmount),
+      advanceAmountPaid: Number(po.advanceAmount),
+      balanceDue: Number(po.balanceAmount),
+      issuedAt: new Date(),
+    });
+
+    // Update IRN details on invoice
+    const updatedInvoice = await prisma.b2BPoInvoice.update({
+      where: { id: adapterRes.invoiceId },
+      data: {
+        externalInvoiceId: irisResult.irn,
+        status: 'GENERATED',
+      },
+    });
+
+    await prisma.b2BPurchaseOrder.update({
+      where: { id: po.id },
+      data: { status: B2BPoStatus.TAX_INVOICE_GENERATED },
+    });
+
+    await prisma.poAuditLog.create({
+      data: {
+        purchaseOrderId: po.id,
+        action: 'TAX_INVOICE_GENERATED_IRIS',
+        fromStatus: po.status,
+        toStatus: B2BPoStatus.TAX_INVOICE_GENERATED,
+        performedBy: adminUser.id,
+        metadata: {
+          invoiceNumber,
+          irn: irisResult.irn,
+          ackNumber: irisResult.ackNumber,
+          signedQrCode: irisResult.signedQrCode,
+        },
+        ipAddress,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Tax Invoice ${invoiceNumber} generated via IRIS API.`,
+      invoice: updatedInvoice,
+      iris: irisResult,
+    };
+  }
+
+  /**
+   * 23. Generate E-Way Bill via IRIS API
+   */
+  async generateEwayBillIris(
+    poId: string,
+    adminUser: { id: string; email?: string; name?: string },
+    input?: {
+      carrierName?: string;
+      vehicleNumber?: string;
+      transporterDocNo?: string;
+      approxDistanceKm?: number;
+    },
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        items: { orderBy: { slNo: 'asc' } },
+        invoice: true,
+        ewayBill: true,
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const billingAddr = po.billingAddress as any;
+    const deliveryAddr = (po.deliveryAddress as any) || billingAddr;
+
+    const carrierName = input?.carrierName || 'BlueDart Express';
+    const vehicleNumber = input?.vehicleNumber || 'DL01AB1234';
+    const transporterDocNo = input?.transporterDocNo || `LR-${Date.now().toString().slice(-6)}`;
+    const distanceKm = input?.approxDistanceKm || 120;
+
+    const irisResult = await irisEwayBillService.generateEwayBill({
+      poNumber: po.poNumber,
+      invoiceNumber: po.invoice?.invoiceNumber,
+      transporterName: carrierName,
+      vehicleNumber,
+      transporterDocNo,
+      approxDistanceKm: distanceKm,
+      customer: {
+        name: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim() || 'Client',
+        companyName: po.customer.companyName,
+        email: po.customer.email,
+        phone: po.customer.phone || '',
+        gstin: po.customer.gstin,
+      },
+      billingAddress: billingAddr,
+      deliveryAddress: deliveryAddr,
+      items: po.items.map((i) => ({
+        slNo: i.slNo,
+        productName: i.productName,
+        sku: i.sku,
+        hsnCode: '83024110',
+        quantity: i.quantity,
+        unit: i.unit,
+        amount: Number(i.amount),
+        taxRate: Number(i.taxRate || 18),
+      })),
+      taxableAmount: Number(po.subtotal),
+      taxTotal: Number(po.taxTotal),
+      grandTotal: Number(po.totalAmount),
+    });
+
+    // Generate Official PDF
+    const pdfBuffer = await irisEwayBillService.generateEwayBillPdfBuffer({
+      ewayBillNumber: irisResult.ewayBillNumber,
+      ewayBillDate: irisResult.ewayBillDate,
+      validFrom: irisResult.validFrom,
+      validUntil: irisResult.validUntil,
+      poNumber: po.poNumber,
+      invoiceNumber: po.invoice?.invoiceNumber,
+      carrierName,
+      vehicleNumber,
+      transporterDocNo,
+      fromPincode: irisResult.fromPincode,
+      toPincode: irisResult.toPincode,
+      distanceKm: irisResult.approxDistanceKm,
+      customerName: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim(),
+      customerCompany: po.customer.companyName,
+      customerGstin: po.customer.gstin,
+      billingAddress: billingAddr,
+      deliveryAddress: deliveryAddr,
+      items: po.items.map((i) => ({
+        slNo: i.slNo,
+        productName: i.productName,
+        sku: i.sku,
+        hsnCode: '83024110',
+        quantity: i.quantity,
+        unit: i.unit,
+        amount: Number(i.amount),
+      })),
+      taxableAmount: Number(po.subtotal),
+      taxTotal: Number(po.taxTotal),
+      grandTotal: Number(po.totalAmount),
+      qrCodeData: irisResult.qrCodeData,
+    });
+
+    const pdfFileName = `EwayBill_${irisResult.ewayBillNumber}_${Date.now()}.pdf`;
+    const pdfPath = path.join(EWAY_DOCS_DIR, pdfFileName);
+    await fs.promises.writeFile(pdfPath, pdfBuffer);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const ewb = await tx.b2BEwayBill.upsert({
+        where: { purchaseOrderId: po.id },
+        update: {
+          ewayBillNumber: irisResult.ewayBillNumber,
+          ewayBillDate: new Date(irisResult.ewayBillDate),
+          validFrom: new Date(irisResult.validFrom),
+          validUntil: new Date(irisResult.validUntil),
+          vehicleNumber,
+          transporterName: carrierName,
+          transporterDocNo,
+          fromPincode: irisResult.fromPincode,
+          toPincode: irisResult.toPincode,
+          approxDistanceKm: irisResult.approxDistanceKm,
+          qrCodeData: irisResult.qrCodeData,
+          pdfStorageKeyOrUrl: pdfFileName,
+          status: 'GENERATED',
+        },
+        create: {
+          purchaseOrderId: po.id,
+          poNumber: po.poNumber,
+          ewayBillNumber: irisResult.ewayBillNumber,
+          ewayBillDate: new Date(irisResult.ewayBillDate),
+          validFrom: new Date(irisResult.validFrom),
+          validUntil: new Date(irisResult.validUntil),
+          vehicleNumber,
+          transporterName: carrierName,
+          transporterDocNo,
+          fromPincode: irisResult.fromPincode,
+          toPincode: irisResult.toPincode,
+          approxDistanceKm: irisResult.approxDistanceKm,
+          qrCodeData: irisResult.qrCodeData,
+          pdfStorageKeyOrUrl: pdfFileName,
+          status: 'GENERATED',
+        },
+      });
+
+      await tx.b2BPurchaseOrder.update({
+        where: { id: po.id },
+        data: { status: B2BPoStatus.EWAY_BILL_GENERATED },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'EWAY_BILL_GENERATED_IRIS',
+          fromStatus: po.status,
+          toStatus: B2BPoStatus.EWAY_BILL_GENERATED,
+          performedBy: adminUser.id,
+          metadata: {
+            ewayBillNumber: irisResult.ewayBillNumber,
+            vehicleNumber,
+            carrierName,
+            pdfFileName,
+          },
+          ipAddress,
+        },
+      });
+
+      return ewb;
+    });
+
+    return {
+      success: true,
+      message: `E-Way Bill ${irisResult.ewayBillNumber} generated successfully.`,
+      ewayBill: result,
+    };
+  }
+
+  /**
+   * 24. Stream / Download E-Way Bill PDF
+   */
+  async getEwayBillPdf(poId: string, user: { id: string; roles: string[] }) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: { ewayBill: true },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const isAdmin = isUserAdmin(user.roles);
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to this E-Way Bill', 403);
+    }
+
+    if (!po.ewayBill || !po.ewayBill.pdfStorageKeyOrUrl) {
+      throw new AppError('NOT_FOUND', 'E-Way Bill has not been generated yet', 404);
+    }
+
+    const filePath = path.join(EWAY_DOCS_DIR, po.ewayBill.pdfStorageKeyOrUrl);
+    if (!fs.existsSync(filePath)) {
+      await this.generateEwayBillIris(po.id, { id: user.id });
+    }
+
+    return {
+      filePath,
+      fileName: `EwayBill_${po.ewayBill.ewayBillNumber}.pdf`,
+    };
+  }
+
+  /**
+   * 25. Generate Product Issue List / Delivery Challan
+   */
+  async generateProductIssueList(
+    poId: string,
+    adminUser: { id: string; email?: string; name?: string },
+    input?: {
+      carrierName?: string;
+      vehicleNumber?: string;
+      receivedByName?: string;
+      notes?: string;
+    },
+    ipAddress?: string
+  ) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: {
+        customer: true,
+        items: { orderBy: { slNo: 'asc' } },
+        dispatch: true,
+        invoice: true,
+        ewayBill: true,
+        issueList: true,
+      },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const issueNumber = po.issueList?.issueNumber || `PRC-ISS-${po.poNumber.replace(/^PRC-PO-/, '')}`;
+    const carrierName = input?.carrierName || po.dispatch?.carrierName || 'BlueDart Express';
+    const vehicleNumber = input?.vehicleNumber || po.ewayBill?.vehicleNumber || 'DL01AB1234';
+    const ewayBillRef = po.ewayBill?.ewayBillNumber || 'EWB-STANDARD';
+
+    const totalQuantity = po.items.reduce((acc, i) => acc + i.quantity, 0);
+    const totalValue = Number(po.totalAmount);
+
+    const pdfBuffer = await generateIssueListPdfBuffer({
+      issueNumber,
+      poNumber: po.poNumber,
+      quotationNumber: po.quotationNumber,
+      invoiceNumber: po.invoice?.invoiceNumber,
+      ewayBillRef,
+      issuedAt: new Date(),
+      issuedByName: adminUser.name || adminUser.email || 'Central Warehouse Manager',
+      receivedByName: input?.receivedByName || 'Transporter Representative',
+      carrierName,
+      vehicleNumber,
+      customerName: `${po.customer.firstName || ''} ${po.customer.lastName || ''}`.trim() || 'Client',
+      customerCompany: po.customer.companyName,
+      customerGstin: po.customer.gstin,
+      billingAddress: po.billingAddress as any,
+      deliveryAddress: (po.deliveryAddress as any) || (po.billingAddress as any),
+      items: po.items.map((i) => ({
+        slNo: i.slNo,
+        productName: i.productName,
+        sku: i.sku,
+        hsnCode: '83024110',
+        unit: i.unit,
+        quantity: i.quantity,
+        rate: Number(i.rate),
+        amount: Number(i.amount),
+        taxRate: Number(i.taxRate || 18),
+        taxAmount: Number(i.taxAmount || 0),
+        total: Number(i.total),
+      })),
+      totalQuantity,
+      totalValue,
+      notes: input?.notes || 'All architectural hardware items inspected and released intact from central warehouse.',
+    });
+
+    const pdfFileName = `ProductIssueList_${issueNumber.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
+    const pdfPath = path.join(ISSUE_LISTS_DIR, pdfFileName);
+    await fs.promises.writeFile(pdfPath, pdfBuffer);
+    const fileHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+
+    const result = await prisma.$transaction(async (tx) => {
+      const issue = await tx.b2BIssueList.upsert({
+        where: { purchaseOrderId: po.id },
+        update: {
+          issueNumber,
+          issuedAt: new Date(),
+          issuedBy: adminUser.id,
+          issuedByName: adminUser.name || adminUser.email || 'Storekeeper',
+          receivedByName: input?.receivedByName || 'Transporter Driver',
+          carrierName,
+          vehicleNumber,
+          ewayBillRef,
+          totalQuantity,
+          totalValue: new Prisma.Decimal(totalValue),
+          pdfStorageKeyOrUrl: pdfFileName,
+          fileHash,
+          notes: input?.notes,
+        },
+        create: {
+          purchaseOrderId: po.id,
+          poNumber: po.poNumber,
+          issueNumber,
+          issuedAt: new Date(),
+          issuedBy: adminUser.id,
+          issuedByName: adminUser.name || adminUser.email || 'Storekeeper',
+          receivedByName: input?.receivedByName || 'Transporter Driver',
+          carrierName,
+          vehicleNumber,
+          ewayBillRef,
+          totalQuantity,
+          totalValue: new Prisma.Decimal(totalValue),
+          pdfStorageKeyOrUrl: pdfFileName,
+          fileHash,
+          notes: input?.notes,
+        },
+      });
+
+      await tx.b2BPurchaseOrder.update({
+        where: { id: po.id },
+        data: { status: B2BPoStatus.ISSUE_LIST_GENERATED },
+      });
+
+      await tx.poAuditLog.create({
+        data: {
+          purchaseOrderId: po.id,
+          action: 'PRODUCT_ISSUE_LIST_GENERATED',
+          fromStatus: po.status,
+          toStatus: B2BPoStatus.ISSUE_LIST_GENERATED,
+          performedBy: adminUser.id,
+          metadata: {
+            issueNumber,
+            totalQuantity,
+            totalValue,
+            carrierName,
+            vehicleNumber,
+          },
+          ipAddress,
+        },
+      });
+
+      return issue;
+    });
+
+    return {
+      success: true,
+      message: `Product Issue List ${issueNumber} generated successfully.`,
+      issueList: result,
+    };
+  }
+
+  /**
+   * 26. Stream / Download Product Issue List PDF
+   */
+  async getProductIssueListPdf(poId: string, user: { id: string; roles: string[] }) {
+    const po = await prisma.b2BPurchaseOrder.findUnique({
+      where: { id: poId },
+      include: { issueList: true },
+    });
+
+    if (!po) {
+      throw new AppError('NOT_FOUND', 'Purchase Order not found', 404);
+    }
+
+    const isAdmin = isUserAdmin(user.roles);
+    if (!isAdmin && po.customerId !== user.id) {
+      throw new AppError('FORBIDDEN', 'Access denied to this Issue List', 403);
+    }
+
+    if (!po.issueList || !po.issueList.pdfStorageKeyOrUrl) {
+      throw new AppError('NOT_FOUND', 'Product Issue List has not been generated yet', 404);
+    }
+
+    const filePath = path.join(ISSUE_LISTS_DIR, po.issueList.pdfStorageKeyOrUrl);
+    if (!fs.existsSync(filePath)) {
+      await this.generateProductIssueList(po.id, { id: user.id });
+    }
+
+    return {
+      filePath,
+      fileName: `ProductIssueSlip_${po.issueList.issueNumber}.pdf`,
+    };
+  }
+
+  /**
+   * 27. Update Customer Specific B2B Advance Percentage
+   */
+  async updateCustomerAdvancePercentage(
+    customerId: string,
+    advancePercentage: number,
+    adminId: string
+  ) {
+    const pct = Math.min(100, Math.max(0, Number(advancePercentage)));
+    return await prisma.user.update({
+      where: { id: customerId },
+      data: {
+        b2bAdvancePercentage: new Prisma.Decimal(pct),
+      },
+      select: {
+        id: true,
+        email: true,
+        companyName: true,
+        b2bAdvancePercentage: true,
+      },
+    });
   }
 }
 
