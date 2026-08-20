@@ -293,65 +293,141 @@ export class PurchaseOrdersService {
     input: CreatePurchaseOrderInput,
     ipAddress?: string
   ) {
-    // 1. Fetch & validate quotation server-side
+    // 1. Fetch & validate customer server-side
     const user = await prisma.user.findUnique({
       where: { id: customerId },
       select: {
         id: true,
         email: true,
         phone: true,
+        firstName: true,
+        lastName: true,
+        companyName: true,
         gstin: true,
         b2bAdvancePercentage: true,
         userRoles: { include: { role: true } },
       },
     });
 
-    const quote = await prisma.quote.findFirst({
-      where: {
-        OR: [
-          { id: input.quotationId },
-          { quoteNumber: input.quotationId },
-          { referenceNo: input.quotationId },
-        ],
-        isDeleted: false,
-      },
-      include: {
-        items: {
-          include: {
-            product: true,
+    let quote: any = null;
+
+    if (input.quotationId) {
+      quote = await prisma.quote.findFirst({
+        where: {
+          OR: [
+            { id: input.quotationId },
+            { quoteNumber: input.quotationId },
+            { referenceNo: input.quotationId },
+          ],
+          isDeleted: false,
+        },
+        include: {
+          items: {
+            include: {
+              product: true,
+            },
+          },
+          user: true,
+          b2bPurchaseOrder: true,
+        },
+      });
+
+      if (!quote) {
+        throw new AppError('NOT_FOUND', 'Approved quotation not found or does not belong to your account', 404);
+      }
+
+      if (quote.status !== 'APPROVED' && quote.customerResponse !== 'accepted') {
+        throw new AppError('INVALID_STATE', 'Only approved or accepted quotations can be converted into a Purchase Order', 400);
+      }
+
+      if (quote.validUntil && new Date(quote.validUntil) < new Date()) {
+        throw new AppError('EXPIRED', 'This quotation has expired', 400);
+      }
+
+      if (
+        quote.b2bPurchaseOrder &&
+        quote.b2bPurchaseOrder.status !== B2BPoStatus.CANCELLED &&
+        quote.b2bPurchaseOrder.status !== B2BPoStatus.REJECTED
+      ) {
+        throw new AppError(
+          'CONFLICT',
+          `A Purchase Order (${quote.b2bPurchaseOrder.poNumber}) has already been submitted for this quotation`,
+          409
+        );
+      }
+
+      if (!quote.items || quote.items.length === 0) {
+        throw new AppError('BAD_REQUEST', 'Quotation has no line items', 400);
+      }
+    } else if (input.items && input.items.length > 0) {
+      // 1b. Create an approved Quote entity for direct Standard PO submission
+      const quoteSeq = Date.now().toString().slice(-6);
+      const quoteNum = `PRC-Q-PO-${quoteSeq}`;
+      const quoteRef = `QT-PO-${quoteSeq}`;
+
+      let fallbackProductId = '';
+      const firstProduct = await prisma.product.findFirst({ select: { id: true } });
+      if (firstProduct) {
+        fallbackProductId = firstProduct.id;
+      }
+
+      let calcSubtotal = 0;
+      for (const item of input.items) {
+        calcSubtotal += Number(item.rate || 0) * Number(item.quantity || 1);
+      }
+      const calcTax = Math.round(calcSubtotal * 0.18 * 100) / 100;
+      const calcGrand = Math.round((calcSubtotal + calcTax) * 100) / 100;
+
+      quote = await prisma.quote.create({
+        data: {
+          quoteNumber: quoteNum,
+          referenceNo: quoteRef,
+          projectName: input.customerPoReferenceNumber ? `PO: ${input.customerPoReferenceNumber}` : 'Standard PO Catalog Order',
+          firstName: input.billingAddress.attentionTo.split(' ')[0] || user?.firstName || 'B2B',
+          lastName: input.billingAddress.attentionTo.split(' ').slice(1).join(' ') || user?.lastName || 'Client',
+          companyName: input.billingAddress.companyName || user?.companyName || 'B2B Client',
+          gstNo: user?.gstin || '27AAAAA0000A1Z5',
+          email: input.billingAddress.email || user?.email || '',
+          phone: input.billingAddress.phone || user?.phone || '',
+          userId: customerId,
+          status: 'APPROVED',
+          customerResponse: 'accepted',
+          customerResponseAt: new Date(),
+          basicPrice: new Prisma.Decimal(calcSubtotal),
+          subtotal: new Prisma.Decimal(calcSubtotal),
+          gstAmount: new Prisma.Decimal(calcTax),
+          taxTotal: new Prisma.Decimal(calcTax),
+          grandTotal: new Prisma.Decimal(calcGrand),
+          advancePercentage: new Prisma.Decimal(Number(user?.b2bAdvancePercentage || 30)),
+          termsAccepted: true,
+          items: {
+            create: input.items.map((it, idx) => ({
+              slNo: idx + 1,
+              productId: it.productId || fallbackProductId,
+              productNameSnapshot: it.productName,
+              variantId: it.variantId || undefined,
+              unit: it.unit || 'PCS',
+              quantity: it.quantity,
+              rate: new Prisma.Decimal(it.rate),
+              requestedPrice: new Prisma.Decimal(it.rate),
+              offeredPrice: new Prisma.Decimal(it.rate),
+              amount: new Prisma.Decimal(Math.round(it.quantity * it.rate * 100) / 100),
+              total: new Prisma.Decimal(Math.round(it.quantity * it.rate * 1.18 * 100) / 100),
+            })),
           },
         },
-        user: true,
-        b2bPurchaseOrder: true,
-      },
-    });
-
-    if (!quote) {
-      throw new AppError('NOT_FOUND', 'Approved quotation not found or does not belong to your account', 404);
-    }
-
-    if (quote.status !== 'APPROVED' && quote.customerResponse !== 'accepted') {
-      throw new AppError('INVALID_STATE', 'Only approved or accepted quotations can be converted into a Purchase Order', 400);
-    }
-
-    if (quote.validUntil && new Date(quote.validUntil) < new Date()) {
-      throw new AppError('EXPIRED', 'This quotation has expired', 400);
-    }
-
-    if (
-      quote.b2bPurchaseOrder &&
-      quote.b2bPurchaseOrder.status !== B2BPoStatus.CANCELLED &&
-      quote.b2bPurchaseOrder.status !== B2BPoStatus.REJECTED
-    ) {
-      throw new AppError(
-        'CONFLICT',
-        `A Purchase Order (${quote.b2bPurchaseOrder.poNumber}) has already been submitted for this quotation`,
-        409
-      );
-    }
-
-    if (!quote.items || quote.items.length === 0) {
-      throw new AppError('BAD_REQUEST', 'Quotation has no line items', 400);
+        include: {
+          items: {
+            include: {
+              product: true,
+            },
+          },
+          user: true,
+          b2bPurchaseOrder: true,
+        },
+      });
+    } else {
+      throw new AppError('BAD_REQUEST', 'Either quotationId or items array is required', 400);
     }
 
     // 2. Fetch Advance Payment Setting and compute requested percentage
@@ -378,7 +454,7 @@ export class PurchaseOrdersService {
 
     // 3. Recompute totals server-side from live quotation snapshot
     let subtotal = 0;
-    const itemsSnapshot = quote.items.map((item, idx) => {
+    const itemsSnapshot = (quote.items || []).map((item: any, idx: number) => {
       const rate = Number(item.offeredPrice ?? item.rate ?? item.requestedPrice ?? 0);
       const amount = Math.round(rate * item.quantity * 100) / 100;
       subtotal += amount;

@@ -17,26 +17,42 @@ export const PoAddressSchema = z.object({
 
 // ─── PO Creation Schema ───────────────────────────────────────────────────────
 
-export const CreatePurchaseOrderSchema = z.object({
-  quotationId: z.string().min(1, 'Quotation ID is required'),
-  advancePercentage: z.coerce.number().min(1).max(100).optional(),
-  customerPoReferenceNumber: z.string().max(100).optional(),
-  billingAddress: PoAddressSchema,
-  deliveryAddress: PoAddressSchema.optional(),
-  sameAsBilling: z.boolean().optional().default(false),
-  deliveryInstructions: z.string().max(500).optional(),
-  requestedDeliveryDate: z.string().datetime().optional().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/).optional()),
-  saveBillingAddress: z.boolean().optional().default(false),
-  saveDeliveryAddress: z.boolean().optional().default(false),
-  billingAddressLabel: z.string().optional(),
-  deliveryAddressLabel: z.string().optional(),
-}).refine(
-  (data) => data.sameAsBilling || !!data.deliveryAddress,
-  {
+export const CreatePurchaseOrderItemSchema = z.object({
+  productId: z.string().optional().nullable(),
+  productName: z.string().min(1, 'Product name is required'),
+  sku: z.string().optional().nullable(),
+  variantId: z.string().optional().nullable(),
+  unit: z.string().default('PCS'),
+  quantity: z.coerce.number().int().positive('Quantity must be greater than 0'),
+  rate: z.coerce.number().nonnegative('Rate must be 0 or positive'),
+});
+
+export const CreatePurchaseOrderSchema = z
+  .object({
+    quotationId: z.string().optional(),
+    items: z.array(CreatePurchaseOrderItemSchema).optional(),
+    advancePercentage: z.coerce.number().min(1).max(100).optional(),
+    customerPoReferenceNumber: z.string().max(100).optional(),
+    billingAddress: PoAddressSchema,
+    deliveryAddress: PoAddressSchema.optional(),
+    sameAsBilling: z.boolean().optional().default(false),
+    deliveryInstructions: z.string().max(500).optional(),
+    requestedDeliveryDate: z.string().datetime().optional().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/).optional()),
+    saveBillingAddress: z.boolean().optional().default(false),
+    saveDeliveryAddress: z.boolean().optional().default(false),
+    billingAddressLabel: z.string().optional(),
+    deliveryAddressLabel: z.string().optional(),
+  })
+  .refine((data) => data.sameAsBilling || !!data.deliveryAddress, {
     message: 'Delivery address is required when different from billing address',
     path: ['deliveryAddress'],
-  }
-);
+  })
+  .refine((data) => !!data.quotationId || (Array.isArray(data.items) && data.items.length > 0), {
+    message: 'Either quotationId or line items must be provided',
+    path: ['quotationId'],
+  });
+
+export type CreatePurchaseOrderItemInput = z.infer<typeof CreatePurchaseOrderItemSchema>;
 
 // ─── Admin Payment Acknowledgment Schema ──────────────────────────────────────
 
