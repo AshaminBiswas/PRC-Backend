@@ -1939,8 +1939,15 @@ export class PurchaseOrdersService {
       };
     }
 
-    // Only allowed from PACKING_LIST_GENERATED
-    if (po.status !== B2BPoStatus.PACKING_LIST_GENERATED && po.status !== B2BPoStatus.PAYMENT_VERIFIED) {
+    // Allowed from PACKING_LIST_GENERATED or subsequent document generation stages
+    const validStatuses = [
+      B2BPoStatus.PAYMENT_VERIFIED,
+      B2BPoStatus.PACKING_LIST_GENERATED,
+      B2BPoStatus.PI_GENERATED,
+      B2BPoStatus.TAX_INVOICE_GENERATED,
+      B2BPoStatus.EWAY_BILL_GENERATED,
+    ] as B2BPoStatus[];
+    if (!validStatuses.includes(po.status)) {
       throw new AppError(
         'INVALID_STATUS_TRANSITION',
         `Cannot dispatch Purchase Order in ${po.status} status. Packing list must be generated first.`,
