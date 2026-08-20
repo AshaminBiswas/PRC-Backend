@@ -24,10 +24,8 @@ export const readPrisma =
       })
     : writePrisma);
 
-if (env.isDev) {
-  globalForPrisma.prisma = writePrisma;
-  globalForPrisma.readPrisma = readPrisma;
-}
+globalForPrisma.prisma = writePrisma;
+globalForPrisma.readPrisma = readPrisma;
 
 export const prisma = writePrisma;
 

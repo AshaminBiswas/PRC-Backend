@@ -274,6 +274,56 @@ export const generateInvoice = async (id: string, user: UserContext) => {
   return newInvoice;
 };
 
+const restockOrderItems = async (items: any[], tx: any, userId: string, reason: string) => {
+  const stockPromises = items.map(async (item) => {
+    if (item.variantId) {
+      await tx.productVariant.update({
+        where: { id: item.variantId },
+        data: { stock: { increment: item.quantity } },
+      });
+      if (item.productId) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } },
+        });
+      }
+    } else if (item.productId) {
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { stock: { increment: item.quantity } },
+      });
+    }
+
+    if (item.productId) {
+      const invProduct = await tx.inventoryProduct.findFirst({
+        where: { productId: item.productId, deletedAt: null },
+        include: { stocks: true },
+      });
+
+      if (invProduct && invProduct.stocks.length > 0) {
+        const mainWhId = invProduct.stocks[0].warehouseId;
+        await recordStockMovement(
+          {
+            ventureId: invProduct.ventureId,
+            inventoryProductId: invProduct.id,
+            warehouseId: mainWhId,
+            qtyChanged: item.quantity,
+            movementType: StockMovementType.RETURN,
+            channel: 'ONLINE',
+            referenceType: 'ORDER_CANCEL',
+            referenceId: item.orderId,
+            createdBy: userId,
+            reason: reason,
+          },
+          tx
+        );
+      }
+    }
+  });
+
+  await Promise.all(stockPromises);
+};
+
 export const cancelOrder = async (id: string, user: UserContext, reason: string) => {
   if (!reason || !reason.trim()) {
     throw new AppError('BAD_REQUEST', 'Cancellation reason is required', 400);
@@ -299,7 +349,6 @@ export const cancelOrder = async (id: string, user: UserContext, reason: string)
       throw new AppError('FORBIDDEN', 'Access denied to cancel this order', 403);
     }
 
-    // Allowed ONLY if status is PENDING or PROCESSING
     if (order.status !== OrderStatus.PENDING && order.status !== OrderStatus.PROCESSING) {
       throw new AppError(
         'BAD_REQUEST',
@@ -329,53 +378,7 @@ export const cancelOrder = async (id: string, user: UserContext, reason: string)
       },
     });
 
-    // Restock items & record movement logs
-    for (const item of order.items) {
-      if (item.variantId) {
-        await tx.productVariant.update({
-          where: { id: item.variantId },
-          data: { stock: { increment: item.quantity } },
-        });
-        if (item.productId) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
-          });
-        }
-      } else if (item.productId) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        });
-      }
-
-      // Check if product is registered in inventory
-      if (item.productId) {
-        const invProduct = await tx.inventoryProduct.findFirst({
-          where: { productId: item.productId, deletedAt: null },
-          include: { stocks: true },
-        });
-
-        if (invProduct && invProduct.stocks.length > 0) {
-          const mainWhId = invProduct.stocks[0].warehouseId;
-          await recordStockMovement(
-            {
-              ventureId: invProduct.ventureId,
-              inventoryProductId: invProduct.id,
-              warehouseId: mainWhId,
-              qtyChanged: item.quantity,
-              movementType: StockMovementType.RETURN,
-              channel: 'ONLINE',
-              referenceType: 'ORDER_CANCEL',
-              referenceId: order.id,
-              createdBy: user.id,
-              reason: cancelReason,
-            },
-            tx
-          );
-        }
-      }
-    }
+    await restockOrderItems(order.items, tx, user.id, cancelReason);
 
     return formatOrder(updated);
   });
@@ -389,59 +392,58 @@ export const updateOrderStatus = async (
   trackingNumber?: string,
   carrier?: string
 ) => {
-  const order = await prisma.order.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      status: true,
-      orderNumber: true,
-      items: true,
-    },
-  });
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        orderNumber: true,
+        items: true,
+        userId: true,
+      },
+    });
 
-  if (!order) {
-    throw new AppError('NOT_FOUND', 'Order not found', 404);
-  }
+    if (!order) {
+      throw new AppError('NOT_FOUND', 'Order not found', 404);
+    }
 
-  // Flexible Order Status Transition Matrix for Admin & Dispatch
-  const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-    [OrderStatus.PENDING]: [OrderStatus.PENDING, OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.CANCELLED],
-    [OrderStatus.PROCESSING]: [OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED],
-    [OrderStatus.SHIPPED]: [OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.RETURNED, OrderStatus.CANCELLED],
-    [OrderStatus.DELIVERED]: [OrderStatus.DELIVERED, OrderStatus.RETURNED, OrderStatus.CANCELLED],
-    [OrderStatus.CANCELLED]: [OrderStatus.CANCELLED],
-    [OrderStatus.RETURNED]: [OrderStatus.RETURNED],
-  };
+    const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
+      [OrderStatus.PENDING]: [OrderStatus.PENDING, OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.CANCELLED],
+      [OrderStatus.PROCESSING]: [OrderStatus.PROCESSING, OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED],
+      [OrderStatus.SHIPPED]: [OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.RETURNED, OrderStatus.CANCELLED],
+      [OrderStatus.DELIVERED]: [OrderStatus.DELIVERED, OrderStatus.RETURNED, OrderStatus.CANCELLED],
+      [OrderStatus.CANCELLED]: [OrderStatus.CANCELLED],
+      [OrderStatus.RETURNED]: [OrderStatus.RETURNED],
+    };
 
-  const allowed = ALLOWED_TRANSITIONS[order.status] || [];
-  if (!allowed.includes(newStatus)) {
-    throw new AppError(
-      'BAD_REQUEST',
-      `Cannot transition order status from '${order.status}' to '${newStatus}'. Allowed target statuses for '${order.status}' orders are: ${allowed.join(', ')}.`,
-      400
-    );
-  }
+    const allowed = ALLOWED_TRANSITIONS[order.status] || [];
+    if (!allowed.includes(newStatus)) {
+      throw new AppError(
+        'BAD_REQUEST',
+        `Cannot transition order status from '${order.status}' to '${newStatus}'. Allowed target statuses for '${order.status}' orders are: ${allowed.join(', ')}.`,
+        400
+      );
+    }
 
-  // Build update payload based on status
-  const updateData: Prisma.OrderUpdateInput = {
-    status: newStatus,
-  };
+    const updateData: Prisma.OrderUpdateInput = {
+      status: newStatus,
+    };
 
-  if (newStatus === OrderStatus.SHIPPED) {
-    updateData.shippedAt = new Date();
+    if (newStatus === OrderStatus.SHIPPED) {
+      updateData.shippedAt = new Date();
+      if (trackingNumber) updateData.trackingNumber = trackingNumber;
+      if (carrier) updateData.carrier = carrier;
+    } else if (newStatus === OrderStatus.DELIVERED) {
+      updateData.deliveredAt = new Date();
+    } else if (newStatus === OrderStatus.CANCELLED) {
+      updateData.cancelledAt = new Date();
+      updateData.cancelReason = comment || 'Cancelled by admin';
+    }
+
     if (trackingNumber) updateData.trackingNumber = trackingNumber;
     if (carrier) updateData.carrier = carrier;
-  } else if (newStatus === OrderStatus.DELIVERED) {
-    updateData.deliveredAt = new Date();
-  } else if (newStatus === OrderStatus.CANCELLED) {
-    updateData.cancelledAt = new Date();
-    updateData.cancelReason = comment || 'Cancelled by admin';
-  }
 
-  if (trackingNumber) updateData.trackingNumber = trackingNumber;
-  if (carrier) updateData.carrier = carrier;
-
-  const updatedOrder = await prisma.$transaction(async (tx) => {
     const updated = await tx.order.update({
       where: { id },
       data: updateData,
@@ -458,38 +460,19 @@ export const updateOrderStatus = async (
     });
 
     if (newStatus === OrderStatus.CANCELLED) {
-      for (const item of order.items) {
-        if (item.variantId) {
-          await tx.productVariant.update({
-            where: { id: item.variantId },
-            data: { stock: { increment: item.quantity } },
-          });
-          if (item.productId) {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: { stock: { increment: item.quantity } },
-            });
-          }
-        } else if (item.productId) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
-          });
-        }
-      }
+      await restockOrderItems(order.items, tx, user.id, comment || 'Cancelled by admin');
     }
 
     return updated;
   });
 
-  // Emit Domain Event for Real-Time SSE and Audit
   try {
     const { eventBus } = await import('../../events/eventBus');
     eventBus.emitEvent('order.status_changed', {
       orderId: updatedOrder.id,
       orderNumber: updatedOrder.orderNumber,
       userId: updatedOrder.userId,
-      previousStatus: order.status,
+      previousStatus: (updatedOrder as any).statusHistory?.[1]?.status || OrderStatus.PENDING,
       newStatus: newStatus,
     });
   } catch (e: any) {
@@ -498,6 +481,7 @@ export const updateOrderStatus = async (
 
   return formatOrder(updatedOrder);
 };
+
 
 export const getTrackingDetails = async (id: string, user: UserContext) => {
   const order = await getOrderById(id, user);

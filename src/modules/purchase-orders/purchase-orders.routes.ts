@@ -62,6 +62,11 @@ router.delete('/addresses/:id', (req, res, next) =>
   purchaseOrdersController.deleteSavedAddress(req, res, next)
 );
 
+// Aggregate count per status (for admin dashboard KPI cards — must be before /:id)
+router.get('/status-counts', (req, res, next) =>
+  purchaseOrdersController.getStatusCounts(req, res, next)
+);
+
 // Get single Purchase Order details
 router.get('/:id', (req, res, next) =>
   purchaseOrdersController.getPurchaseOrderById(req, res, next)
@@ -141,6 +146,11 @@ adminPurchaseOrdersRouter.get('/', (req, res, next) =>
 // List all Invoices across POs
 adminPurchaseOrdersRouter.get('/invoices/all', (req, res, next) =>
   purchaseOrdersController.adminListInvoices(req, res, next)
+);
+
+// Aggregate count per status (for admin dashboard KPI cards — must be before /:id)
+adminPurchaseOrdersRouter.get('/status-counts', (req, res, next) =>
+  purchaseOrdersController.getStatusCounts(req, res, next)
 );
 
 // Get single PO by ID

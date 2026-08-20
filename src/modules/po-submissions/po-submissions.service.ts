@@ -758,6 +758,31 @@ export class PoSubmissionsService {
       }
     }
 
+    // ── Pre-generate PO number OUTSIDE the transaction ───────────────────────
+    // CRITICAL: generateNextPoNumber does a b2BPoSequence.upsert which grabs a
+    // table-level lock. Running it inside a $transaction causes lock contention
+    // and Prisma "Transaction not found" errors. Generate it before entering
+    // the transaction so the lock is released before the transaction begins.
+    // Check if a B2BPurchaseOrder already exists for this submission first
+    // (idempotency) — if it does, no PO number is needed.
+    let preGeneratedPoNumber: string | undefined;
+    const existingB2bPo = await prisma.b2BPurchaseOrder.findFirst({
+      where: { poSubmissionId: submissionId },
+      select: { id: true, poNumber: true },
+    });
+    if (!existingB2bPo) {
+      let masterPoNumber = po.customerPoNumber;
+      if (!masterPoNumber || !masterPoNumber.startsWith('PRC-PO-')) {
+        const seq = await generateNextPoNumber(); // uses global prisma client, NOT inside transaction
+        masterPoNumber = seq.poNumber;
+      }
+      preGeneratedPoNumber = masterPoNumber;
+    }
+
+    // Pre-fetch a fallback product ID for custom-mapped items (FK safety)
+    const fallbackProduct = await prisma.product.findFirst({ select: { id: true } });
+    const fallbackProductId = fallbackProduct?.id || null;
+
     const updated = await prisma.$transaction(async (tx) => {
       const res = await tx.poSubmission.update({
         where: { id: submissionId },
@@ -769,7 +794,7 @@ export class PoSubmissionsService {
       });
 
       // Automatically promote/ensure B2BPurchaseOrder in downstream fulfillment pipeline
-      const b2bPo = await this.ensureFulfillmentPurchaseOrder(submissionId, tx);
+      const b2bPo = await this.ensureFulfillmentPurchaseOrder(submissionId, tx, preGeneratedPoNumber, fallbackProductId);
 
       await tx.poSubmissionLog.create({
         data: {
@@ -891,6 +916,24 @@ export class PoSubmissionsService {
     const pdfFilePath = path.join(ACKS_DIR, pdfFileName);
     fs.writeFileSync(pdfFilePath, pdfBuffer);
 
+    // Pre-generate PO number OUTSIDE transaction if needed
+    let preGeneratedPoNumber: string | undefined;
+    const existingB2bPo = await prisma.b2BPurchaseOrder.findFirst({
+      where: { poSubmissionId: po.id },
+      select: { id: true, poNumber: true },
+    });
+    if (!existingB2bPo) {
+      let masterPoNumber = po.customerPoNumber;
+      if (!masterPoNumber || !masterPoNumber.startsWith('PRC-PO-')) {
+        const seq = await generateNextPoNumber();
+        masterPoNumber = seq.poNumber;
+      }
+      preGeneratedPoNumber = masterPoNumber;
+    }
+
+    const fallbackProduct = await prisma.product.findFirst({ select: { id: true } });
+    const fallbackProductId = fallbackProduct?.id || null;
+
     const result = await prisma.$transaction(async (tx) => {
       const ack = await tx.poAcknowledgement.create({
         data: {
@@ -911,7 +954,7 @@ export class PoSubmissionsService {
       });
 
       // Ensure B2BPurchaseOrder exists
-      const b2bPo = await this.ensureFulfillmentPurchaseOrder(po.id, tx);
+      const b2bPo = await this.ensureFulfillmentPurchaseOrder(po.id, tx, preGeneratedPoNumber, fallbackProductId);
 
       await tx.poSubmissionLog.create({
         data: {
@@ -948,7 +991,12 @@ export class PoSubmissionsService {
    * Promotes an approved/acknowledged PoSubmission into the downstream B2BPurchaseOrder fulfillment pipeline.
    * Idempotent: returns existing B2BPurchaseOrder if already linked.
    */
-  async ensureFulfillmentPurchaseOrder(submissionId: string, txClient?: Prisma.TransactionClient): Promise<any> {
+  async ensureFulfillmentPurchaseOrder(
+    submissionId: string,
+    txClient?: Prisma.TransactionClient,
+    preGeneratedPoNumber?: string,
+    fallbackProductId?: string | null
+  ): Promise<any> {
     const db = txClient || prisma;
 
     const existingPo = await db.b2BPurchaseOrder.findFirst({
@@ -966,10 +1014,20 @@ export class PoSubmissionsService {
     });
     if (!submission) return null;
 
-    let masterPoNumber = submission.customerPoNumber;
-    if (!masterPoNumber || !masterPoNumber.startsWith('PRC-PO-')) {
-      const seq = await generateNextPoNumber(new Date(), db);
-      masterPoNumber = seq.poNumber;
+    let masterPoNumber = preGeneratedPoNumber;
+    if (!masterPoNumber) {
+      if (submission.customerPoNumber && submission.customerPoNumber.startsWith('PRC-PO-')) {
+        masterPoNumber = submission.customerPoNumber;
+      } else {
+        const seq = await generateNextPoNumber();
+        masterPoNumber = seq.poNumber;
+      }
+    }
+
+    let defaultProductId = fallbackProductId;
+    if (!defaultProductId) {
+      const firstProduct = await prisma.product.findFirst({ select: { id: true } });
+      defaultProductId = firstProduct?.id || 'custom-mapped-item';
     }
 
     let subtotal = 0;
@@ -987,7 +1045,7 @@ export class PoSubmissionsService {
 
       return {
         slNo: idx + 1,
-        productId: item.productId || 'custom-mapped-item',
+        productId: item.productId || defaultProductId || 'custom-mapped-item',
         productName: item.description,
         sku: item.sku || undefined,
         variantId: item.variantId || undefined,
@@ -1369,8 +1427,8 @@ export class PoSubmissionsService {
 
     if (!po) throw new AppError('NOT_FOUND', 'Submission not found', 404);
 
-    return await prisma.$transaction(async (tx) => {
-      const updated = await tx.poSubmission.update({
+    const updated = await prisma.$transaction(async (tx) => {
+      const res = await tx.poSubmission.update({
         where: { id: submissionId },
         data: {
           status: PoSubmissionStatus.REJECTED,
@@ -1390,16 +1448,18 @@ export class PoSubmissionsService {
         },
       });
 
-      sendPoRejectedEmail({
-        to: po.customer.email,
-        customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
-        submissionNumber: po.submissionNumber,
-        customerPoNumber: po.customerPoNumber,
-        reason: reason.trim(),
-      }).catch(() => {});
-
-      return updated;
+      return res;
     });
+
+    sendPoRejectedEmail({
+      to: po.customer.email,
+      customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
+      submissionNumber: po.submissionNumber,
+      customerPoNumber: po.customerPoNumber,
+      reason: reason.trim(),
+    }).catch(() => {});
+
+    return updated;
   }
 
   // ─── Admin Action: Request Changes ──────────────────────────────────────────
@@ -1411,8 +1471,8 @@ export class PoSubmissionsService {
 
     if (!po) throw new AppError('NOT_FOUND', 'Submission not found', 404);
 
-    return await prisma.$transaction(async (tx) => {
-      const updated = await tx.poSubmission.update({
+    const updated = await prisma.$transaction(async (tx) => {
+      const res = await tx.poSubmission.update({
         where: { id: submissionId },
         data: {
           status: PoSubmissionStatus.CHANGES_REQUESTED,
@@ -1432,16 +1492,18 @@ export class PoSubmissionsService {
         },
       });
 
-      sendChangesRequestedEmail({
-        to: po.customer.email,
-        customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
-        submissionNumber: po.submissionNumber,
-        customerPoNumber: po.customerPoNumber,
-        reason: reason.trim(),
-      }).catch(() => {});
-
-      return updated;
+      return res;
     });
+
+    sendChangesRequestedEmail({
+      to: po.customer.email,
+      customerName: `${po.customer.firstName} ${po.customer.lastName}`.trim(),
+      submissionNumber: po.submissionNumber,
+      customerPoNumber: po.customerPoNumber,
+      reason: reason.trim(),
+    }).catch(() => {});
+
+    return updated;
   }
 
   // ─── Admin Action: Assign Reviewer ──────────────────────────────────────────

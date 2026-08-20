@@ -124,8 +124,19 @@ app.use((_req, res, next) => {
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, postman) or any origin in dev/prod
-      callback(null, true);
+      // Allow requests with no origin (mobile apps, curl, server-to-server)
+      if (!origin) return callback(null, true);
+
+      // Extract allowed origins from env or default to localhost
+      const allowedOrigins = process.env.ALLOWED_ORIGINS 
+        ? process.env.ALLOWED_ORIGINS.split(',').map((s: string) => s.trim()) 
+        : ['http://localhost:5173', 'http://localhost:3001', 'http://127.0.0.1:5173', 'http://127.0.0.1:3001'];
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -212,8 +223,8 @@ app.get(`${prefix}/docs-ui`, serveHtmlDocs);
 app.get(`${prefix}/docs.json`, serveDocsJson);
 app.get(`${prefix}/docs`, serveDocsUi);
 
-// ─── General Rate Limiter (Commented out) ────────────────────────────────────
-// app.use(generalLimiter);
+// ─── General Rate Limiter ──────────────────────────────────────────────────────
+app.use(generalLimiter);
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 

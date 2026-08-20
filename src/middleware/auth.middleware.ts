@@ -115,9 +115,9 @@ export const authorize = (...requiredPermissions: string[]) => {
       return;
     }
 
-    // Super Admin and Admin bypass all permission checks
+    // Super Admin bypass all permission checks
     const roleSlug = (req.user.roleSlug || '').toLowerCase();
-    if (['super-admin', 'super_admin', 'superadmin', 'admin'].includes(roleSlug)) {
+    if (['super-admin', 'super_admin', 'superadmin'].includes(roleSlug)) {
       next();
       return;
     }

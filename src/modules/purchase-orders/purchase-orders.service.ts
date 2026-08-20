@@ -3145,6 +3145,34 @@ export class PurchaseOrdersService {
       },
     });
   }
+
+  /**
+   * 28. Get PO count aggregated by status (for admin dashboard bucket cards)
+   * Uses Prisma groupBy to return real counts per status in a single query.
+   */
+  async getStatusCounts(isAdmin: boolean, userId?: string): Promise<Record<string, number>> {
+    try {
+      const where: Prisma.B2BPurchaseOrderWhereInput = isAdmin ? {} : { customerId: userId };
+
+      const rows = await prisma.b2BPurchaseOrder.groupBy({
+        by: ['status'],
+        where,
+        _count: { id: true },
+      });
+
+      const result: Record<string, number> = { ALL: 0 };
+      let total = 0;
+      for (const row of rows) {
+        result[row.status] = row._count.id;
+        total += row._count.id;
+      }
+      result.ALL = total;
+      return result;
+    } catch (err) {
+      console.error('[getStatusCounts] Error:', err);
+      return { ALL: 0 };
+    }
+  }
 }
 
 export const purchaseOrdersService = new PurchaseOrdersService();

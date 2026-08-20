@@ -769,8 +769,33 @@ export class PurchaseOrdersController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/v1/purchase-orders/status-counts
+   * GET /api/v1/admin/purchase-orders/status-counts
+   * Returns per-status aggregate counts for dashboard KPI cards.
+   */
+  async getStatusCounts(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = (req as any).user;
+      if (!user?.id) throw new AppError('UNAUTHORIZED', 'Authentication required', 401);
+
+      const roles = user.roles || (user.roleSlug ? [user.roleSlug] : ['customer']);
+      const isAdmin = roles.some((r: string) =>
+        ['admin', 'super_admin', 'sales_admin', 'finance_admin', 'manager', 'staff'].includes(
+          r.toLowerCase().replace(/[-_\s]/g, '')
+        )
+      );
+
+      const counts = await purchaseOrdersService.getStatusCounts(isAdmin, user.id);
+      sendSuccess(res, counts, 'Status counts retrieved successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const purchaseOrdersController = new PurchaseOrdersController();
+
 
 
