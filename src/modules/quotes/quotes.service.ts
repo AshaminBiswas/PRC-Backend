@@ -911,19 +911,6 @@ export const softDeleteQuote = async (id: string, admin: AdminContext) => {
   }
 
   await prisma.$transaction(async (tx) => {
-    // 1. Delete any associated Purchase Order and its child records
-    const po = await tx.b2BPurchaseOrder.findFirst({ where: { quotationId: id } });
-    if (po) {
-      await tx.b2BPoInvoice.deleteMany({ where: { purchaseOrderId: po.id } });
-      await tx.poDispatch.deleteMany({ where: { purchaseOrderId: po.id } });
-      await tx.packingList.deleteMany({ where: { purchaseOrderId: po.id } });
-      await tx.paymentReceiptHistory.deleteMany({ where: { purchaseOrderId: po.id } });
-      await tx.paymentReceipt.deleteMany({ where: { purchaseOrderId: po.id } });
-      await tx.b2BPurchaseOrderItem.deleteMany({ where: { purchaseOrderId: po.id } });
-      await tx.poAuditLog.deleteMany({ where: { purchaseOrderId: po.id } });
-      await tx.poNotificationLog.deleteMany({ where: { purchaseOrderId: po.id } });
-      await tx.b2BPurchaseOrder.delete({ where: { id: po.id } });
-    }
     // 2. Delete Quote Activity Logs
     await tx.quoteActivityLog.deleteMany({ where: { quoteId: id } });
     // 3. Delete Quote Items
@@ -934,3 +921,4 @@ export const softDeleteQuote = async (id: string, admin: AdminContext) => {
 
   return { success: true, message: `Quotation ${quote.referenceNo || quote.quoteNumber} deleted permanently from database.` };
 };
+

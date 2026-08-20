@@ -7375,3 +7375,4 @@ export const serveDocsUi = (_req: Request, res: Response): void => {
   );
   res.send(swaggerHtml);
 };
+
