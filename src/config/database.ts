@@ -432,6 +432,172 @@ const PO_AUTO_HEAL_STATEMENTS = [
   `ALTER TABLE "b2b_purchase_orders" ADD COLUMN IF NOT EXISTS "is_deleted" BOOLEAN NOT NULL DEFAULT false`,
 
   `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "advance_percentage" DECIMAL(5,2)`,
+
+  // ─── PO SUBMISSIONS ENUMS ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PoSourceType') THEN
+      CREATE TYPE "PoSourceType" AS ENUM ('FORM', 'PDF_UPLOAD');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PoSubmissionStatus') THEN
+      CREATE TYPE "PoSubmissionStatus" AS ENUM (
+        'DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'CHANGES_REQUESTED',
+        'REJECTED', 'APPROVED', 'ACKNOWLEDGED', 'FULFILLMENT'
+      );
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'LineItemSource') THEN
+      CREATE TYPE "LineItemSource" AS ENUM ('CUSTOMER_ENTERED', 'ADMIN_MAPPED');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PoSubmissionAction') THEN
+      CREATE TYPE "PoSubmissionAction" AS ENUM (
+        'SUBMITTED', 'VIEWED', 'UNDER_REVIEW', 'MAPPED_LINE_ITEM',
+        'CHANGES_REQUESTED', 'CUSTOMER_RESUBMITTED', 'APPROVED',
+        'REJECTED', 'ACKNOWLEDGED', 'ASSIGNED', 'INTERNAL_NOTE'
+      );
+    END IF;
+  END $$`,
+
+  // ─── PO SUBMISSIONS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='po_submissions') THEN
+      CREATE TABLE "po_submissions" (
+        "id"                     TEXT NOT NULL,
+        "submission_number"      TEXT NOT NULL,
+        "customer_id"            TEXT NOT NULL,
+        "source_type"            "PoSourceType" NOT NULL DEFAULT 'FORM',
+        "status"                 "PoSubmissionStatus" NOT NULL DEFAULT 'SUBMITTED',
+        "customer_po_number"     TEXT NOT NULL,
+        "customer_po_date"       TIMESTAMP(3),
+        "stated_total"           DECIMAL(12,2),
+        "mapped_total"           DECIMAL(12,2),
+        "currency"               TEXT NOT NULL DEFAULT 'INR',
+        "expected_delivery_date" TIMESTAMP(3),
+        "reviewed_by"            TEXT,
+        "assigned_to"            TEXT,
+        "approved_by"            TEXT,
+        "approved_at"            TIMESTAMP(3),
+        "rejection_reason"       TEXT,
+        "change_request_reason"  TEXT,
+        "bill_to_address"        JSONB,
+        "ship_to_address"        JSONB,
+        "payment_terms"          TEXT,
+        "customer_note"          TEXT,
+        "submitted_at"           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "created_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "po_submissions_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "po_submissions_submission_number_key" ON "po_submissions"("submission_number");
+      CREATE INDEX "po_submissions_customer_id_idx" ON "po_submissions"("customer_id");
+      CREATE INDEX "po_submissions_status_idx" ON "po_submissions"("status");
+      CREATE INDEX "po_submissions_source_type_idx" ON "po_submissions"("source_type");
+      CREATE INDEX "po_submissions_customer_po_number_idx" ON "po_submissions"("customer_po_number");
+      CREATE INDEX "po_submissions_assigned_to_idx" ON "po_submissions"("assigned_to");
+      CREATE INDEX "po_submissions_submitted_at_idx" ON "po_submissions"("submitted_at");
+    END IF;
+  END $$`,
+
+  // ─── PO SUBMISSION LINE ITEMS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='po_submission_line_items') THEN
+      CREATE TABLE "po_submission_line_items" (
+        "id"            TEXT NOT NULL,
+        "submission_id" TEXT NOT NULL,
+        "sl_no"         INTEGER NOT NULL DEFAULT 1,
+        "product_id"    TEXT,
+        "variant_id"    TEXT,
+        "description"   TEXT NOT NULL,
+        "sku"           TEXT,
+        "unit"          TEXT NOT NULL DEFAULT 'PCS',
+        "quantity"      INTEGER NOT NULL,
+        "unit_price"    DECIMAL(12,2) NOT NULL,
+        "tax_rate"      DECIMAL(5,2),
+        "tax_amount"    DECIMAL(12,2),
+        "line_total"    DECIMAL(12,2) NOT NULL,
+        "source"        "LineItemSource" NOT NULL DEFAULT 'CUSTOMER_ENTERED',
+        "sort_order"    INTEGER NOT NULL DEFAULT 0,
+        "created_at"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "po_submission_line_items_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "po_submission_line_items_submission_id_idx" ON "po_submission_line_items"("submission_id");
+      CREATE INDEX "po_submission_line_items_product_id_idx" ON "po_submission_line_items"("product_id");
+    END IF;
+  END $$`,
+
+  // ─── PO SUBMISSION ATTACHMENTS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='po_submission_attachments') THEN
+      CREATE TABLE "po_submission_attachments" (
+        "id"                 TEXT NOT NULL,
+        "submission_id"      TEXT NOT NULL,
+        "file_storage_key"   TEXT NOT NULL,
+        "original_file_name" TEXT NOT NULL,
+        "file_size_bytes"    INTEGER NOT NULL,
+        "mime_type"          TEXT NOT NULL,
+        "checksum"           TEXT,
+        "uploaded_by"        TEXT NOT NULL,
+        "uploaded_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "po_submission_attachments_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "po_submission_attachments_submission_id_idx" ON "po_submission_attachments"("submission_id");
+    END IF;
+  END $$`,
+
+  // ─── PO SUBMISSION LOGS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='po_submission_logs') THEN
+      CREATE TABLE "po_submission_logs" (
+        "id"            TEXT NOT NULL,
+        "submission_id" TEXT NOT NULL,
+        "actor_id"      TEXT,
+        "action"        "PoSubmissionAction" NOT NULL,
+        "from_status"   "PoSubmissionStatus",
+        "to_status"     "PoSubmissionStatus",
+        "comment"       TEXT,
+        "is_internal"   BOOLEAN NOT NULL DEFAULT false,
+        "metadata"      JSONB,
+        "ip_address"    TEXT,
+        "timestamp"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "po_submission_logs_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "po_submission_logs_submission_id_idx" ON "po_submission_logs"("submission_id");
+      CREATE INDEX "po_submission_logs_actor_id_idx" ON "po_submission_logs"("actor_id");
+      CREATE INDEX "po_submission_logs_action_idx" ON "po_submission_logs"("action");
+    END IF;
+  END $$`,
+
+  // ─── PO ACKNOWLEDGEMENTS TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='po_acknowledgements') THEN
+      CREATE TABLE "po_acknowledgements" (
+        "id"               TEXT NOT NULL,
+        "submission_id"    TEXT NOT NULL,
+        "ack_number"       TEXT NOT NULL,
+        "file_storage_key" TEXT NOT NULL,
+        "issued_by"        TEXT NOT NULL,
+        "issued_by_name"   TEXT,
+        "issued_at"        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "po_acknowledgements_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "po_acknowledgements_submission_id_key" ON "po_acknowledgements"("submission_id");
+      CREATE UNIQUE INDEX "po_acknowledgements_ack_number_key" ON "po_acknowledgements"("ack_number");
+    END IF;
+  END $$`,
+
+  // ─── PO SUBMISSION SEQUENCES TABLE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='po_submission_sequences') THEN
+      CREATE TABLE "po_submission_sequences" (
+        "id"             TEXT NOT NULL,
+        "prefix"         TEXT NOT NULL DEFAULT 'POS',
+        "financial_year" TEXT NOT NULL,
+        "next_number"    INTEGER NOT NULL DEFAULT 1,
+        "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updated_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "po_submission_sequences_pkey" PRIMARY KEY ("id")
+      );
+      CREATE UNIQUE INDEX "po_submission_sequences_prefix_fy_key" ON "po_submission_sequences"("prefix", "financial_year");
+    END IF;
+  END $$`,
 ];
 
 export const autoHealDatabaseSchema = async () => {
