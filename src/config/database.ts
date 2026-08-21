@@ -30,6 +30,83 @@ globalForPrisma.readPrisma = readPrisma;
 export const prisma = writePrisma;
 
 const PO_AUTO_HEAL_STATEMENTS = [
+  // ─── QUOTATION AUTO-HEAL STATEMENTS ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'QuoteStatus') THEN
+      CREATE TYPE "QuoteStatus" AS ENUM ('PENDING','UNDER_REVIEW','APPROVED','REJECTED','CONVERTED','EXPIRED');
+    END IF;
+  END $$`,
+
+  `DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customerProposedAdvancePercent') THEN
+      ALTER TABLE "quotes" RENAME COLUMN "customerProposedAdvancePercent" TO "customer_proposed_advance_percent";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customerEditCount') THEN
+      ALTER TABLE "quotes" RENAME COLUMN "customerEditCount" TO "customer_edit_count";
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customerEditRemark') THEN
+      ALTER TABLE "quotes" RENAME COLUMN "customerEditRemark" TO "customer_edit_remark";
+    END IF;
+  END $$`,
+
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "quote_number"                      TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "reference_no"                      TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "financial_year"                    TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "sequence_no"                       INTEGER`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "project_name"                      TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "first_name"                        TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "last_name"                         TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "company_name"                      TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "gst_no"                            TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "email"                             TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "phone"                             TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "user_id"                           TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "status_reason"                     TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "basic_price"                       DECIMAL(12,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "gst_amount"                        DECIMAL(12,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "shipping_cost"                     DECIMAL(12,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "subtotal"                          DECIMAL(12,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "discount_total"                    DECIMAL(12,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "tax_total"                         DECIMAL(12,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "grand_total"                       DECIMAL(12,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "advance_percentage"                DECIMAL(5,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "customer_proposed_advance_percent"  DECIMAL(5,2)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "customer_edit_count"               INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "customer_edit_remark"              TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "admin_notes"                       TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "terms_accepted"                    BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "customer_response"                 TEXT NOT NULL DEFAULT 'pending'`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "customer_response_notes"           TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "customer_response_at"              TIMESTAMP(3)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "access_token"                      TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "digital_signature"                 TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "signed_by"                         TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "signed_at"                         TIMESTAMP(3)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "qr_code_data"                      TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "valid_until"                       TIMESTAMP(3)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "converted_order_id"                TEXT`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "is_deleted"                        BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "deleted_at"                        TIMESTAMP(3)`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "created_at"                        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "quotes" ADD COLUMN IF NOT EXISTS "updated_at"                        TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='quotation_revisions') THEN
+      CREATE TABLE "quotation_revisions" (
+        "id"              TEXT NOT NULL,
+        "quote_id"        TEXT NOT NULL,
+        "changed_by"      TEXT NOT NULL,
+        "changed_by_id"   TEXT,
+        "previous_values" JSONB NOT NULL,
+        "new_values"      JSONB NOT NULL,
+        "remark"          TEXT NOT NULL,
+        "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "quotation_revisions_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "quotation_revisions_quote_id_idx" ON "quotation_revisions"("quote_id");
+    END IF;
+  END $$`,
+
   // ─── PO MODULE ENUMS ───
   `DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'B2BPoStatus') THEN

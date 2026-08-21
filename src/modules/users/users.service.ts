@@ -236,68 +236,66 @@ export const deleteUser = async (id: string) => {
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw new AppError('NOT_FOUND', 'User not found', 404);
 
-  await prisma.$transaction(
-    async (tx) => {
-      // 1. Delete authentication tokens & security sessions
-      await tx.refreshToken.deleteMany({ where: { userId: id } }).catch(() => {});
-      await tx.emailVerification.deleteMany({ where: { userId: id } }).catch(() => {});
-      await tx.passwordReset.deleteMany({ where: { userId: id } }).catch(() => {});
-      await tx.userActivityLog.deleteMany({ where: { userId: id } }).catch(() => {});
-      await tx.userRole.deleteMany({ where: { userId: id } }).catch(() => {});
-      await tx.staffAvailability.deleteMany({ where: { staffUserId: id } }).catch(() => {});
-      await tx.b2BCustomerPrice.deleteMany({ where: { userId: id } }).catch(() => {});
-      await tx.savedAddress.deleteMany({ where: { customerId: id } }).catch(() => {});
-      await tx.notification.deleteMany({ where: { userId: id } }).catch(() => {});
-      await tx.couponUsage.deleteMany({ where: { userId: id } }).catch(() => {});
-      await tx.review.deleteMany({ where: { userId: id } }).catch(() => {});
-      await tx.ventureUser.deleteMany({ where: { userId: id } }).catch(() => {});
+  // 1. Delete authentication tokens & security sessions
+  try { await prisma.refreshToken.deleteMany({ where: { userId: id } }); } catch {}
+  try { await prisma.emailVerification.deleteMany({ where: { userId: id } }); } catch {}
+  try { await prisma.passwordReset.deleteMany({ where: { userId: id } }); } catch {}
+  try { await prisma.userActivityLog.deleteMany({ where: { userId: id } }); } catch {}
+  try { await prisma.userRole.deleteMany({ where: { userId: id } }); } catch {}
+  try { await prisma.staffAvailability.deleteMany({ where: { staffUserId: id } }); } catch {}
+  try { await prisma.b2BCustomerPrice.deleteMany({ where: { userId: id } }); } catch {}
+  try { await prisma.savedAddress.deleteMany({ where: { customerId: id } }); } catch {}
+  try { await prisma.notification.deleteMany({ where: { userId: id } }); } catch {}
+  try { await prisma.couponUsage.deleteMany({ where: { userId: id } }); } catch {}
+  try { await prisma.review.deleteMany({ where: { userId: id } }); } catch {}
+  try { await prisma.ventureUser.deleteMany({ where: { userId: id } }); } catch {}
 
-      // 2. Clear Cart & Wishlist with their child items
-      const userCart = await tx.cart.findUnique({ where: { userId: id }, select: { id: true } });
-      if (userCart) {
-        await tx.cartItem.deleteMany({ where: { cartId: userCart.id } }).catch(() => {});
-        await tx.cart.delete({ where: { id: userCart.id } }).catch(() => {});
-      }
-
-      const userWishlist = await tx.wishlist.findUnique({ where: { userId: id }, select: { id: true } });
-      if (userWishlist) {
-        await tx.wishlistItem.deleteMany({ where: { wishlistId: userWishlist.id } }).catch(() => {});
-        await tx.wishlist.delete({ where: { id: userWishlist.id } }).catch(() => {});
-      }
-
-      // 3. Delete user addresses
-      await tx.address.deleteMany({ where: { userId: id } }).catch(() => {});
-
-      // 4. Nullify foreign key references on historical/auditing records
-      await tx.auditLog.updateMany({ where: { userId: id }, data: { userId: null } }).catch(() => {});
-      await tx.quoteActivityLog.updateMany({ where: { changedBy: id }, data: { changedBy: null } }).catch(() => {});
-      await tx.quotationRevision.updateMany({ where: { changedById: id }, data: { changedById: null } }).catch(() => {});
-      await tx.blogPost.updateMany({ where: { authorId: id }, data: { authorId: null } }).catch(() => {});
-      await tx.invoice.updateMany({ where: { customerId: id }, data: { customerId: null } }).catch(() => {});
-      await tx.enquiry.updateMany({ where: { userId: id }, data: { userId: null } }).catch(() => {});
-      await tx.quote.updateMany({ where: { userId: id }, data: { userId: null } }).catch(() => {});
-      await tx.appointment.updateMany({ where: { customerUserId: id }, data: { customerUserId: null } }).catch(() => {});
-      await tx.appointment.updateMany({ where: { staffUserId: id }, data: { staffUserId: null } }).catch(() => {});
-
-      // 5. Handle any orders placed by this user
-      const userOrders = await tx.order.findMany({ where: { userId: id }, select: { id: true } });
-      const orderIds = userOrders.map((o) => o.id);
-      if (orderIds.length > 0) {
-        await tx.shipment.deleteMany({ where: { orderId: { in: orderIds } } }).catch(() => {});
-        await tx.orderStatusHistory.deleteMany({ where: { orderId: { in: orderIds } } }).catch(() => {});
-        await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } }).catch(() => {});
-        await tx.payment.deleteMany({ where: { orderId: { in: orderIds } } }).catch(() => {});
-        await tx.order.deleteMany({ where: { userId: id } }).catch(() => {});
-      }
-
-      // 6. Delete user record permanently
-      await tx.user.delete({ where: { id } });
-    },
-    {
-      maxWait: 15000,
-      timeout: 45000,
+  // 2. Clear Cart & Wishlist with their child items
+  try {
+    const userCart = await prisma.cart.findUnique({ where: { userId: id }, select: { id: true } });
+    if (userCart) {
+      await prisma.cartItem.deleteMany({ where: { cartId: userCart.id } });
+      await prisma.cart.delete({ where: { id: userCart.id } });
     }
-  );
+  } catch {}
+
+  try {
+    const userWishlist = await prisma.wishlist.findUnique({ where: { userId: id }, select: { id: true } });
+    if (userWishlist) {
+      await prisma.wishlistItem.deleteMany({ where: { wishlistId: userWishlist.id } });
+      await prisma.wishlist.delete({ where: { id: userWishlist.id } });
+    }
+  } catch {}
+
+  // 3. Delete user addresses
+  try { await prisma.address.deleteMany({ where: { userId: id } }); } catch {}
+
+  // 4. Nullify foreign key references on historical/auditing records
+  try { await prisma.auditLog.updateMany({ where: { userId: id }, data: { userId: null } }); } catch {}
+  try { await prisma.quoteActivityLog.updateMany({ where: { changedBy: id }, data: { changedBy: null } }); } catch {}
+  try { await prisma.quotationRevision.updateMany({ where: { changedById: id }, data: { changedById: null } }); } catch {}
+  try { await prisma.blogPost.updateMany({ where: { authorId: id }, data: { authorId: null } }); } catch {}
+  try { await prisma.invoice.updateMany({ where: { customerId: id }, data: { customerId: null } }); } catch {}
+  try { await prisma.enquiry.updateMany({ where: { userId: id }, data: { userId: null } }); } catch {}
+  try { await prisma.quote.updateMany({ where: { userId: id }, data: { userId: null } }); } catch {}
+  try { await prisma.appointment.updateMany({ where: { customerUserId: id }, data: { customerUserId: null } }); } catch {}
+  try { await prisma.appointment.updateMany({ where: { staffUserId: id }, data: { staffUserId: null } }); } catch {}
+
+  // 5. Handle any orders placed by this user
+  try {
+    const userOrders = await prisma.order.findMany({ where: { userId: id }, select: { id: true } });
+    const orderIds = userOrders.map((o) => o.id);
+    if (orderIds.length > 0) {
+      await prisma.shipment.deleteMany({ where: { orderId: { in: orderIds } } });
+      await prisma.orderStatusHistory.deleteMany({ where: { orderId: { in: orderIds } } });
+      await prisma.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+      await prisma.payment.deleteMany({ where: { orderId: { in: orderIds } } });
+      await prisma.order.deleteMany({ where: { userId: id } });
+    }
+  } catch {}
+
+  // 6. Delete user record permanently
+  await prisma.user.delete({ where: { id } });
 
   return { success: true, message: `User ${user.email} permanently deleted from database.` };
 };
