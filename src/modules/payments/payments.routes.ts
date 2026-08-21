@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from './payments.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { checkoutLimiter } from '../../middleware/rateLimit.middleware';
 import {
   CreatePaymentOrderSchema,
   VerifyPaymentSchema,
@@ -15,6 +16,7 @@ const router = Router();
 router.post(
   '/create-order',
   authenticate,
+  checkoutLimiter,
   validate(CreatePaymentOrderSchema),
   controller.createPaymentOrder
 );
@@ -23,6 +25,7 @@ router.post(
 router.post(
   '/verify',
   authenticate,
+  checkoutLimiter,
   validate(VerifyPaymentSchema),
   controller.verifyPayment
 );
@@ -40,6 +43,7 @@ router.post(
   '/refund',
   authenticate,
   authorize('payments.refund'),
+  checkoutLimiter,
   validate(RefundPaymentSchema),
   controller.refundPayment
 );

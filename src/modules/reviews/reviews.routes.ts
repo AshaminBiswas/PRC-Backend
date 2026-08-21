@@ -3,6 +3,10 @@ import * as controller from './reviews.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
 import {
+  formSubmissionLimiter,
+  adminLimiter,
+} from '../../middleware/rateLimit.middleware';
+import {
   CreateReviewSchema,
   UpdateReviewStatusSchema,
   ListReviewsQuerySchema,
@@ -25,6 +29,7 @@ router.get(
 router.post(
   '/',
   authenticate,
+  formSubmissionLimiter,
   validate(CreateReviewSchema),
   controller.createReview
 );
@@ -34,6 +39,7 @@ router.get(
   '/',
   authenticate,
   authorize('reviews.read', 'reviews.manage'),
+  adminLimiter,
   validate(ListReviewsQuerySchema, 'query'),
   controller.listAllReviews
 );
@@ -42,6 +48,7 @@ router.patch(
   '/:id/status',
   authenticate,
   authorize('reviews.update', 'reviews.manage'),
+  adminLimiter,
   validate(UuidParamSchema, 'params'),
   validate(UpdateReviewStatusSchema),
   controller.updateReviewStatus

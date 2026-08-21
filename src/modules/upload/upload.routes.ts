@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import * as controller from './upload.controller';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { uploadLimiter } from '../../middleware/rateLimit.middleware';
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -20,6 +21,7 @@ const upload = multer({
 const router = Router();
 
 router.use(authenticate);
+router.use(uploadLimiter);
 
 // Avatar upload (any authenticated user)
 router.post('/avatar', upload.single('file'), controller.uploadAvatar);

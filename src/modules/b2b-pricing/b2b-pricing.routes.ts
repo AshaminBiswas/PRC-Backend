@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from './b2b-pricing.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { adminLimiter } from '../../middleware/rateLimit.middleware';
 import {
   SetCustomerProductPriceSchema,
   BulkSetCustomerPricesSchema,
@@ -14,6 +15,7 @@ const router = Router();
 
 // All B2B pricing endpoints require authentication
 router.use(authenticate);
+router.use(adminLimiter);
 
 // Allow customer to view their own pricing, or staff with users.read/quotes.read
 const authorizeCustomerOrStaff = (req: any, res: any, next: any) => {

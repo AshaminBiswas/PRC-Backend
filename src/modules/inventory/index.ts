@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { adminLimiter } from '../../middleware/rateLimit.middleware';
 import dashboardRoutes from './dashboard/dashboard.routes';
 import productsRoutes from './products/products.routes';
 import stockRoutes from './stock/stock.routes';
@@ -15,6 +16,8 @@ import searchRoutes from './search/search.routes';
 import auditRoutes from './audit/audit.routes';
 
 const router = Router();
+
+router.use(adminLimiter);
 
 router.use('/dashboard', dashboardRoutes);
 router.use('/products', productsRoutes);

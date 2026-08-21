@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from './roles.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { adminLimiter } from '../../middleware/rateLimit.middleware';
 import {
   CreateRoleSchema,
   UpdateRoleSchema,
@@ -12,6 +13,7 @@ import {
 const router = Router();
 
 router.use(authenticate);
+router.use(adminLimiter);
 
 // Permissions listing (separate endpoint)
 router.get('/permissions', authorize('roles.read'), controller.listPermissions);

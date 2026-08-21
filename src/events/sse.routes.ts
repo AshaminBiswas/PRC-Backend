@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { verifyAccessToken } from '../utils/token.utils';
 import { sseService } from './sse.service';
+import { sseLimiter } from '../middleware/rateLimit.middleware';
 
 const router = Router();
 
@@ -9,7 +10,7 @@ const router = Router();
  * Real-time Server-Sent Events (SSE) Stream endpoint.
  * Supports token via Header Authorization: Bearer <token> or query param ?token=<token>
  */
-router.get('/stream', (req: Request, res: Response): any => {
+router.get('/stream', sseLimiter, (req: Request, res: Response): any => {
   let token: string | undefined;
 
   const authHeader = req.headers.authorization;

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from './logistics.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { adminLimiter } from '../../middleware/rateLimit.middleware';
 import {
   calculateLogisticsInputSchema,
   createCourierRateSchema,
@@ -10,7 +11,7 @@ import {
 
 const router = Router();
 
-// Public / Authenticated calculation endpoint
+// ─── Public / Authenticated calculation endpoint ──────────────────────────────
 router.post(
   '/calculate',
   validate(calculateLogisticsInputSchema),
@@ -21,7 +22,8 @@ router.post(
 router.get('/zones', controller.listZones);
 router.get('/rates', controller.listRates);
 
-// Admin Configuration Endpoints
+// ─── Admin Configuration Endpoints ────────────────────────────────────────────
+router.use('/admin', authenticate, adminLimiter);
 router.post(
   '/admin/shipping-rate',
   authenticate,

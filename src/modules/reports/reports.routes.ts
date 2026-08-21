@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from './reports.controller';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
 import { validate } from '../../middleware/validate.middleware';
+import { adminLimiter } from '../../middleware/rateLimit.middleware';
 import {
   SalesReportQuerySchema,
   InventoryReportQuerySchema,
@@ -10,7 +11,7 @@ import {
 } from './reports.schema';
 
 const router = Router();
-router.use(authenticate, authorize('reports.read'));
+router.use(authenticate, authorize('reports.read'), adminLimiter);
 
 router.get('/sales', validate(SalesReportQuerySchema, 'query'), controller.getSalesReport);
 router.get('/inventory', validate(InventoryReportQuerySchema, 'query'), controller.getInventoryReport);

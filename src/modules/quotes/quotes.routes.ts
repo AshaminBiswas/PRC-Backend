@@ -3,6 +3,11 @@ import * as controller from './quotes.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { authenticate, authorize, optionalAuthenticate } from '../../middleware/auth.middleware';
 import {
+  formSubmissionLimiter,
+  publicTrackingLimiter,
+  adminLimiter,
+} from '../../middleware/rateLimit.middleware';
+import {
   CreateB2BQuoteSchema,
   TrackQuoteQuerySchema,
   CustomerResponseSchema,
@@ -24,6 +29,7 @@ const router = Router();
 router.post(
   '/',
   optionalAuthenticate,
+  formSubmissionLimiter,
   validate(CreateB2BQuoteSchema),
   controller.createQuote
 );
@@ -31,6 +37,7 @@ router.post(
 // 2. Universal Tracking: Look up quotation by Reference No, Email, GSTIN, or Phone
 router.get(
   '/track',
+  publicTrackingLimiter,
   validate(TrackQuoteQuerySchema, 'query'),
   controller.trackQuotes
 );
@@ -38,6 +45,7 @@ router.get(
 // 3. View approved quotation via secure access token
 router.get(
   '/public/:token',
+  publicTrackingLimiter,
   validate(TokenParamSchema, 'params'),
   controller.getQuoteByToken
 );
@@ -45,6 +53,7 @@ router.get(
 // 3a. Customer download quotation PDF via secure access token
 router.get(
   '/public/:token/pdf',
+  publicTrackingLimiter,
   validate(TokenParamSchema, 'params'),
   controller.downloadQuotePdfByToken
 );
@@ -52,6 +61,7 @@ router.get(
 // 4. Customer accept or decline quotation via token
 router.post(
   '/public/:token/respond',
+  formSubmissionLimiter,
   validate(TokenParamSchema, 'params'),
   validate(CustomerResponseSchema),
   controller.respondToQuote
@@ -60,12 +70,14 @@ router.post(
 // 4a. Customer one-time edit / negotiate advance % via token
 router.post(
   '/public/:token/edit',
+  formSubmissionLimiter,
   validate(TokenParamSchema, 'params'),
   validate(CustomerEditQuoteSchema),
   controller.customerEditQuote
 );
 router.post(
   '/public/:token/customer-edit',
+  formSubmissionLimiter,
   validate(TokenParamSchema, 'params'),
   validate(CustomerEditQuoteSchema),
   controller.customerEditQuote
@@ -75,6 +87,7 @@ router.post(
 router.post(
   '/:id/customer-edit',
   optionalAuthenticate,
+  formSubmissionLimiter,
   validate(QuoteIdParamSchema, 'params'),
   validate(CustomerEditQuoteSchema),
   controller.customerEditQuote
@@ -83,6 +96,7 @@ router.post(
 // 5. Verify cryptographic digital signature & authenticity
 router.post(
   '/verify-signature',
+  publicTrackingLimiter,
   validate(VerifySignatureSchema),
   controller.verifySignature
 );
@@ -94,6 +108,7 @@ router.get(
   '/',
   authenticate,
   authorize('quotes.read'),
+  adminLimiter,
   validate(ListQuotesQuerySchema, 'query'),
   controller.listQuotes
 );
@@ -103,6 +118,7 @@ router.get(
   '/:id',
   authenticate,
   authorize('quotes.read'),
+  adminLimiter,
   validate(QuoteIdParamSchema, 'params'),
   controller.getQuoteById
 );
@@ -112,6 +128,7 @@ router.get(
   '/:id/pdf',
   authenticate,
   authorize('quotes.read'),
+  adminLimiter,
   validate(QuoteIdParamSchema, 'params'),
   controller.downloadQuotePdf
 );
@@ -121,6 +138,7 @@ router.patch(
   '/:id/status',
   authenticate,
   authorize('quotes.approve'),
+  adminLimiter,
   validate(QuoteIdParamSchema, 'params'),
   validate(AdminUpdateQuoteStatusSchema),
   controller.updateQuoteStatus
@@ -131,6 +149,7 @@ router.patch(
   '/:id/items',
   authenticate,
   authorize('quotes.update'),
+  adminLimiter,
   validate(QuoteIdParamSchema, 'params'),
   validate(AdminUpdateQuoteItemsSchema),
   controller.updateQuoteItems
@@ -141,6 +160,7 @@ router.post(
   '/:id/sign',
   authenticate,
   authorize('quotes.approve'),
+  adminLimiter,
   validate(QuoteIdParamSchema, 'params'),
   validate(SignQuoteSchema),
   controller.digitallySignQuote
@@ -151,6 +171,7 @@ router.delete(
   '/:id',
   authenticate,
   authorize('quotes.delete'),
+  adminLimiter,
   validate(QuoteIdParamSchema, 'params'),
   controller.deleteQuote
 );

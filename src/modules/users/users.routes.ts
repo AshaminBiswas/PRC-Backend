@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from './users.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { adminLimiter } from '../../middleware/rateLimit.middleware';
 import {
   ListUsersQuerySchema,
   CreateUserSchema,
@@ -17,6 +18,7 @@ const router = Router();
 
 // All user routes require authentication
 router.use(authenticate);
+router.use(adminLimiter);
 
 // ─── Own profile routes (must come before /:id to avoid conflicts) ────────────
 router.get('/activity', validate(ActivityQuerySchema, 'query'), controller.getUserActivity);

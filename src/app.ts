@@ -5,7 +5,7 @@ import morgan from 'morgan';
 import { morganStream } from './config/logger';
 import compression from 'compression';
 import { env } from './config/env';
-import { generalLimiter } from './middleware/rateLimit.middleware';
+import { generalLimiter, webhookLimiter } from './middleware/rateLimit.middleware';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware';
 import { serveDocsJson, serveDocsUi } from './config/swagger';
 
@@ -222,7 +222,10 @@ app.get(`${prefix}/docs-ui`, serveHtmlDocs);
 app.get(`${prefix}/docs.json`, serveDocsJson);
 app.get(`${prefix}/docs`, serveDocsUi);
 
-// ─── General Rate Limiter ──────────────────────────────────────────────────────
+// ─── Razorpay Webhooks (raw body required, high-throughput gateway limiter) ───
+app.use(`${prefix}/payments/webhook`, webhookLimiter, webhookRoutes);
+
+// ─── General Rate Limiter (Baseline fallback for all REST API routes) ────────
 app.use(generalLimiter);
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
@@ -263,9 +266,6 @@ app.use(`${prefix}/logistics`, logisticsRoutes);
 app.use(`${prefix}/invoices`, invoiceRoutes);
 app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
 app.use(`${prefix}/events`, sseRoutes);
-
-// ─── Razorpay Webhooks (raw body required) ───────────────────────────────────
-app.use(`${prefix}/payments/webhook`, webhookRoutes);
 
 // ─── Initialize Event-Driven Architecture & BullMQ Background Workers ────────
 initEventBus();

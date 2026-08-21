@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as allocationController from './allocation.controller';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { adminLimiter } from '../../middleware/rateLimit.middleware';
 
 const router = Router();
 
@@ -20,6 +21,7 @@ router.get('/pincodes/:pincode', allocationController.getPincodeDetails);
 router.get('/warehouses/nearest', allocationController.getNearestWarehouses);
 
 // ─── Admin Warehouse & Log Management Endpoints ────────────────────────────────
+router.use('/admin', authenticate, adminLimiter);
 
 router.post(
   '/pincodes',

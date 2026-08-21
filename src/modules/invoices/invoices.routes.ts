@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from './invoices.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { publicTrackingLimiter, adminLimiter } from '../../middleware/rateLimit.middleware';
 import {
   createInvoiceSchema,
   listInvoicesQuerySchema,
@@ -14,10 +15,11 @@ import {
 const router = Router();
 
 // PUBLIC Verification Endpoint (No Auth Required)
-router.get('/verify/:token', controller.verifyInvoiceTokenPublic);
+router.get('/verify/:token', publicTrackingLimiter, controller.verifyInvoiceTokenPublic);
 
 // Authenticated Routes
 router.use(authenticate);
+router.use(adminLimiter);
 
 router.post(
   '/',
