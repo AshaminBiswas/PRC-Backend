@@ -112,11 +112,26 @@ export const TokenParamSchema = z.object({
   token: z.string().min(10, 'Invalid token format'),
 });
 
+export const CustomerEditQuoteSchema = z.object({
+  advancePercentage: z
+    .number()
+    .min(0, { message: 'Advance percentage cannot be less than 0' })
+    .max(100, { message: 'Advance percentage cannot exceed 100' }),
+  remark: z
+    .string()
+    .trim()
+    .min(10, { message: 'Please provide a mandatory reason/remark of at least 10 characters' })
+    .max(1000, { message: 'Remark cannot exceed 1000 characters' }),
+  notes: z.string().max(500, { message: 'Notes cannot exceed 500 characters' }).optional().nullable(),
+});
+
 export type CreateB2BQuoteInput = z.infer<typeof CreateB2BQuoteSchema>;
 export type TrackQuoteQuery = z.infer<typeof TrackQuoteQuerySchema>;
 export type CustomerResponseInput = z.infer<typeof CustomerResponseSchema>;
+export type CustomerEditQuoteInput = z.infer<typeof CustomerEditQuoteSchema>;
 export type AdminUpdateQuoteStatusInput = z.infer<typeof AdminUpdateQuoteStatusSchema>;
 export type AdminUpdateQuoteItemsInput = z.infer<typeof AdminUpdateQuoteItemsSchema>;
 export type SignQuoteInput = z.infer<typeof SignQuoteSchema>;
 export type VerifySignatureInput = z.infer<typeof VerifySignatureSchema>;
 export type ListQuotesQuery = z.infer<typeof ListQuotesQuerySchema>;
+

@@ -56,6 +56,21 @@ export const respondToQuote = async (req: Request, res: Response, next: NextFunc
 };
 
 /**
+ * Public/B2B Customer One-Time Edit (Negotiate Advance % & Terms)
+ */
+export const customerEditQuote = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = req.params.token;
+    const id = req.params.id;
+    const userId = req.user?.id;
+    const data = await quotesService.customerEditQuote({ token, id }, req.body, userId);
+    sendSuccess(res, data, 'Your quotation revision has been submitted for admin review successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Public/Admin Signature & QR Verification
  */
 export const verifySignature = async (req: Request, res: Response, next: NextFunction) => {

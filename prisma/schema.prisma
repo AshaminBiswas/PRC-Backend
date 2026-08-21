@@ -705,29 +705,33 @@ model Quote {
   discountTotal         Decimal?    @map("discount_total") @db.Decimal(12, 2)
   taxTotal              Decimal?    @map("tax_total") @db.Decimal(12, 2)
   grandTotal            Decimal?    @map("grand_total") @db.Decimal(12, 2)
-  advancePercentage     Decimal?    @map("advance_percentage") @db.Decimal(5, 2)
-  notes                 String?     @db.VarChar(500)
-  adminNotes            String?     @map("admin_notes")
-  termsAccepted         Boolean     @default(false) @map("terms_accepted")
-  customerResponse      String      @default("pending") @map("customer_response") // 'pending' | 'accepted' | 'declined'
-  customerResponseNotes String?     @map("customer_response_notes")
-  customerResponseAt    DateTime?   @map("customer_response_at")
-  accessToken           String?     @unique @map("access_token")
-  digitalSignature      String?     @map("digital_signature")
-  signedBy              String?     @map("signed_by")
-  signedAt              DateTime?   @map("signed_at")
-  qrCodeData            String?     @map("qr_code_data")
-  validUntil            DateTime?   @map("valid_until")
-  convertedOrderId      String?     @map("converted_order_id")
-  isDeleted             Boolean     @default(false) @map("is_deleted")
-  deletedAt             DateTime?   @map("deleted_at")
-  createdAt             DateTime    @default(now()) @map("created_at")
-  updatedAt             DateTime    @updatedAt @map("updated_at")
+  advancePercentage               Decimal?            @map("advance_percentage") @db.Decimal(5, 2)
+  customerProposedAdvancePercent  Decimal?            @map("customer_proposed_advance_percent") @db.Decimal(5, 2)
+  customerEditCount               Int                 @default(0) @map("customer_edit_count")
+  customerEditRemark              String?             @map("customer_edit_remark")
+  notes                           String?             @db.VarChar(500)
+  adminNotes                      String?             @map("admin_notes")
+  termsAccepted                   Boolean             @default(false) @map("terms_accepted")
+  customerResponse                String              @default("pending") @map("customer_response") // 'pending' | 'accepted' | 'declined'
+  customerResponseNotes           String?             @map("customer_response_notes")
+  customerResponseAt              DateTime?           @map("customer_response_at")
+  accessToken                     String?             @unique @map("access_token")
+  digitalSignature                String?             @map("digital_signature")
+  signedBy                        String?             @map("signed_by")
+  signedAt                        DateTime?           @map("signed_at")
+  qrCodeData                      String?             @map("qr_code_data")
+  validUntil                      DateTime?           @map("valid_until")
+  convertedOrderId                String?             @map("converted_order_id")
+  isDeleted                       Boolean             @default(false) @map("is_deleted")
+  deletedAt                       DateTime?           @map("deleted_at")
+  createdAt                       DateTime            @default(now()) @map("created_at")
+  updatedAt                       DateTime            @updatedAt @map("updated_at")
 
   // Relations
-  user         User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user         User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
   items        QuoteItem[]
   activityLogs QuoteActivityLog[]
+  revisions    QuotationRevision[]
 
   @@index([userId])
   @@index([quoteNumber])
@@ -739,6 +743,22 @@ model Quote {
   @@index([accessToken])
   @@index([isDeleted])
   @@map("quotes")
+}
+
+model QuotationRevision {
+  id             String   @id @default(uuid())
+  quoteId        String   @map("quote_id")
+  changedBy      String   @map("changed_by") // 'CUSTOMER' | 'ADMIN'
+  changedById    String?  @map("changed_by_id")
+  previousValues Json     @map("previous_values")
+  newValues      Json     @map("new_values")
+  remark         String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId])
+  @@map("quotation_revisions")
 }
 
 model QuoteItem {

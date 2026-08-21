@@ -6,6 +6,7 @@ import {
   CreateB2BQuoteSchema,
   TrackQuoteQuerySchema,
   CustomerResponseSchema,
+  CustomerEditQuoteSchema,
   AdminUpdateQuoteStatusSchema,
   AdminUpdateQuoteItemsSchema,
   SignQuoteSchema,
@@ -54,6 +55,29 @@ router.post(
   validate(TokenParamSchema, 'params'),
   validate(CustomerResponseSchema),
   controller.respondToQuote
+);
+
+// 4a. Customer one-time edit / negotiate advance % via token
+router.post(
+  '/public/:token/edit',
+  validate(TokenParamSchema, 'params'),
+  validate(CustomerEditQuoteSchema),
+  controller.customerEditQuote
+);
+router.post(
+  '/public/:token/customer-edit',
+  validate(TokenParamSchema, 'params'),
+  validate(CustomerEditQuoteSchema),
+  controller.customerEditQuote
+);
+
+// 4b. Customer one-time edit by ID (with optional auth session)
+router.post(
+  '/:id/customer-edit',
+  optionalAuthenticate,
+  validate(QuoteIdParamSchema, 'params'),
+  validate(CustomerEditQuoteSchema),
+  controller.customerEditQuote
 );
 
 // 5. Verify cryptographic digital signature & authenticity

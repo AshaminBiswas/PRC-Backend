@@ -246,3 +246,52 @@ export const sendQuotationCustomerResponseNotification = async (ctx: QuoteEmailC
     html: baseQuotationTemplate('Customer Quotation Response', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
+
+export const sendQuotationRevisionSubmittedEmail = async (ctx: QuoteEmailContext & { proposedAdvancePercent?: number; remark?: string }): Promise<void> => {
+  const content = `
+    <h2 style="margin-top:0; color:#0f172a;">Quotation Revision Request Received</h2>
+    <p>Dear <strong>${ctx.customerName}</strong> (${ctx.companyName}),</p>
+    <p>We have received your requested revision for quotation <strong>"${ctx.projectName}"</strong>.</p>
+    
+    <div class="info-card" style="border-left-color: #f59e0b; background:#fefce8;">
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+      ${ctx.proposedAdvancePercent !== undefined ? `<p style="margin: 4px 0;"><strong>Proposed Advance Percentage:</strong> <span style="font-weight:bold; color:#b45309;">${ctx.proposedAdvancePercent}%</span></p>` : ''}
+      ${ctx.remark ? `<p style="margin: 6px 0 0 0;"><strong>Your Reason / Remark:</strong> <em>${ctx.remark}</em></p>` : ''}
+      <p style="margin: 8px 0 0 0;"><strong>Status:</strong> <span style="color:#0284c7; font-weight:bold;">Under Admin Review</span></p>
+    </div>
+
+    <p>Your quotation number <strong>${ctx.referenceNo}</strong> remains unchanged. Our commercial estimating team is reviewing your requested terms and will notify you once re-approved.</p>
+  `;
+
+  await sendMail({
+    to: ctx.to,
+    subject: `Quotation Revision Under Review - [${ctx.referenceNo}] - PRC Hardware`,
+    html: baseQuotationTemplate('Quotation Revision Received', content),
+  }).catch((err) => console.warn('[Email Warning]:', err.message));
+};
+
+export const sendQuotationRevisionAdminNotification = async (ctx: QuoteEmailContext & { proposedAdvancePercent?: number; remark?: string; previousAdvancePercent?: number }): Promise<void> => {
+  const adminEmail = process.env.ADMIN_NOTIFY_EMAIL || env.smtp.fromEmail || 'admin@pacifichardware.com';
+
+  const content = `
+    <h2 style="margin-top:0; color:#0f172a;">⚠️ Customer Requested Quotation Revision</h2>
+    <p>B2B Client <strong>${ctx.customerName}</strong> (${ctx.companyName}) has submitted their one-time revision request for quotation <strong>${ctx.referenceNo}</strong>.</p>
+    
+    <div class="info-card" style="border-left-color: #f59e0b;">
+      <p style="margin: 4px 0;"><strong>Quotation Reference:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+      <p style="margin: 4px 0;"><strong>Project Name:</strong> ${ctx.projectName}</p>
+      ${ctx.previousAdvancePercent !== undefined ? `<p style="margin: 4px 0;"><strong>Previous Advance %:</strong> ${ctx.previousAdvancePercent}%</p>` : ''}
+      ${ctx.proposedAdvancePercent !== undefined ? `<p style="margin: 4px 0;"><strong>Customer Proposed Advance %:</strong> <span style="color:#b45309; font-weight:bold; font-size:15px;">${ctx.proposedAdvancePercent}%</span></p>` : ''}
+      ${ctx.remark ? `<p style="margin: 6px 0 0 0; color:#78350f;"><strong>Customer Reason:</strong> <em>"${ctx.remark}"</em></p>` : ''}
+    </div>
+
+    <p>Please log in to the admin panel to review the customer's proposed terms and digitally sign/re-approve the quotation.</p>
+  `;
+
+  await sendMail({
+    to: adminEmail,
+    subject: `[Customer Revision Request] Quotation ${ctx.referenceNo} - ${ctx.companyName}`,
+    html: baseQuotationTemplate('Customer Revision Request', content),
+  }).catch((err) => console.warn('[Email Warning]:', err.message));
+};
+

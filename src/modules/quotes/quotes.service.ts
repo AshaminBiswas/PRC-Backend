@@ -18,11 +18,14 @@ import {
   sendQuotationApprovedEmailWithPdf,
   sendQuotationRejectedEmail,
   sendQuotationCustomerResponseNotification,
+  sendQuotationRevisionSubmittedEmail,
+  sendQuotationRevisionAdminNotification,
 } from './quotation-email.service';
 import { generateQuotationPdf } from './quotation-pdf.service';
 import { env } from '../../config/env';
 import type {
   CreateB2BQuoteInput,
+  CustomerEditQuoteInput,
   AdminUpdateQuoteStatusInput,
   AdminUpdateQuoteItemsInput,
   SignQuoteInput,
@@ -89,6 +92,9 @@ const formatQuoteItem = (item: any) => ({
 
 export const formatQuote = (q: any) => {
   if (!q) return null;
+  const editCount = q.customerEditCount !== undefined && q.customerEditCount !== null ? Number(q.customerEditCount) : 0;
+  const canCustomerEdit = q.status === 'APPROVED' && editCount === 0 && (!q.customerResponse || q.customerResponse === 'pending');
+
   return {
     id: q.id,
     quoteNumber: q.quoteNumber,
@@ -113,6 +119,13 @@ export const formatQuote = (q: any) => {
     taxTotal: q.taxTotal !== null ? Number(q.taxTotal) : Number(q.gstAmount || 0),
     grandTotal: q.grandTotal !== null ? Number(q.grandTotal) : 0,
     advancePercentage: q.advancePercentage !== null && q.advancePercentage !== undefined ? Number(q.advancePercentage) : null,
+    customerProposedAdvancePercent:
+      q.customerProposedAdvancePercent !== null && q.customerProposedAdvancePercent !== undefined
+        ? Number(q.customerProposedAdvancePercent)
+        : null,
+    customerEditCount: editCount,
+    customerEditRemark: q.customerEditRemark || null,
+    canCustomerEdit,
     notes: q.notes,
     adminNotes: q.adminNotes,
     termsAccepted: q.termsAccepted,
@@ -130,6 +143,18 @@ export const formatQuote = (q: any) => {
     updatedAt: q.updatedAt,
     items: q.items ? q.items.map(formatQuoteItem) : [],
     activityLogs: q.activityLogs || [],
+    revisions: q.revisions
+      ? q.revisions.map((r: any) => ({
+          id: r.id,
+          quoteId: r.quoteId,
+          changedBy: r.changedBy,
+          changedById: r.changedById,
+          previousValues: r.previousValues,
+          newValues: r.newValues,
+          remark: r.remark,
+          createdAt: r.createdAt,
+        }))
+      : [],
     user: q.user
       ? {
           id: q.user.id,
@@ -356,6 +381,9 @@ export const getQuoteByAccessToken = async (token: string) => {
       activityLogs: {
         orderBy: { createdAt: 'desc' },
       },
+      revisions: {
+        orderBy: { createdAt: 'desc' },
+      },
     },
   });
 
@@ -414,6 +442,9 @@ export const respondToQuoteByCustomer = async (
         include: { product: true },
       },
       activityLogs: true,
+      revisions: {
+        orderBy: { createdAt: 'desc' },
+      },
     },
   });
 
@@ -429,6 +460,154 @@ export const respondToQuoteByCustomer = async (
   });
 
   return formatQuote(updatedQuote);
+};
+
+/**
+ * 4a. Customer One-Time Edit / Advance Percentage Negotiation
+ */
+export const customerEditQuote = async (
+  identifier: { token?: string; id?: string },
+  input: CustomerEditQuoteInput,
+  userId?: string
+) => {
+  const { advancePercentage, remark, notes } = input;
+
+  return await prisma.$transaction(async (tx) => {
+    // 1. Locate quote by access token or ID
+    const quote = await tx.quote.findFirst({
+      where: {
+        ...(identifier.token ? { accessToken: identifier.token } : { id: identifier.id }),
+        isDeleted: false,
+      },
+      include: {
+        items: true,
+        revisions: true,
+      },
+    });
+
+    if (!quote) {
+      throw new AppError('NOT_FOUND', 'Quotation not found or link has expired', 404);
+    }
+
+    // 2. Validate status is APPROVED
+    if (quote.status !== QuoteStatus.APPROVED) {
+      throw new AppError(
+        'BAD_REQUEST',
+        `Only approved quotations can be revised. Current quotation status is ${quote.status}.`,
+        400
+      );
+    }
+
+    // 3. Strict One-time customer edit check (atomic enforcement)
+    if (quote.customerEditCount && quote.customerEditCount >= 1) {
+      throw new AppError(
+        'BAD_REQUEST',
+        'You have already used your one-time revision for this quotation. For further modifications, please contact support or adjust details at the time of PO submission.',
+        400
+      );
+    }
+
+    // 4. Validate customer response is still pending
+    if (quote.customerResponse && quote.customerResponse !== 'pending') {
+      throw new AppError(
+        'BAD_REQUEST',
+        `This quotation has already been ${quote.customerResponse}. Revisions cannot be submitted after a formal response.`,
+        400
+      );
+    }
+
+    const prevAdvance = quote.advancePercentage ? Number(quote.advancePercentage) : null;
+    const previousValues = {
+      status: quote.status,
+      advancePercentage: prevAdvance,
+      customerProposedAdvancePercent: quote.customerProposedAdvancePercent ? Number(quote.customerProposedAdvancePercent) : null,
+      notes: quote.notes,
+      digitalSignature: quote.digitalSignature,
+    };
+
+    const newValues = {
+      status: QuoteStatus.UNDER_REVIEW,
+      advancePercentage: prevAdvance,
+      customerProposedAdvancePercent: advancePercentage,
+      customerEditRemark: remark.trim(),
+      notes: notes !== undefined && notes !== null ? notes.trim() : quote.notes,
+    };
+
+    // 5. Create QuotationRevision log
+    await tx.quotationRevision.create({
+      data: {
+        quoteId: quote.id,
+        changedBy: 'CUSTOMER',
+        changedById: userId || quote.userId || null,
+        previousValues,
+        newValues,
+        remark: remark.trim(),
+      },
+    });
+
+    // 6. Update Quote atomically (increment customerEditCount, update status to UNDER_REVIEW, invalidate signature)
+    const updatedQuote = await tx.quote.update({
+      where: { id: quote.id },
+      data: {
+        customerProposedAdvancePercent: new Prisma.Decimal(advancePercentage),
+        customerEditCount: { increment: 1 },
+        customerEditRemark: remark.trim(),
+        status: QuoteStatus.UNDER_REVIEW,
+        statusReason: `Customer requested revision: Proposed Advance ${advancePercentage}%. Reason: ${remark.trim()}`,
+        notes: notes !== undefined && notes !== null ? notes.trim() : quote.notes,
+        digitalSignature: null,
+        signedBy: null,
+        signedAt: null,
+        qrCodeData: null,
+        activityLogs: {
+          create: {
+            changedBy: userId || quote.userId || null,
+            changeType: 'customer_edit',
+            note: `Customer requested terms revision: Proposed Advance ${advancePercentage}% (Previous: ${prevAdvance !== null ? `${prevAdvance}%` : '30%'}). Reason: "${remark.trim()}"`,
+            oldValue: previousValues,
+            newValue: newValues,
+          },
+        },
+      },
+      include: {
+        items: {
+          include: { product: true },
+        },
+        activityLogs: {
+          orderBy: { createdAt: 'desc' },
+        },
+        revisions: {
+          orderBy: { createdAt: 'desc' },
+        },
+        user: true,
+      },
+    });
+
+    // 7. Dispatch notifications
+    const customerName = `${quote.firstName || ''} ${quote.lastName || ''}`.trim() || quote.companyName || 'Valued Client';
+    const emailCtx = {
+      to: quote.email || '',
+      customerName,
+      companyName: quote.companyName || 'B2B Client',
+      referenceNo: quote.referenceNo || quote.quoteNumber,
+      projectName: quote.projectName || 'Hardware Project',
+      proposedAdvancePercent: advancePercentage,
+      previousAdvancePercent: prevAdvance !== null ? prevAdvance : 30,
+      remark: remark.trim(),
+      accessToken: quote.accessToken || undefined,
+    };
+
+    if (quote.email) {
+      sendQuotationRevisionSubmittedEmail(emailCtx).catch((err) =>
+        console.warn('[QuotesService] Revision confirmation email warning:', err)
+      );
+    }
+    sendQuotationRevisionAdminNotification(emailCtx).catch((err) =>
+      console.warn('[QuotesService] Admin revision notification warning:', err)
+    );
+
+    return formatQuote(updatedQuote);
+  });
 };
 
 /**
@@ -541,6 +720,9 @@ export const getAdminQuoteById = async (id: string) => {
               select: { id: true, email: true, firstName: true, lastName: true },
             },
           },
+          orderBy: { createdAt: 'desc' },
+        },
+        revisions: {
           orderBy: { createdAt: 'desc' },
         },
         user: true,
@@ -804,6 +986,13 @@ export const digitallySignAndApproveQuote = async (
   const verificationUrl = `${env.frontend.url}/quote/${accessToken}`;
   const qrCodeData = await generateQuotationQrCode(verificationUrl);
 
+  const finalAdvancePercent =
+    input.advancePercentage !== undefined && input.advancePercentage !== null
+      ? input.advancePercentage
+      : quote.advancePercentage
+      ? Number(quote.advancePercentage)
+      : 30;
+
   // 3. Update Quote to APPROVED with signature and QR code
   const updatedQuote = await prisma.quote.update({
     where: { id },
@@ -816,10 +1005,7 @@ export const digitallySignAndApproveQuote = async (
       subtotal: new Prisma.Decimal(basicPrice),
       taxTotal: new Prisma.Decimal(gstAmount),
       grandTotal: new Prisma.Decimal(grandTotal),
-      advancePercentage:
-        input.advancePercentage !== undefined && input.advancePercentage !== null
-          ? new Prisma.Decimal(input.advancePercentage)
-          : quote.advancePercentage,
+      advancePercentage: new Prisma.Decimal(finalAdvancePercent),
       accessToken,
       digitalSignature,
       signedBy: adminName,
@@ -829,15 +1015,47 @@ export const digitallySignAndApproveQuote = async (
     },
     include: {
       items: { include: { product: true } },
+      activityLogs: { orderBy: { createdAt: 'desc' } },
+      revisions: { orderBy: { createdAt: 'desc' } },
+      user: true,
     },
   });
+
+  // If customer had submitted a proposed advance %, log the admin acceptance in revisions
+  if (quote.customerProposedAdvancePercent !== null && quote.customerProposedAdvancePercent !== undefined) {
+    try {
+      await prisma.quotationRevision.create({
+        data: {
+          quoteId: id,
+          changedBy: 'ADMIN',
+          changedById: admin.id,
+          previousValues: {
+            status: quote.status,
+            advancePercentage: quote.advancePercentage ? Number(quote.advancePercentage) : null,
+            customerProposedAdvancePercent: Number(quote.customerProposedAdvancePercent),
+            customerEditRemark: quote.customerEditRemark,
+          },
+          newValues: {
+            status: QuoteStatus.APPROVED,
+            advancePercentage: finalAdvancePercent,
+            grandTotal,
+            signedBy: adminName,
+            signedAt,
+          },
+          remark: `Quotation approved and digitally signed with ${finalAdvancePercent}% advance payment terms by ${adminName}.`,
+        },
+      });
+    } catch (revErr) {
+      console.warn('[QuotesService] Non-critical approval revision log not saved:', revErr);
+    }
+  }
 
   safeLogActivity({
     quoteId: id,
     changedBy: admin.id,
     changeType: 'signed',
-    note: `Quotation digitally signed and approved by ${adminName}. Grand Total: ₹${grandTotal.toLocaleString('en-IN')}`,
-    newValue: { digitalSignature, signedBy: adminName, signedAt, grandTotal },
+    note: `Quotation digitally signed and approved by ${adminName}. Advance Terms: ${finalAdvancePercent}%, Grand Total: ₹${grandTotal.toLocaleString('en-IN')}`,
+    newValue: { digitalSignature, signedBy: adminName, signedAt, grandTotal, advancePercentage: finalAdvancePercent },
   });
 
   // 4. Generate PDF and send approval email with PDF attachment (non-blocking)
