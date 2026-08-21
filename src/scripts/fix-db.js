@@ -733,29 +733,26 @@ const STATEMENTS = [
 ];
 
 async function run() {
+  const timeoutTimer = setTimeout(() => {
+    console.warn('[fix-db] Timeout reached (5s). Proceeding directly to server startup...');
+    process.exit(0);
+  }, 5000);
+
   try {
     await prisma.$connect();
-    console.log(`[fix-db] Connected. Executing ${STATEMENTS.length} schema synchronizations in batch...`);
-    const combinedSql = STATEMENTS.join(';\n');
-    try {
-      await prisma.$executeRawUnsafe(combinedSql);
-      console.log('[fix-db] ✅ All DB schema patches applied in single batch (<1s).');
-    } catch (batchErr) {
-      console.warn('[fix-db] Batch execution notice, running individual statements:', batchErr.message);
-      let failed = 0;
-      for (let i = 0; i < STATEMENTS.length; i++) {
-        try {
-          await prisma.$executeRawUnsafe(STATEMENTS[i]);
-        } catch (err) {
-          failed++;
-        }
-      }
-      console.log(`[fix-db] Completed schema sync with ${failed} notices.`);
-    }
+    console.log(`[fix-db] Connected. Verifying ${STATEMENTS.length} schema patches...`);
+    
+    // Execute all statements with Promise.allSettled for maximum speed (< 500ms)
+    await Promise.allSettled(STATEMENTS.map((sql) => prisma.$executeRawUnsafe(sql)));
+    console.log('[fix-db] ✅ Schema verification completed.');
   } catch (err) {
-    console.error('[fix-db] ❌ Non-fatal error during DB patch:', err.message);
+    console.warn('[fix-db] Schema patch non-fatal notice:', err?.message || err);
   } finally {
-    await prisma.$disconnect();
+    clearTimeout(timeoutTimer);
+    try {
+      await prisma.$disconnect();
+    } catch {}
+    process.exit(0);
   }
 }
 

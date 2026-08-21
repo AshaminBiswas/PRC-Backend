@@ -45,7 +45,6 @@
     "express": "^4.21.1",
     "express-rate-limit": "^8.6.2",
     "helmet": "^8.0.0",
-    "imagekit": "^6.0.0",
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
