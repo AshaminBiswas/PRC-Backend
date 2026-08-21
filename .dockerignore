@@ -1,7 +1,12 @@
 node_modules
 dist
+npm-debug.log*
 .git
-api-test-server.log
-api-test-server.err.log
-postman/api-smoke-test-report.json
+.gitignore
 .env
+.env.*
+*.md
+.vscode
+coverage
+tests
+*.log
