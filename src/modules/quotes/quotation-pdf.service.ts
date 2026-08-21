@@ -2,11 +2,12 @@
  * quotation-pdf.service.ts
  *
  * Production-grade PDF generation for B2B Quotations using pdfmake.
- * Customizations as requested:
- * - Crisp solid black borders across the Quotation item list page (Page 1).
+ * Refined styling:
+ * - Balanced, elegant thin borders (0.5pt / 0.75pt) using dark slate (#1e293b / #cbd5e1) without heavy black lines.
+ * - Selective emphasis: Deep navy table headers, amber accents, and clean structural framing.
  * - Website color combination: Warm Amber Gold (#d97706 / #f59e0b) and Deep Obsidian Navy (#0f172a).
  * - Real vector SVG icons for all markers, contacts, and badges.
- * - Terms & Conditions (Page 2): Completely borderless (no card borders) with increased, highly legible font sizes.
+ * - Terms & Conditions (Page 2): Completely borderless with increased, highly legible font sizes.
  */
 
 import path from 'path';
@@ -37,7 +38,9 @@ const AMBER = '#f59e0b';
 const AMBER_DARK = '#d97706';
 const GREEN = '#047857';
 const LIGHT_BG = '#f8fafc';
-const BORDER_BLACK = '#000000';
+const BORDER_DARK = '#1e293b';
+const BORDER_LIGHT = '#cbd5e1';
+const BORDER_SUBTLE = '#e2e8f0';
 const GRAY = '#475569';
 const DARK_GRAY = '#1e293b';
 
@@ -66,9 +69,9 @@ const ICONS = {
   docRef: (color = GRAY) =>
     `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`,
   signatureSvg: `
-    <svg viewBox="0 0 110 32" fill="none" stroke="#0f172a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <svg viewBox="0 0 110 32" fill="none" stroke="#0f172a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M6 24 C 14 6, 18 4, 26 21 C 30 28, 36 8, 44 16 C 52 24, 58 6, 68 20 C 76 12, 86 16, 98 22" />
-      <line x1="2" y1="30" x2="108" y2="30" stroke="#000000" stroke-width="1" />
+      <line x1="2" y1="30" x2="108" y2="30" stroke="#94a3b8" stroke-width="0.75" />
     </svg>`,
 };
 
@@ -186,9 +189,9 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
     advanceAmount !== null ? Math.round((grandTotal - advanceAmount) * 100) / 100 : null;
   const isAccepted = quote.customerResponse === 'accepted';
 
-  // ── Line Items Table with Black Borders ──────────────────────────────────────
+  // ── Line Items Table ─────────────────────────────────────────────────────────
   const tableBody: TableCell[][] = [
-    // Deep Navy Header Row with Crisp White Text
+    // Deep Navy Header Row matching reference design
     [
       makeCell('SL.', { bold: true, align: 'center', color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
       makeCell('DESCRIPTION / PRODUCT', { bold: true, color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
@@ -311,8 +314,8 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               y1: 0,
               x2: 561,
               y2: 0,
-              lineWidth: 0.75,
-              lineColor: BORDER_BLACK,
+              lineWidth: 0.5,
+              lineColor: BORDER_LIGHT,
             },
           ],
           margin: [0, 0, 0, 5],
@@ -360,7 +363,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                 },
               ],
             },
-            // Page Number Pill with Solid Black Border
+            // Page Number Pill
             {
               width: '6%',
               table: {
@@ -380,10 +383,10 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                 ],
               },
               layout: {
-                hLineColor: () => BORDER_BLACK,
-                vLineColor: () => BORDER_BLACK,
-                hLineWidth: () => 0.75,
-                vLineWidth: () => 0.75,
+                hLineColor: () => BORDER_LIGHT,
+                vLineColor: () => BORDER_LIGHT,
+                hLineWidth: () => 0.5,
+                vLineWidth: () => 0.5,
               },
             },
           ],
@@ -394,7 +397,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
 
     content: [
       // ═════════════════════════════════════════════════════════════════════════
-      // ─── PAGE 1: COMMERCIAL QUOTATION (BLACK BORDERS + WEBSITE AMBER) ────────
+      // ─── PAGE 1: COMMERCIAL QUOTATION (BALANCED ELEGANT BORDERS) ─────────────
       // ═════════════════════════════════════════════════════════════════════════
 
       // ── Top Header: Brand Left & Contact Info Right ─────────────────────────
@@ -457,11 +460,11 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
 
       // ── Website Amber Accent Underline ───────────────────────────────────────
       {
-        canvas: [{ type: 'rect', x: 0, y: 0, w: 527, h: 2, color: AMBER }],
+        canvas: [{ type: 'rect', x: 0, y: 0, w: 527, h: 1.6, color: AMBER }],
         margin: [0, 0, 0, 9],
       },
 
-      // ── QUOTATION Title & Quote No Pill Row (Solid Black Border) ─────────────
+      // ── QUOTATION Title & Quote No Pill Row ──────────────────────────────────
       {
         columns: [
           // Left: QUOTATION
@@ -474,7 +477,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
             width: '*',
             margin: [0, 2, 0, 0],
           },
-          // Right: QUOTE NO. Badge with Solid Black Border & Amber Accent
+          // Right: QUOTE NO. Badge with Crisp Frame
           {
             width: 175,
             table: {
@@ -503,17 +506,17 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               ],
             },
             layout: {
-              hLineColor: () => BORDER_BLACK,
-              vLineColor: () => BORDER_BLACK,
-              hLineWidth: () => 1,
-              vLineWidth: () => 1,
+              hLineColor: () => BORDER_DARK,
+              vLineColor: () => BORDER_DARK,
+              hLineWidth: () => 0.75,
+              vLineWidth: () => 0.75,
             },
           },
         ],
         margin: [0, 0, 0, 8],
       },
 
-      // ── 3-Column Metadata Strip (Solid Black Borders) ────────────────────────
+      // ── 3-Column Metadata Strip (Fine 0.5pt Border) ──────────────────────────
       {
         table: {
           widths: ['33.33%', '33.33%', '33.34%'],
@@ -522,7 +525,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               // Date with Calendar SVG Icon
               {
                 columns: [
-                  { svg: ICONS.calendar(AMBER_DARK), width: 14, height: 14, margin: [0, 2, 0, 0] },
+                  { svg: ICONS.calendar(AMBER_DARK), width: 13, height: 13, margin: [0, 2, 0, 0] },
                   {
                     stack: [
                       { text: 'DATE', fontSize: 7, bold: true, color: GRAY },
@@ -536,7 +539,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               // Financial Year with Clock/Calendar SVG Icon
               {
                 columns: [
-                  { svg: ICONS.clock(AMBER_DARK), width: 14, height: 14, margin: [0, 2, 0, 0] },
+                  { svg: ICONS.clock(AMBER_DARK), width: 13, height: 13, margin: [0, 2, 0, 0] },
                   {
                     stack: [
                       { text: 'FINANCIAL YEAR', fontSize: 7, bold: true, color: GRAY },
@@ -550,7 +553,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               // Valid Until with Clock SVG Icon
               {
                 columns: [
-                  { svg: ICONS.clock(AMBER_DARK), width: 14, height: 14, margin: [0, 2, 0, 0] },
+                  { svg: ICONS.clock(AMBER_DARK), width: 13, height: 13, margin: [0, 2, 0, 0] },
                   {
                     stack: [
                       { text: 'VALID UNTIL', fontSize: 7, bold: true, color: GRAY },
@@ -571,18 +574,18 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         },
         layout: {
           defaultBorder: true,
-          hLineColor: () => BORDER_BLACK,
-          vLineColor: () => BORDER_BLACK,
-          hLineWidth: () => 1,
-          vLineWidth: () => 1,
+          hLineColor: () => BORDER_LIGHT,
+          vLineColor: () => BORDER_LIGHT,
+          hLineWidth: () => 0.5,
+          vLineWidth: () => 0.5,
         },
         margin: [0, 0, 0, 9],
       },
 
-      // ── BILL TO & PROJECT DETAILS (Solid Black Borders) ──────────────────────
+      // ── BILL TO & PROJECT DETAILS (Fine 0.5pt Border) ────────────────────────
       {
         columns: [
-          // Left: BILL TO Card with Real User Icon
+          // Left: BILL TO Card
           {
             width: '49%',
             table: {
@@ -616,15 +619,15 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               ],
             },
             layout: {
-              hLineColor: () => BORDER_BLACK,
-              vLineColor: () => BORDER_BLACK,
-              hLineWidth: () => 1,
-              vLineWidth: () => 1,
+              hLineColor: () => BORDER_LIGHT,
+              vLineColor: () => BORDER_LIGHT,
+              hLineWidth: () => 0.5,
+              vLineWidth: () => 0.5,
             },
           },
           // Spacer
           { width: '2%', text: '' },
-          // Right: PROJECT DETAILS Card with Real Project Icon
+          // Right: PROJECT DETAILS Card
           {
             width: '49%',
             table: {
@@ -686,10 +689,10 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               ],
             },
             layout: {
-              hLineColor: () => BORDER_BLACK,
-              vLineColor: () => BORDER_BLACK,
-              hLineWidth: () => 1,
-              vLineWidth: () => 1,
+              hLineColor: () => BORDER_LIGHT,
+              vLineColor: () => BORDER_LIGHT,
+              hLineWidth: () => 0.5,
+              vLineWidth: () => 0.5,
             },
           },
         ],
@@ -705,7 +708,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         margin: [0, 0, 0, 4],
       },
 
-      // ── Line Items Table (Solid Black Outer and Inner Borders) ───────────────
+      // ── Line Items Table (Clean 0.5pt subtle row dividers) ───────────────────
       {
         table: {
           headerRows: 1,
@@ -713,10 +716,10 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
           body: tableBody,
         },
         layout: {
-          hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 1.2 : 0.8),
-          vLineWidth: () => 0.8,
-          hLineColor: () => BORDER_BLACK,
-          vLineColor: () => BORDER_BLACK,
+          hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0.75 : 0.5),
+          vLineWidth: () => 0.5,
+          hLineColor: (i: number, node: any) => (i === 0 || i === node.table.body.length ? BORDER_DARK : BORDER_SUBTLE),
+          vLineColor: () => BORDER_SUBTLE,
         },
         margin: [0, 0, 0, 9],
       },
@@ -728,7 +731,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
           {
             width: '*',
             stack: [
-              // Digital Signature Box with Solid Black Border
+              // Digital Signature Box with Crisp 0.75pt Frame
               {
                 table: {
                   widths: ['*'],
@@ -764,10 +767,10 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                   ],
                 },
                 layout: {
-                  hLineColor: () => BORDER_BLACK,
-                  vLineColor: () => BORDER_BLACK,
-                  hLineWidth: () => 1,
-                  vLineWidth: () => 1,
+                  hLineColor: () => BORDER_DARK,
+                  vLineColor: () => BORDER_DARK,
+                  hLineWidth: () => 0.75,
+                  vLineWidth: () => 0.75,
                 },
               },
               // Signatory & Callout Row
@@ -782,7 +785,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                       { text: 'PRC Hardware', fontSize: 8, bold: true, color: NAVY },
                     ],
                   },
-                  // Official Notice Card with Solid Black Border
+                  // Official Notice Card with Fine 0.5pt Border
                   {
                     width: '*',
                     table: {
@@ -791,7 +794,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                         [
                           {
                             columns: [
-                              { svg: ICONS.mail(AMBER_DARK), width: 15, height: 15, margin: [0, 2, 0, 0] },
+                              { svg: ICONS.mail(AMBER_DARK), width: 14, height: 14, margin: [0, 2, 0, 0] },
                               {
                                 text: 'This quotation is an official commercial offer generated by Pacific Products and Solutions.',
                                 fontSize: 6.8,
@@ -808,10 +811,10 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                       ],
                     },
                     layout: {
-                      hLineColor: () => BORDER_BLACK,
-                      vLineColor: () => BORDER_BLACK,
-                      hLineWidth: () => 0.8,
-                      vLineWidth: () => 0.8,
+                      hLineColor: () => BORDER_LIGHT,
+                      vLineColor: () => BORDER_LIGHT,
+                      hLineWidth: () => 0.5,
+                      vLineWidth: () => 0.5,
                     },
                     margin: [8, 6, 0, 0],
                   },
@@ -823,7 +826,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
           // Spacer
           { width: 10, text: '' },
 
-          // Right: Pricing Summary Table with Solid Black Borders
+          // Right: Pricing Summary Table with Clean 0.5pt Borders
           {
             width: 235,
             table: {
@@ -915,10 +918,10 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               ],
             },
             layout: {
-              hLineColor: () => BORDER_BLACK,
-              vLineColor: () => BORDER_BLACK,
-              hLineWidth: () => 0.8,
-              vLineWidth: () => 0.8,
+              hLineColor: () => BORDER_LIGHT,
+              vLineColor: () => BORDER_LIGHT,
+              hLineWidth: () => 0.5,
+              vLineWidth: () => 0.5,
             },
           },
         ],
@@ -926,7 +929,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
       },
 
       // ═════════════════════════════════════════════════════════════════════════
-      // ─── PAGE 2: GENERAL TERMS & CONDITIONS (BORDERLESS + LARGER FONTS) ──────
+      // ─── PAGE 2: GENERAL TERMS & CONDITIONS (BORDERLESS + CLEAN TYPOGRAPHY) ──
       // ═════════════════════════════════════════════════════════════════════════
       {
         text: 'GENERAL TERMS & CONDITIONS',
@@ -940,11 +943,11 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         margin: [0, 0, 0, 8],
       },
       {
-        canvas: [{ type: 'rect', x: 0, y: 0, w: 527, h: 2, color: AMBER }],
+        canvas: [{ type: 'rect', x: 0, y: 0, w: 527, h: 1.6, color: AMBER }],
         margin: [0, 0, 0, 12],
       },
 
-      // ── 1. Specifications Required for Production (Borderless) ──
+      // ── 1. Specifications Required for Production (Clean Borderless) ──
       { text: '1. SPECIFICATIONS REQUIRED FOR PRODUCTION', style: 'termsSectionHeader' },
       {
         text: 'The following technical parameters and approvals are strictly required prior to commencing manufacturing:',
@@ -961,7 +964,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         margin: [0, 0, 0, 10],
       },
 
-      // ── 2. Commercial & Operational Terms (Borderless) ──
+      // ── 2. Commercial & Operational Terms (Clean Borderless) ──
       { text: '2. OTHER TERMS & CONDITIONS', style: 'termsSectionHeader' },
       {
         ol: [
@@ -980,7 +983,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         margin: [0, 0, 0, 10],
       },
 
-      // ── 3. Payment Terms for Supply (Borderless) ──
+      // ── 3. Payment Terms for Supply (Clean Borderless) ──
       { text: '3. PAYMENT TERMS FOR SUPPLY', style: 'termsSectionHeader' },
       {
         ol: [
@@ -993,7 +996,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         margin: [0, 0, 0, 10],
       },
 
-      // ── 4. Special Note: Site Hold & Payment Policy (Borderless) ──
+      // ── 4. Special Note: Site Hold & Payment Policy (Clean Borderless) ──
       { text: '4. SPECIAL NOTE (SITE DELAY & PAYMENT LIABILITY)', style: 'termsSectionHeader', color: AMBER_DARK },
       {
         text: 'If your site gets prolonged or is put on hold for whatever reason for more than 30 days from the date of delivery of material at your site, then we will be liable for 100% payment against material. You cannot delay our payment on account of unfinished project. However we will extend all help in installation etc. when you are ready for the same & we will provide you back up for the quality assurance therefore please do not hold back our payment for any reason in the interest of speedy supply to you.',
@@ -1001,7 +1004,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         margin: [0, 0, 0, 10],
       },
 
-      // ── 5. Delivery & 6. Statutory Compliance (Borderless Columns) ──
+      // ── 5. Delivery & 6. Statutory Compliance (Clean Borderless Columns) ──
       {
         columns: [
           // Delivery
@@ -1049,7 +1052,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
             width: '48%',
             stack: [
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 1, lineColor: BORDER_BLACK }],
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
                 margin: [0, 16, 0, 4],
               },
               {
@@ -1075,7 +1078,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
             width: '48%',
             stack: [
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 1, lineColor: BORDER_BLACK }],
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
                 margin: [0, 16, 0, 4],
               },
               {
