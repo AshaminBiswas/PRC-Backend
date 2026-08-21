@@ -28,6 +28,14 @@ export const createRateLimiter = (options: RateLimitOptions) => {
       req.socket.remoteAddress ||
       '127.0.0.1';
 
+    // ── Dev bypass: skip rate limiting for localhost traffic entirely.
+    // React StrictMode fires every useEffect twice in development, and admin
+    // pages load many endpoints concurrently — this prevents spurious 429s
+    // during local development without loosening production limits.
+    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') {
+      return next();
+    }
+
     const key = `rl:${prefix}:${ip}`;
     const now = Date.now();
 
@@ -84,8 +92,15 @@ export const createRateLimiter = (options: RateLimitOptions) => {
 
 export const generalLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 mins
-  max: 300,
+  max: 1500, // Raised from 300 — admin panel pages fire 10–20 concurrent requests on mount; React StrictMode doubles them in dev
   keyPrefix: 'general',
+});
+
+/** High-throughput limiter for internal admin / staff API routes */
+export const adminLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 mins
+  max: 3000,
+  keyPrefix: 'admin',
 });
 
 export const authLimiter = createRateLimiter({

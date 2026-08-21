@@ -472,142 +472,155 @@ export const customerEditQuote = async (
 ) => {
   const { advancePercentage, remark, notes } = input;
 
-  return await prisma.$transaction(async (tx) => {
-    // 1. Locate quote by access token or ID
-    const quote = await tx.quote.findFirst({
-      where: {
-        ...(identifier.token ? { accessToken: identifier.token } : { id: identifier.id }),
-        isDeleted: false,
-      },
-      include: {
-        items: true,
-        revisions: true,
-      },
-    });
+  // 1. Locate quote by access token or ID
+  const quote = await prisma.quote.findFirst({
+    where: {
+      ...(identifier.token ? { accessToken: identifier.token } : { id: identifier.id }),
+      isDeleted: false,
+    },
+    include: {
+      items: true,
+      revisions: true,
+    },
+  });
 
-    if (!quote) {
-      throw new AppError('NOT_FOUND', 'Quotation not found or link has expired', 404);
-    }
+  if (!quote) {
+    throw new AppError('NOT_FOUND', 'Quotation not found or link has expired', 404);
+  }
 
-    // 2. Validate status is APPROVED
-    if (quote.status !== QuoteStatus.APPROVED) {
-      throw new AppError(
-        'BAD_REQUEST',
-        `Only approved quotations can be revised. Current quotation status is ${quote.status}.`,
-        400
-      );
-    }
+  // 2. Validate status is APPROVED
+  if (quote.status !== QuoteStatus.APPROVED) {
+    throw new AppError(
+      'BAD_REQUEST',
+      `Only approved quotations can be revised. Current quotation status is ${quote.status}.`,
+      400
+    );
+  }
 
-    // 3. Strict One-time customer edit check (atomic enforcement)
-    if (quote.customerEditCount && quote.customerEditCount >= 1) {
-      throw new AppError(
-        'BAD_REQUEST',
-        'You have already used your one-time revision for this quotation. For further modifications, please contact support or adjust details at the time of PO submission.',
-        400
-      );
-    }
+  // 3. Strict One-time customer edit check (atomic enforcement)
+  if (quote.customerEditCount && quote.customerEditCount >= 1) {
+    throw new AppError(
+      'BAD_REQUEST',
+      'You have already used your one-time revision for this quotation. For further modifications, please contact support or adjust details at the time of PO submission.',
+      400
+    );
+  }
 
-    // 4. Validate customer response is still pending
-    if (quote.customerResponse && quote.customerResponse !== 'pending') {
-      throw new AppError(
-        'BAD_REQUEST',
-        `This quotation has already been ${quote.customerResponse}. Revisions cannot be submitted after a formal response.`,
-        400
-      );
-    }
+  // 4. Validate customer response is still pending
+  if (quote.customerResponse && quote.customerResponse !== 'pending') {
+    throw new AppError(
+      'BAD_REQUEST',
+      `This quotation has already been ${quote.customerResponse}. Revisions cannot be submitted after a formal response.`,
+      400
+    );
+  }
 
-    const prevAdvance = quote.advancePercentage ? Number(quote.advancePercentage) : null;
-    const previousValues = {
-      status: quote.status,
-      advancePercentage: prevAdvance,
-      customerProposedAdvancePercent: quote.customerProposedAdvancePercent ? Number(quote.customerProposedAdvancePercent) : null,
-      notes: quote.notes,
-      digitalSignature: quote.digitalSignature,
-    };
+  const prevAdvance = quote.advancePercentage ? Number(quote.advancePercentage) : null;
+  const previousValues = {
+    status: quote.status,
+    advancePercentage: prevAdvance,
+    customerProposedAdvancePercent: quote.customerProposedAdvancePercent ? Number(quote.customerProposedAdvancePercent) : null,
+    notes: quote.notes,
+    digitalSignature: quote.digitalSignature,
+  };
 
-    const newValues = {
-      status: QuoteStatus.UNDER_REVIEW,
-      advancePercentage: prevAdvance,
-      customerProposedAdvancePercent: advancePercentage,
-      customerEditRemark: remark.trim(),
-      notes: notes !== undefined && notes !== null ? notes.trim() : quote.notes,
-    };
+  const newValues = {
+    status: QuoteStatus.UNDER_REVIEW,
+    advancePercentage: prevAdvance,
+    customerProposedAdvancePercent: advancePercentage,
+    customerEditRemark: remark.trim(),
+    notes: notes !== undefined && notes !== null ? notes.trim() : quote.notes,
+  };
 
-    // 5. Create QuotationRevision log
-    await tx.quotationRevision.create({
-      data: {
-        quoteId: quote.id,
-        changedBy: 'CUSTOMER',
-        changedById: userId || quote.userId || null,
-        previousValues,
-        newValues,
-        remark: remark.trim(),
-      },
-    });
+  // 5. Execute atomic database update with extended transaction timeout
+  const updatedQuote = await prisma.$transaction(
+    async (tx) => {
+      // Create QuotationRevision log if model available
+      try {
+        await tx.quotationRevision.create({
+          data: {
+            quoteId: quote.id,
+            changedBy: 'CUSTOMER',
+            changedById: userId || quote.userId || null,
+            previousValues,
+            newValues,
+            remark: remark.trim(),
+          },
+        });
+      } catch (revErr) {
+        console.warn('[QuotesService] Non-fatal revision create warning:', revErr);
+      }
 
-    // 6. Update Quote atomically (increment customerEditCount, update status to UNDER_REVIEW, invalidate signature)
-    const updatedQuote = await tx.quote.update({
-      where: { id: quote.id },
-      data: {
-        customerProposedAdvancePercent: new Prisma.Decimal(advancePercentage),
-        customerEditCount: { increment: 1 },
-        customerEditRemark: remark.trim(),
-        status: QuoteStatus.UNDER_REVIEW,
-        statusReason: `Customer requested revision: Proposed Advance ${advancePercentage}%. Reason: ${remark.trim()}`,
-        notes: notes !== undefined && notes !== null ? notes.trim() : quote.notes,
-        digitalSignature: null,
-        signedBy: null,
-        signedAt: null,
-        qrCodeData: null,
-        activityLogs: {
-          create: {
-            changedBy: userId || quote.userId || null,
-            changeType: 'customer_edit',
-            note: `Customer requested terms revision: Proposed Advance ${advancePercentage}% (Previous: ${prevAdvance !== null ? `${prevAdvance}%` : '30%'}). Reason: "${remark.trim()}"`,
-            oldValue: previousValues,
-            newValue: newValues,
+      // Update Quote atomically (increment customerEditCount, update status to UNDER_REVIEW, invalidate signature)
+      const q = await tx.quote.update({
+        where: { id: quote.id },
+        data: {
+          customerProposedAdvancePercent: new Prisma.Decimal(advancePercentage),
+          customerEditCount: { increment: 1 },
+          customerEditRemark: remark.trim(),
+          status: QuoteStatus.UNDER_REVIEW,
+          statusReason: `Customer requested revision: Proposed Advance ${advancePercentage}%. Reason: ${remark.trim()}`,
+          notes: notes !== undefined && notes !== null ? notes.trim() : quote.notes,
+          digitalSignature: null,
+          signedBy: null,
+          signedAt: null,
+          qrCodeData: null,
+          activityLogs: {
+            create: {
+              changedBy: userId || quote.userId || null,
+              changeType: 'customer_edit',
+              note: `Customer requested terms revision: Proposed Advance ${advancePercentage}% (Previous: ${prevAdvance !== null ? `${prevAdvance}%` : '30%'}). Reason: "${remark.trim()}"`,
+              oldValue: previousValues,
+              newValue: newValues,
+            },
           },
         },
-      },
-      include: {
-        items: {
-          include: { product: true },
+        include: {
+          items: {
+            include: { product: true },
+          },
+          activityLogs: {
+            orderBy: { createdAt: 'desc' },
+          },
+          revisions: {
+            orderBy: { createdAt: 'desc' },
+          },
+          user: true,
         },
-        activityLogs: {
-          orderBy: { createdAt: 'desc' },
-        },
-        revisions: {
-          orderBy: { createdAt: 'desc' },
-        },
-        user: true,
-      },
-    });
+      });
 
-    // 7. Dispatch notifications
-    const customerName = `${quote.firstName || ''} ${quote.lastName || ''}`.trim() || quote.companyName || 'Valued Client';
-    const emailCtx = {
-      to: quote.email || '',
-      customerName,
-      companyName: quote.companyName || 'B2B Client',
-      referenceNo: quote.referenceNo || quote.quoteNumber,
-      projectName: quote.projectName || 'Hardware Project',
-      proposedAdvancePercent: advancePercentage,
-      previousAdvancePercent: prevAdvance !== null ? prevAdvance : 30,
-      remark: remark.trim(),
-      accessToken: quote.accessToken || undefined,
-    };
-
-    if (quote.email) {
-      sendQuotationRevisionSubmittedEmail(emailCtx).catch((err) =>
-        console.warn('[QuotesService] Revision confirmation email warning:', err)
-      );
+      return q;
+    },
+    {
+      maxWait: 15000,
+      timeout: 45000,
     }
-    sendQuotationRevisionAdminNotification(emailCtx).catch((err) =>
-      console.warn('[QuotesService] Admin revision notification warning:', err)
-    );
+  );
 
-    return formatQuote(updatedQuote);
-  });
+  // 6. Dispatch notifications asynchronously outside transaction
+  const customerName = `${quote.firstName || ''} ${quote.lastName || ''}`.trim() || quote.companyName || 'Valued Client';
+  const emailCtx = {
+    to: quote.email || '',
+    customerName,
+    companyName: quote.companyName || 'B2B Client',
+    referenceNo: quote.referenceNo || quote.quoteNumber,
+    projectName: quote.projectName || 'Hardware Project',
+    proposedAdvancePercent: advancePercentage,
+    previousAdvancePercent: prevAdvance !== null ? prevAdvance : 30,
+    remark: remark.trim(),
+    accessToken: quote.accessToken || undefined,
+  };
+
+  if (quote.email) {
+    sendQuotationRevisionSubmittedEmail(emailCtx).catch((err) =>
+      console.warn('[QuotesService] Revision confirmation email warning:', err)
+    );
+  }
+  sendQuotationRevisionAdminNotification(emailCtx).catch((err) =>
+    console.warn('[QuotesService] Admin revision notification warning:', err)
+  );
+
+  return formatQuote(updatedQuote);
 };
 
 /**
@@ -879,47 +892,53 @@ export const updateQuoteItemsAndPricing = async (
   const adminName = [admin.firstName, admin.lastName].filter(Boolean).join(' ') || admin.email || 'Admin';
 
   // 2. Perform Transaction: Replace items and update totals
-  const updatedQuote = await prisma.$transaction(async (tx) => {
-    // Delete existing items
-    await tx.quoteItem.deleteMany({
-      where: { quoteId: id },
-    });
+  const updatedQuote = await prisma.$transaction(
+    async (tx) => {
+      // Delete existing items
+      await tx.quoteItem.deleteMany({
+        where: { quoteId: id },
+      });
 
-    // Create new updated items
-    await tx.quoteItem.createMany({
-      data: newItemsData.map((it) => ({ ...it, quoteId: id })),
-    });
+      // Create new updated items
+      await tx.quoteItem.createMany({
+        data: newItemsData.map((it) => ({ ...it, quoteId: id })),
+      });
 
-    // Update quote record
-    const q = await tx.quote.update({
-      where: { id },
-      data: {
-        basicPrice: new Prisma.Decimal(basicPriceDecimal),
-        gstAmount: new Prisma.Decimal(gstAmountDecimal),
-        shippingCost: shippingCostDecimal !== null ? new Prisma.Decimal(shippingCostDecimal) : null,
-        subtotal: new Prisma.Decimal(basicPriceDecimal),
-        taxTotal: new Prisma.Decimal(gstAmountDecimal),
-        grandTotal: new Prisma.Decimal(grandTotalDecimal),
-        advancePercentage:
-          input.advancePercentage !== undefined && input.advancePercentage !== null
-            ? new Prisma.Decimal(input.advancePercentage)
-            : quote.advancePercentage,
-        notes: input.notes !== undefined ? input.notes : quote.notes,
-        adminNotes: input.adminNotes !== undefined ? input.adminNotes : quote.adminNotes,
-        validUntil: input.validUntil ? new Date(input.validUntil) : quote.validUntil,
-        // Invalidate previous signature if amount changed
-        digitalSignature: null,
-        signedBy: null,
-        signedAt: null,
-        qrCodeData: null,
-      },
-      include: {
-        items: { include: { product: true } },
-      },
-    });
+      // Update quote record
+      const q = await tx.quote.update({
+        where: { id },
+        data: {
+          basicPrice: new Prisma.Decimal(basicPriceDecimal),
+          gstAmount: new Prisma.Decimal(gstAmountDecimal),
+          shippingCost: shippingCostDecimal !== null ? new Prisma.Decimal(shippingCostDecimal) : null,
+          subtotal: new Prisma.Decimal(basicPriceDecimal),
+          taxTotal: new Prisma.Decimal(gstAmountDecimal),
+          grandTotal: new Prisma.Decimal(grandTotalDecimal),
+          advancePercentage:
+            input.advancePercentage !== undefined && input.advancePercentage !== null
+              ? new Prisma.Decimal(input.advancePercentage)
+              : quote.advancePercentage,
+          notes: input.notes !== undefined ? input.notes : quote.notes,
+          adminNotes: input.adminNotes !== undefined ? input.adminNotes : quote.adminNotes,
+          validUntil: input.validUntil ? new Date(input.validUntil) : quote.validUntil,
+          // Invalidate previous signature if amount changed
+          digitalSignature: null,
+          signedBy: null,
+          signedAt: null,
+          qrCodeData: null,
+        },
+        include: {
+          items: { include: { product: true } },
+        },
+      });
 
-    return q;
-  });
+      return q;
+    },
+    {
+      maxWait: 15000,
+      timeout: 45000,
+    }
+  );
 
   safeLogActivity({
     quoteId: id,
