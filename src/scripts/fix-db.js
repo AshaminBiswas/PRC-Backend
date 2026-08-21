@@ -730,6 +730,16 @@ const STATEMENTS = [
       CREATE INDEX "b2b_issue_lists_po_number_idx" ON "b2b_issue_lists"("po_number");
     END IF;
   END $$`,
+
+  // Add applicable_product_ids & applicable_category_ids to coupons if missing
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='coupons' AND column_name='applicable_product_ids') THEN
+      ALTER TABLE "coupons" ADD COLUMN "applicable_product_ids" TEXT[] DEFAULT ARRAY[]::TEXT[];
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='coupons' AND column_name='applicable_category_ids') THEN
+      ALTER TABLE "coupons" ADD COLUMN "applicable_category_ids" TEXT[] DEFAULT ARRAY[]::TEXT[];
+    END IF;
+  END $$`,
 ];
 
 async function run() {

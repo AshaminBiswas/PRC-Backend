@@ -828,6 +828,8 @@ model Coupon {
   perUserLimit      Int?         @default(1)
   startDate         DateTime?
   endDate           DateTime?
+  applicableProductIds  String[]     @default([]) @map("applicable_product_ids")
+  applicableCategoryIds String[]     @default([]) @map("applicable_category_ids")
   isActive          Boolean      @default(true)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt

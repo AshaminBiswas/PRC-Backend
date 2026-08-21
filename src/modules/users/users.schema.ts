@@ -5,6 +5,8 @@ export const ListUsersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().optional(),
   role: z.string().optional(),
+  type: z.enum(['customer', 'admin', 'all']).optional(),
+  excludeStaff: z.coerce.boolean().optional(),
   status: z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']).optional(),
   sortBy: z.string().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),

@@ -48,6 +48,50 @@ export const listUsers = async (query: ListUsersQuery) => {
   if (query.status) where.status = query.status;
   if (query.role) {
     where.userRoles = { some: { role: { slug: query.role } } };
+  } else if (query.type === 'customer' || query.excludeStaff) {
+    where.userRoles = {
+      none: {
+        role: {
+          slug: {
+            in: [
+              'super_admin',
+              'super-admin',
+              'admin',
+              'staff',
+              'manager',
+              'accounts',
+              'sales',
+              'support',
+              'operations',
+              'inventory_manager',
+              'inventory-manager',
+            ],
+          },
+        },
+      },
+    };
+  } else if (query.type === 'admin') {
+    where.userRoles = {
+      some: {
+        role: {
+          slug: {
+            in: [
+              'super_admin',
+              'super-admin',
+              'admin',
+              'staff',
+              'manager',
+              'accounts',
+              'sales',
+              'support',
+              'operations',
+              'inventory_manager',
+              'inventory-manager',
+            ],
+          },
+        },
+      },
+    };
   }
 
   const [users, totalItems] = await prisma.$transaction([

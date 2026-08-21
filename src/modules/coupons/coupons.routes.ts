@@ -16,14 +16,22 @@ import { cacheResponse } from '../../middleware/cache.middleware';
 const router = Router();
 
 // Public listing & validation routes
-router.get('/public', cacheResponse(60), controller.getPublicCoupons);
+router.get('/public', cacheResponse(30), controller.getPublicCoupons);
 router.post('/validate', optionalAuthenticate, validate(ValidateCouponSchema), controller.validateCoupon);
+
+// Admin stats & analytics
+router.get(
+  '/stats',
+  authenticate,
+  authorize('coupons.read', 'coupons.manage', 'admin', 'super_admin'),
+  controller.getCouponStats
+);
 
 // Admin routes
 router.get(
   '/',
   authenticate,
-  authorize('coupons.read'),
+  authorize('coupons.read', 'coupons.manage', 'admin', 'super_admin'),
   validate(ListCouponsQuerySchema, 'query'),
   controller.listCoupons
 );
@@ -31,15 +39,31 @@ router.get(
 router.post(
   '/',
   authenticate,
-  authorize('coupons.create'),
+  authorize('coupons.create', 'coupons.manage', 'admin', 'super_admin'),
   validate(CreateCouponSchema),
   controller.createCoupon
+);
+
+router.get(
+  '/:id/usages',
+  authenticate,
+  authorize('coupons.read', 'coupons.manage', 'admin', 'super_admin'),
+  validate(CouponIdParamSchema, 'params'),
+  controller.getCouponUsages
+);
+
+router.patch(
+  '/:id/toggle',
+  authenticate,
+  authorize('coupons.update', 'coupons.manage', 'admin', 'super_admin'),
+  validate(CouponIdParamSchema, 'params'),
+  controller.toggleCouponStatus
 );
 
 router.patch(
   '/:id',
   authenticate,
-  authorize('coupons.update'),
+  authorize('coupons.update', 'coupons.manage', 'admin', 'super_admin'),
   validate(CouponIdParamSchema, 'params'),
   validate(UpdateCouponSchema),
   controller.updateCoupon
@@ -48,7 +72,7 @@ router.patch(
 router.delete(
   '/:id',
   authenticate,
-  authorize('coupons.delete'),
+  authorize('coupons.delete', 'coupons.manage', 'admin', 'super_admin'),
   validate(CouponIdParamSchema, 'params'),
   controller.deleteCoupon
 );

@@ -11,6 +11,24 @@ export const listCoupons = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
+export const getCouponStats = async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const stats = await couponsService.getCouponStats();
+    sendSuccess(res, stats);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCouponUsages = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await couponsService.getCouponUsages(req.params.id);
+    sendSuccess(res, data);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getCouponByCodeOrId = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await couponsService.getCouponByCodeOrId(req.params.code);
@@ -23,7 +41,7 @@ export const getCouponByCodeOrId = async (req: Request, res: Response, next: Nex
 export const createCoupon = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await couponsService.createCoupon(req.body);
-    sendSuccess(res, data, 'Coupon created successfully', 201);
+    sendSuccess(res, data, 'Coupon offer created successfully', 201);
   } catch (error) {
     next(error);
   }
@@ -32,7 +50,16 @@ export const createCoupon = async (req: Request, res: Response, next: NextFuncti
 export const updateCoupon = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await couponsService.updateCoupon(req.params.id, req.body);
-    sendSuccess(res, data, 'Coupon updated successfully');
+    sendSuccess(res, data, 'Coupon offer updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const toggleCouponStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await couponsService.toggleCouponStatus(req.params.id);
+    sendSuccess(res, data, `Coupon offer is now ${data.isActive ? 'Active' : 'Inactive'}`);
   } catch (error) {
     next(error);
   }
@@ -41,7 +68,7 @@ export const updateCoupon = async (req: Request, res: Response, next: NextFuncti
 export const deleteCoupon = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await couponsService.deleteCoupon(req.params.id);
-    sendMessage(res, 'Coupon deleted successfully');
+    sendMessage(res, 'Coupon offer deleted successfully');
   } catch (error) {
     next(error);
   }
@@ -50,15 +77,14 @@ export const deleteCoupon = async (req: Request, res: Response, next: NextFuncti
 export const validateCoupon = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.id;
-    const { code, orderAmount } = req.body;
-    const data = await couponsService.validateCoupon(userId, code, orderAmount);
-    sendSuccess(res, data, 'Coupon is valid');
+    const data = await couponsService.validateCoupon(userId, req.body);
+    sendSuccess(res, data, 'Coupon promotion applied successfully');
   } catch (error) {
     next(error);
   }
 };
 
-export const getPublicCoupons = async (req: Request, res: Response, next: NextFunction) => {
+export const getPublicCoupons = async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await couponsService.getPublicCoupons();
     sendSuccess(res, data);
