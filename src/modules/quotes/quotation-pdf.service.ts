@@ -107,6 +107,12 @@ export interface QuotePdfData {
   subtotal?: number;
   taxTotal?: number;
   grandTotal?: number;
+  advancePercentage?: number | null;
+  customerProposedAdvancePercent?: number | null;
+  customerResponse?: 'pending' | 'accepted' | 'declined' | string | null;
+  customerResponseNotes?: string | null;
+  customerResponseAt?: Date | string | null;
+  customerEditRemark?: string | null;
   notes?: string | null;
   adminNotes?: string | null;
   termsAccepted?: boolean;
@@ -137,6 +143,18 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
   const customerName = [quote.firstName, quote.lastName].filter(Boolean).join(' ') || 'Valued Client';
   const items = quote.items || [];
   const isSigned = !!quote.digitalSignature;
+
+  // ── Dynamic Advance Terms & Customer Acceptance ──────────────────────────────
+  const advancePct =
+    quote.advancePercentage !== null && quote.advancePercentage !== undefined
+      ? Number(quote.advancePercentage)
+      : null;
+  const grandTotal = Number(quote.grandTotal || 0);
+  const advanceAmount =
+    advancePct !== null ? Math.round(((grandTotal * advancePct) / 100) * 100) / 100 : null;
+  const balanceAmount =
+    advanceAmount !== null ? Math.round((grandTotal - advanceAmount) * 100) / 100 : null;
+  const isAccepted = quote.customerResponse === 'accepted';
 
   // ── Line Items Table ─────────────────────────────────────────────────────────
   const tableBody: TableCell[][] = [
@@ -199,7 +217,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
             stack: [
               { text: 'Verified Authenticity', style: 'smallLabel', bold: true, color: GREEN, margin: [6, 0, 0, 2] },
               {
-                text: `Signed By: ${quote.signedBy || 'Admin'}`,
+                text: `Signed By: ${quote.signedBy || 'Authorised Signatory'}`,
                 style: 'smallLabel',
                 margin: [6, 0, 0, 2],
               },
@@ -211,8 +229,19 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               {
                 text: `SHA256: ${(quote.digitalSignature || '').slice(0, 18)}...`,
                 style: 'signatureHash',
-                margin: [6, 0, 0, 0],
+                margin: [6, 0, 0, 2],
               },
+              ...(isAccepted
+                ? [
+                    {
+                      text: `✔ Client Accepted: ${formatDate(quote.customerResponseAt || quote.updatedAt)}`,
+                      style: 'smallLabel',
+                      bold: true,
+                      color: GREEN,
+                      margin: [6, 2, 0, 0] as [number, number, number, number],
+                    } as Content,
+                  ]
+                : []),
             ],
           },
         ],
@@ -404,9 +433,30 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                   {
                     columns: [
                       { text: 'Terms:', style: 'infoBoxSmall', width: 50 },
-                      { text: 'Against Advance', style: 'infoBoxSecondary', width: '*' },
+                      {
+                        text: advancePct !== null ? `${advancePct}% Advance Payment` : '100% Advance Payment',
+                        style: 'infoBoxSecondary',
+                        width: '*',
+                      },
                     ],
+                    margin: [0, 0, 0, 2],
                   },
+                  ...(isAccepted
+                    ? [
+                        {
+                          columns: [
+                            { text: 'Status:', style: 'infoBoxSmall', width: 50 },
+                            {
+                              text: `Accepted by Client (${formatDate(quote.customerResponseAt || quote.updatedAt)})`,
+                              style: 'infoBoxSecondary',
+                              color: GREEN,
+                              bold: true,
+                              width: '*',
+                            },
+                          ],
+                        },
+                      ]
+                    : []),
                 ],
                 fillColor: LIGHT_BG,
                 margin: [10, 10, 10, 10],
@@ -535,6 +585,36 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                     margin: [4, 6, 4, 6],
                   } as TableCell,
                 ],
+                ...(advancePct !== null
+                  ? [
+                      [
+                        makeCell(`Advance Payable (${advancePct}%)`, {
+                          align: 'right',
+                          bold: true,
+                          color: '#047857',
+                          fillColor: '#ecfdf5',
+                        }),
+                        makeCell(formatINR(advanceAmount), {
+                          align: 'right',
+                          bold: true,
+                          color: '#047857',
+                          fillColor: '#ecfdf5',
+                        }),
+                      ],
+                      [
+                        makeCell(`Balance on Delivery (${100 - advancePct}%)`, {
+                          align: 'right',
+                          color: GRAY,
+                          fillColor: LIGHT_BG,
+                        }),
+                        makeCell(formatINR(balanceAmount), {
+                          align: 'right',
+                          color: NAVY,
+                          fillColor: LIGHT_BG,
+                        }),
+                      ],
+                    ]
+                  : []),
               ],
             },
             layout: {
@@ -555,7 +635,14 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
           'Prices are valid for 30 days from the date of this quotation unless otherwise specified.',
           'All prices are exclusive of GST at 18% unless otherwise stated.',
           'Delivery timelines are subject to stock availability and confirmed upon order placement.',
-          'Payment terms: 100% advance payment unless a credit account has been pre-approved.',
+          advancePct !== null
+            ? (advancePct < 100
+                ? `Payment terms: ${advancePct}% advance payment upon quotation acceptance, balance ${100 - advancePct}% payable prior to material dispatch / on delivery.`
+                : 'Payment terms: 100% advance payment prior to material dispatch unless a credit account has been pre-approved.')
+            : 'Payment terms: 100% advance payment unless a credit account has been pre-approved.',
+          ...(isAccepted
+            ? [`Quotation Acceptance: Digitally accepted and confirmed by the client on ${formatDate(quote.customerResponseAt || quote.updatedAt)}.`]
+            : []),
           'This quotation is computer-generated and constitutes an official commercial offer by PRC Hardware.',
         ],
         style: 'termsText',
