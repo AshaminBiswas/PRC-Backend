@@ -236,66 +236,81 @@ export const deleteUser = async (id: string) => {
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw new AppError('NOT_FOUND', 'User not found', 404);
 
-  // 1. Delete authentication tokens & security sessions
-  try { await prisma.refreshToken.deleteMany({ where: { userId: id } }); } catch {}
-  try { await prisma.emailVerification.deleteMany({ where: { userId: id } }); } catch {}
-  try { await prisma.passwordReset.deleteMany({ where: { userId: id } }); } catch {}
-  try { await prisma.userActivityLog.deleteMany({ where: { userId: id } }); } catch {}
-  try { await prisma.userRole.deleteMany({ where: { userId: id } }); } catch {}
-  try { await prisma.staffAvailability.deleteMany({ where: { staffUserId: id } }); } catch {}
-  try { await prisma.b2BCustomerPrice.deleteMany({ where: { userId: id } }); } catch {}
-  try { await prisma.savedAddress.deleteMany({ where: { customerId: id } }); } catch {}
-  try { await prisma.notification.deleteMany({ where: { userId: id } }); } catch {}
-  try { await prisma.couponUsage.deleteMany({ where: { userId: id } }); } catch {}
-  try { await prisma.review.deleteMany({ where: { userId: id } }); } catch {}
-  try { await prisma.ventureUser.deleteMany({ where: { userId: id } }); } catch {}
+  // 1. Unlink Quotes (both snake_case and camelCase column variants)
+  await prisma.$executeRawUnsafe(`UPDATE "quotes" SET "user_id" = NULL WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "quotes" SET "userId" = NULL WHERE "userId" = $1`, id).catch(() => {});
 
-  // 2. Clear Cart & Wishlist with their child items
-  try {
-    const userCart = await prisma.cart.findUnique({ where: { userId: id }, select: { id: true } });
-    if (userCart) {
-      await prisma.cartItem.deleteMany({ where: { cartId: userCart.id } });
-      await prisma.cart.delete({ where: { id: userCart.id } });
-    }
-  } catch {}
+  // 2. Unlink other audit and historical relations
+  await prisma.$executeRawUnsafe(`UPDATE "quote_activity_logs" SET "changed_by" = NULL WHERE "changed_by" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "quote_activity_logs" SET "changedBy" = NULL WHERE "changedBy" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "quotation_revisions" SET "changed_by_id" = NULL WHERE "changed_by_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "enquiries" SET "user_id" = NULL WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "enquiries" SET "userId" = NULL WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "appointments" SET "customer_user_id" = NULL WHERE "customer_user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "appointments" SET "staff_user_id" = NULL WHERE "staff_user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "blog_posts" SET "author_id" = NULL WHERE "author_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "blog_posts" SET "authorId" = NULL WHERE "authorId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "invoices" SET "customer_id" = NULL WHERE "customer_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "invoices" SET "customerId" = NULL WHERE "customerId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "invoices" SET "created_by" = NULL WHERE "created_by" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "invoices" SET "approved_by" = NULL WHERE "approved_by" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "audit_logs" SET "user_id" = NULL WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "audit_logs" SET "userId" = NULL WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "b2b_purchase_orders" SET "customer_id" = NULL WHERE "customer_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "b2b_purchase_orders" SET "created_by" = NULL WHERE "created_by" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`UPDATE "po_submission_logs" SET "actor_id" = NULL WHERE "actor_id" = $1`, id).catch(() => {});
 
-  try {
-    const userWishlist = await prisma.wishlist.findUnique({ where: { userId: id }, select: { id: true } });
-    if (userWishlist) {
-      await prisma.wishlistItem.deleteMany({ where: { wishlistId: userWishlist.id } });
-      await prisma.wishlist.delete({ where: { id: userWishlist.id } });
-    }
-  } catch {}
+  // 3. Delete tokens, sessions, permissions, and addresses
+  await prisma.$executeRawUnsafe(`DELETE FROM "refresh_tokens" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "refresh_tokens" WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "email_verifications" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "email_verifications" WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "password_resets" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "password_resets" WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "user_activity_logs" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "user_activity_logs" WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "user_roles" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "user_roles" WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "staff_availabilities" WHERE "staff_user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "staff_availabilities" WHERE "staffUserId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "b2b_customer_prices" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "b2b_customer_prices" WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "saved_addresses" WHERE "customer_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "saved_addresses" WHERE "customerId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "notifications" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "notifications" WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "coupon_usages" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "coupon_usages" WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "reviews" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "reviews" WHERE "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "venture_users" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "venture_users" WHERE "userId" = $1`, id).catch(() => {});
 
-  // 3. Delete user addresses
-  try { await prisma.address.deleteMany({ where: { userId: id } }); } catch {}
+  // 4. Clear Cart & Wishlist with child items
+  await prisma.$executeRawUnsafe(`DELETE FROM "cart_items" WHERE "cart_id" IN (SELECT "id" FROM "carts" WHERE "user_id" = $1)`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "cart_items" WHERE "cart_id" IN (SELECT "id" FROM "carts" WHERE "userId" = $1)`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "carts" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "carts" WHERE "userId" = $1`, id).catch(() => {});
 
-  // 4. Nullify foreign key references on historical/auditing records
-  try { await prisma.auditLog.updateMany({ where: { userId: id }, data: { userId: null } }); } catch {}
-  try { await prisma.quoteActivityLog.updateMany({ where: { changedBy: id }, data: { changedBy: null } }); } catch {}
-  try { await prisma.quotationRevision.updateMany({ where: { changedById: id }, data: { changedById: null } }); } catch {}
-  try { await prisma.blogPost.updateMany({ where: { authorId: id }, data: { authorId: null } }); } catch {}
-  try { await prisma.invoice.updateMany({ where: { customerId: id }, data: { customerId: null } }); } catch {}
-  try { await prisma.enquiry.updateMany({ where: { userId: id }, data: { userId: null } }); } catch {}
-  try { await prisma.quote.updateMany({ where: { userId: id }, data: { userId: null } }); } catch {}
-  try { await prisma.appointment.updateMany({ where: { customerUserId: id }, data: { customerUserId: null } }); } catch {}
-  try { await prisma.appointment.updateMany({ where: { staffUserId: id }, data: { staffUserId: null } }); } catch {}
+  await prisma.$executeRawUnsafe(`DELETE FROM "wishlist_items" WHERE "wishlist_id" IN (SELECT "id" FROM "wishlists" WHERE "user_id" = $1)`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "wishlist_items" WHERE "wishlist_id" IN (SELECT "id" FROM "wishlists" WHERE "userId" = $1)`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "wishlists" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "wishlists" WHERE "userId" = $1`, id).catch(() => {});
 
-  // 5. Handle any orders placed by this user
-  try {
-    const userOrders = await prisma.order.findMany({ where: { userId: id }, select: { id: true } });
-    const orderIds = userOrders.map((o) => o.id);
-    if (orderIds.length > 0) {
-      await prisma.shipment.deleteMany({ where: { orderId: { in: orderIds } } });
-      await prisma.orderStatusHistory.deleteMany({ where: { orderId: { in: orderIds } } });
-      await prisma.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
-      await prisma.payment.deleteMany({ where: { orderId: { in: orderIds } } });
-      await prisma.order.deleteMany({ where: { userId: id } });
-    }
-  } catch {}
+  // 5. Delete addresses
+  await prisma.$executeRawUnsafe(`DELETE FROM "addresses" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "addresses" WHERE "userId" = $1`, id).catch(() => {});
 
-  // 6. Delete user record permanently
-  await prisma.user.delete({ where: { id } });
+  // 6. Delete Orders & child items
+  await prisma.$executeRawUnsafe(`DELETE FROM "order_status_history" WHERE "order_id" IN (SELECT "id" FROM "orders" WHERE "user_id" = $1 OR "userId" = $1)`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "order_items" WHERE "order_id" IN (SELECT "id" FROM "orders" WHERE "user_id" = $1 OR "userId" = $1)`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "payments" WHERE "order_id" IN (SELECT "id" FROM "orders" WHERE "user_id" = $1 OR "userId" = $1) OR "user_id" = $1 OR "userId" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "shipments" WHERE "order_id" IN (SELECT "id" FROM "orders" WHERE "user_id" = $1 OR "userId" = $1)`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "orders" WHERE "user_id" = $1`, id).catch(() => {});
+  await prisma.$executeRawUnsafe(`DELETE FROM "orders" WHERE "userId" = $1`, id).catch(() => {});
+
+  // 7. Finally delete user record permanently
+  await prisma.$executeRawUnsafe(`DELETE FROM "users" WHERE "id" = $1`, id);
 
   return { success: true, message: `User ${user.email} permanently deleted from database.` };
 };
