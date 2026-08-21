@@ -3,9 +3,11 @@
  *
  * Pixel-perfect production-grade PDF generation for B2B Quotations using pdfmake.
  * Redesigned to match PRC Hardware corporate specification identically:
+ * - Real vector SVG icons embedded natively for Mail, Phone, Globe, Calendar, Clock, User, Project, List, Shield, Location.
+ * - Clean white background for all Terms & Conditions sections on Page 2 (no background color fills).
  * - Brand: "PRC Hardware" with top header, contact stack, and orange accent rule.
  * - Bold QUOTATION heading with framed "QUOTE NO." badge.
- * - 3-Column Metadata Strip: DATE, FINANCIAL YEAR, VALID UNTIL.
+ * - 3-Column Metadata Strip: DATE, FINANCIAL YEAR, VALID UNTIL with crisp vector icons.
  * - Side-by-side BILL TO and PROJECT DETAILS cards with aligned fields.
  * - Deep navy LINE ITEMS table with alternating row backgrounds and INR formatting.
  * - Left column: Digital Signature verification box with QR code, Authorised Signatory seal, and official notice.
@@ -39,12 +41,42 @@ try {
 const NAVY = '#0f172a';
 const NAVY_DARK = '#0b1e38';
 const ORANGE = '#ea580c';
-const ORANGE_LIGHT_BG = '#fff7ed';
 const GREEN = '#047857';
 const LIGHT_BG = '#f8fafc';
 const BORDER = '#e2e8f0';
 const GRAY = '#64748b';
 const DARK_GRAY = '#334155';
+
+// ── Crisp Vector SVG Icons ───────────────────────────────────────────────────
+const ICONS = {
+  mail: (color = ORANGE) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>`,
+  phone: (color = ORANGE) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+  globe: (color = ORANGE) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`,
+  calendar: (color = GRAY) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>`,
+  clock: (color = GRAY) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+  user: (color = ORANGE) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
+  project: (color = ORANGE) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>`,
+  listGrid: (color = ORANGE) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>`,
+  shield: (color = ORANGE) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>`,
+  mapPin: (color = ORANGE) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
+  docRef: (color = GRAY) =>
+    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+  signatureSvg: `
+    <svg viewBox="0 0 110 32" fill="none" stroke="#0f172a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 24 C 14 6, 18 4, 26 21 C 30 28, 36 8, 44 16 C 52 24, 58 6, 68 20 C 76 12, 86 16, 98 22" />
+      <line x1="2" y1="30" x2="108" y2="30" stroke="#cbd5e1" stroke-width="1" />
+    </svg>`,
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function formatINR(value: number | null | undefined): string {
@@ -274,7 +306,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
     pageMargins: [34, 30, 34, 40],
     defaultStyle: { font: 'Roboto', fontSize: 8.5, color: NAVY },
 
-    // ── Fixed Footer across all pages ──────────────────────────────────────────
+    // ── Fixed Footer across all pages with Vector Icons ────────────────────────
     footer: (currentPage: number, pageCount: number): Content => ({
       stack: [
         {
@@ -293,38 +325,45 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         },
         {
           columns: [
-            // Left: Location & Address
+            // Left: Location Pin Icon & Address
             {
               width: '42%',
               columns: [
-                { text: '\u2316', fontSize: 9, color: ORANGE, width: 14 },
+                { svg: ICONS.mapPin(ORANGE), width: 11, height: 11, margin: [0, 1, 0, 0] },
                 {
                   text: 'H -3, J.R. COMPLEX GATE NO 4,\nMELA RAM FARM, MANDOLI,\nDELHI 110093, INDIA',
                   fontSize: 6.8,
                   color: GRAY,
                   lineHeight: 1.25,
+                  margin: [4, 0, 0, 0],
                 },
               ],
             },
-            // Center: Support Email
+            // Center: Support Email Icon & Address
             {
               width: '28%',
               columns: [
-                { text: '\u2709', fontSize: 9, color: ORANGE, width: 14 },
+                { svg: ICONS.mail(ORANGE), width: 11, height: 11, margin: [0, 3, 0, 0] },
                 {
                   text: 'support@pacifichardware.com',
                   fontSize: 7,
                   color: GRAY,
-                  margin: [0, 3, 0, 0],
+                  margin: [4, 3, 0, 0],
                 },
               ],
             },
-            // Right: Ref & Computer-Generated Notice
+            // Right: Ref Document Icon & Computer-Generated Notice
             {
               width: '24%',
-              stack: [
-                { text: `Ref: ${referenceNo}`, fontSize: 7, bold: true, color: DARK_GRAY },
-                { text: 'This is an official computer-generated document', fontSize: 6.2, color: GRAY },
+              columns: [
+                { svg: ICONS.docRef(GRAY), width: 11, height: 11, margin: [0, 1, 0, 0] },
+                {
+                  stack: [
+                    { text: `Ref: ${referenceNo}`, fontSize: 7, bold: true, color: DARK_GRAY },
+                    { text: 'This is an official computer-generated document', fontSize: 6.2, color: GRAY },
+                  ],
+                  margin: [4, 0, 0, 0],
+                },
               ],
             },
             // Page Number Pill
@@ -340,7 +379,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                       bold: true,
                       color: NAVY,
                       alignment: 'center',
-                      fillColor: LIGHT_BG,
+                      fillColor: '#ffffff',
                       margin: [1, 2, 1, 2],
                     },
                   ],
@@ -392,28 +431,28 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               },
             ],
           },
-          // Right: Contact Stack with Orange Icons
+          // Right: Contact Stack with Crisp Real Vector Icons
           {
             width: 175,
             stack: [
               {
                 columns: [
-                  { text: '\u2709', fontSize: 8.5, color: ORANGE, width: 12 },
-                  { text: 'support@pacifichardware.com', fontSize: 7.5, color: NAVY },
+                  { svg: ICONS.mail(ORANGE), width: 11, height: 11, margin: [0, 1, 0, 0] },
+                  { text: 'support@pacifichardware.com', fontSize: 7.5, color: NAVY, margin: [4, 0, 0, 0] },
                 ],
                 margin: [0, 0, 0, 2],
               },
               {
                 columns: [
-                  { text: '\u260E', fontSize: 8.5, color: ORANGE, width: 12 },
-                  { text: '+91 98185 92113', fontSize: 7.5, color: NAVY },
+                  { svg: ICONS.phone(ORANGE), width: 11, height: 11, margin: [0, 1, 0, 0] },
+                  { text: '+91 98185 92113', fontSize: 7.5, color: NAVY, margin: [4, 0, 0, 0] },
                 ],
                 margin: [0, 0, 0, 2],
               },
               {
                 columns: [
-                  { text: '\u25C8', fontSize: 8.5, color: ORANGE, width: 12 },
-                  { text: 'www.pacifichardware.com', fontSize: 7.5, color: NAVY },
+                  { svg: ICONS.globe(ORANGE), width: 11, height: 11, margin: [0, 1, 0, 0] },
+                  { text: 'www.pacifichardware.com', fontSize: 7.5, color: NAVY, margin: [4, 0, 0, 0] },
                 ],
               },
             ],
@@ -486,36 +525,38 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
           widths: ['33.33%', '33.33%', '33.34%'],
           body: [
             [
-              // Date
+              // Date with Calendar SVG Icon
               {
                 columns: [
-                  { text: '\u22A1', fontSize: 13, color: GRAY, width: 18 },
+                  { svg: ICONS.calendar(GRAY), width: 14, height: 14, margin: [0, 2, 0, 0] },
                   {
                     stack: [
                       { text: 'DATE', fontSize: 7, bold: true, color: GRAY },
                       { text: formatDate(quote.createdAt), fontSize: 8.5, bold: true, color: NAVY },
                     ],
+                    margin: [4, 0, 0, 0],
                   },
                 ],
                 margin: [6, 4, 6, 4],
               },
-              // Financial Year
+              // Financial Year with Clock/Calendar SVG Icon
               {
                 columns: [
-                  { text: '\u23F0', fontSize: 12, color: GRAY, width: 18 },
+                  { svg: ICONS.clock(GRAY), width: 14, height: 14, margin: [0, 2, 0, 0] },
                   {
                     stack: [
                       { text: 'FINANCIAL YEAR', fontSize: 7, bold: true, color: GRAY },
                       { text: quote.financialYear || '2026-27', fontSize: 8.5, bold: true, color: NAVY },
                     ],
+                    margin: [4, 0, 0, 0],
                   },
                 ],
                 margin: [6, 4, 6, 4],
               },
-              // Valid Until
+              // Valid Until with Clock SVG Icon
               {
                 columns: [
-                  { text: '\u25F7', fontSize: 13, color: GRAY, width: 18 },
+                  { svg: ICONS.clock(GRAY), width: 14, height: 14, margin: [0, 2, 0, 0] },
                   {
                     stack: [
                       { text: 'VALID UNTIL', fontSize: 7, bold: true, color: GRAY },
@@ -526,6 +567,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                         color: NAVY,
                       },
                     ],
+                    margin: [4, 0, 0, 0],
                   },
                 ],
                 margin: [6, 4, 6, 4],
@@ -546,7 +588,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
       // ── BILL TO & PROJECT DETAILS (Two Equal Side-by-Side Cards) ──────────────
       {
         columns: [
-          // Left: BILL TO Card
+          // Left: BILL TO Card with Real User Icon
           {
             width: '49%',
             table: {
@@ -557,8 +599,8 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                     stack: [
                       {
                         columns: [
-                          { text: '\u25CB', fontSize: 8, color: ORANGE, width: 12 },
-                          { text: 'BILL TO', fontSize: 8, bold: true, color: ORANGE },
+                          { svg: ICONS.user(ORANGE), width: 11, height: 11, margin: [0, 1, 0, 0] },
+                          { text: 'BILL TO', fontSize: 8, bold: true, color: ORANGE, margin: [4, 0, 0, 0] },
                         ],
                         margin: [0, 0, 0, 2],
                       },
@@ -588,7 +630,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
           },
           // Spacer
           { width: '2%', text: '' },
-          // Right: PROJECT DETAILS Card
+          // Right: PROJECT DETAILS Card with Real Project Icon
           {
             width: '49%',
             table: {
@@ -599,8 +641,8 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                     stack: [
                       {
                         columns: [
-                          { text: '\u2630', fontSize: 8, color: ORANGE, width: 12 },
-                          { text: 'PROJECT DETAILS', fontSize: 8, bold: true, color: ORANGE },
+                          { svg: ICONS.project(ORANGE), width: 11, height: 11, margin: [0, 1, 0, 0] },
+                          { text: 'PROJECT DETAILS', fontSize: 8, bold: true, color: ORANGE, margin: [4, 0, 0, 0] },
                         ],
                         margin: [0, 0, 0, 2],
                       },
@@ -660,11 +702,11 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         margin: [0, 0, 0, 9],
       },
 
-      // ── LINE ITEMS Section Header ────────────────────────────────────────────
+      // ── LINE ITEMS Section Header with Grid Icon ─────────────────────────────
       {
         columns: [
-          { text: '\u229E', fontSize: 8.5, color: ORANGE, width: 12 },
-          { text: 'LINE ITEMS', fontSize: 8.5, bold: true, color: ORANGE },
+          { svg: ICONS.listGrid(ORANGE), width: 11, height: 11, margin: [0, 1, 0, 0] },
+          { text: 'LINE ITEMS', fontSize: 8.5, bold: true, color: ORANGE, margin: [4, 0, 0, 0] },
         ],
         margin: [0, 0, 0, 4],
       },
@@ -692,7 +734,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
           {
             width: '*',
             stack: [
-              // Digital Signature Box
+              // Digital Signature Box with Shield Icon
               {
                 table: {
                   widths: ['*'],
@@ -703,11 +745,10 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                           {
                             columns: [
                               {
-                                text: [
-                                  { text: '\u26E8 ', color: ORANGE },
-                                  { text: 'DIGITALLY SIGNED', color: ORANGE, bold: true },
+                                columns: [
+                                  { svg: ICONS.shield(ORANGE), width: 11, height: 11, margin: [0, 1, 0, 0] },
+                                  { text: 'DIGITALLY SIGNED', color: ORANGE, bold: true, fontSize: 8, margin: [4, 0, 0, 0] },
                                 ],
-                                fontSize: 8,
                                 width: '*',
                               },
                               {
@@ -738,37 +779,16 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
               // Signatory & Callout Row
               {
                 columns: [
-                  // Authorised Signatory Seal
+                  // Authorised Signatory Seal with Vector Signature
                   {
                     width: 105,
                     stack: [
                       { text: 'Authorised Signatory', fontSize: 7.5, bold: true, color: NAVY, margin: [0, 6, 0, 2] },
-                      // Calligraphy signature representation
-                      {
-                        canvas: [
-                          {
-                            type: 'polyline',
-                            lineWidth: 1.2,
-                            lineColor: NAVY,
-                            points: [
-                              { x: 2, y: 14 },
-                              { x: 12, y: 3 },
-                              { x: 20, y: 18 },
-                              { x: 32, y: 6 },
-                              { x: 42, y: 16 },
-                              { x: 55, y: 2 },
-                              { x: 68, y: 14 },
-                              { x: 80, y: 12 },
-                            ],
-                          },
-                          { type: 'line', x1: 0, y1: 20, x2: 85, y2: 20, lineWidth: 0.75, lineColor: BORDER },
-                        ],
-                        margin: [0, 0, 0, 2],
-                      },
+                      { svg: ICONS.signatureSvg, width: 95, height: 26, margin: [0, 0, 0, 2] },
                       { text: 'PRC Hardware', fontSize: 8, bold: true, color: NAVY },
                     ],
                   },
-                  // Official Notice Card
+                  // Official Notice Card with Vector Envelope
                   {
                     width: '*',
                     table: {
@@ -777,12 +797,13 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                         [
                           {
                             columns: [
-                              { text: '\u2709', color: ORANGE, fontSize: 13, width: 16 },
+                              { svg: ICONS.mail(ORANGE), width: 15, height: 15, margin: [0, 2, 0, 0] },
                               {
                                 text: 'This quotation is an official commercial offer generated by Pacific Products and Solutions.',
                                 fontSize: 6.8,
                                 color: DARK_GRAY,
                                 lineHeight: 1.25,
+                                margin: [4, 0, 0, 0],
                                 width: '*',
                               },
                             ],
@@ -911,7 +932,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
       },
 
       // ═════════════════════════════════════════════════════════════════════════
-      // ─── PAGE 2: GENERAL TERMS & CONDITIONS (DEDICATED PAGE) ─────────────────
+      // ─── PAGE 2: GENERAL TERMS & CONDITIONS (PURE WHITE CLEAN BACKGROUND) ───
       // ═════════════════════════════════════════════════════════════════════════
       {
         text: 'GENERAL TERMS & CONDITIONS',
@@ -929,7 +950,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         margin: [0, 0, 0, 8],
       },
 
-      // ── 1. Specifications Required for Production ──
+      // ── 1. Specifications Required for Production (Clean White) ──
       {
         table: {
           widths: ['*'],
@@ -952,7 +973,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                     style: 'termsList',
                   },
                 ],
-                fillColor: '#f8fafc',
+                fillColor: '#ffffff',
                 margin: [8, 5, 8, 5],
               },
             ],
@@ -961,13 +982,13 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         layout: {
           hLineColor: () => BORDER,
           vLineColor: () => BORDER,
-          hLineWidth: () => 1,
-          vLineWidth: () => 1,
+          hLineWidth: () => 0.75,
+          vLineWidth: () => 0.75,
         },
         margin: [0, 0, 0, 6],
       },
 
-      // ── 2. Commercial & Operational Terms ──
+      // ── 2. Commercial & Operational Terms (Clean White) ──
       { text: '2. OTHER TERMS & CONDITIONS', style: 'termsSectionHeader', margin: [0, 2, 0, 3] },
       {
         ol: [
@@ -986,7 +1007,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
         margin: [0, 0, 0, 6],
       },
 
-      // ── 3. Payment Terms for Supply ──
+      // ── 3. Payment Terms for Supply (Clean White) ──
       {
         table: {
           widths: ['*'],
@@ -1006,22 +1027,22 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                     margin: [0, 2, 0, 0],
                   },
                 ],
-                fillColor: '#f0fdf4',
+                fillColor: '#ffffff',
                 margin: [8, 5, 8, 5],
               },
             ],
           ],
         },
         layout: {
-          hLineColor: () => '#86efac',
-          vLineColor: () => '#86efac',
-          hLineWidth: () => 1,
-          vLineWidth: () => 1,
+          hLineColor: () => BORDER,
+          vLineColor: () => BORDER,
+          hLineWidth: () => 0.75,
+          vLineWidth: () => 0.75,
         },
         margin: [0, 0, 0, 6],
       },
 
-      // ── 4. Special Note: Site Hold & Payment Policy ──
+      // ── 4. Special Note: Site Hold & Payment Policy (Clean White) ──
       {
         table: {
           widths: ['*'],
@@ -1036,22 +1057,22 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
                     margin: [0, 2, 0, 0],
                   },
                 ],
-                fillColor: '#fffbeb',
+                fillColor: '#ffffff',
                 margin: [8, 5, 8, 5],
               },
             ],
           ],
         },
         layout: {
-          hLineColor: () => '#fcd34d',
-          vLineColor: () => '#fcd34d',
-          hLineWidth: () => 1,
-          vLineWidth: () => 1,
+          hLineColor: () => BORDER,
+          vLineColor: () => BORDER,
+          hLineWidth: () => 0.75,
+          vLineWidth: () => 0.75,
         },
         margin: [0, 0, 0, 6],
       },
 
-      // ── 5. Delivery & 6. Statutory Compliance ──
+      // ── 5. Delivery & 6. Statutory Compliance (Clean White) ──
       {
         columns: [
           // Delivery
