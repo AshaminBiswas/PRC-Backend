@@ -17,8 +17,6 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noImplicitReturns": true,
-    "ignoreDeprecations": "6.0",
-    "baseUrl": ".",
     "paths": {
       "@config/*": ["./src/config/*"],
       "@middleware/*": ["./src/middleware/*"],
