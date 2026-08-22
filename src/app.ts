@@ -119,29 +119,70 @@ app.use((_req, res, next) => {
   next();
 });
 
-// CORS (Allow configured origins, localhost, or reflect request origin safely)
+// CORS (Allow configured origins, localhost, Vercel deployments, or reflect request origin safely)
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, curl, server-to-server)
       if (!origin) return callback(null, true);
 
-      // Extract allowed origins from env or default to localhost
-      const allowedOrigins = process.env.ALLOWED_ORIGINS 
-        ? process.env.ALLOWED_ORIGINS.split(',').map((s: string) => s.trim()) 
-        : ['http://localhost:5173', 'http://localhost:3001', 'http://127.0.0.1:5173', 'http://127.0.0.1:3001'];
+      // Extract allowed origins from env or fallback list
+      const configuredOrigins = (process.env.ALLOWED_ORIGINS || '')
+        .split(',')
+        .map((s: string) => s.trim().replace(/\/$/, ''))
+        .filter(Boolean);
 
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
+      const defaultAllowed = [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:5174',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
+        'https://frontend-sage-pi-65.vercel.app',
+        'https://admin-delta-kohl.vercel.app',
+        env.frontend.url?.replace(/\/$/, ''),
+        env.frontend.adminUrl?.replace(/\/$/, ''),
+      ].filter(Boolean) as string[];
+
+      const allAllowed = Array.from(new Set([...defaultAllowed, ...configuredOrigins]));
+
+      const normalizedOrigin = origin.replace(/\/$/, '');
+
+      // Check explicit match
+      if (allAllowed.includes(normalizedOrigin)) {
+        return callback(null, true);
       }
+
+      // Allow any *.vercel.app domain (including preview branches and production deployments)
+      if (/^https:\/\/[a-zA-Z0-9_-]+\.vercel\.app$/.test(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      // Allow localhost with any port in development
+      if (env.isDev && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      // Fail gracefully without crashing the server
+      return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Access-Control-Request-Method', 'Access-Control-Request-Headers'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+      'Access-Control-Request-Method',
+      'Access-Control-Request-Headers',
+    ],
   })
 );
+app.options('*', cors());
 
 // HTTP logging (routed through Winston — health & readiness probes are skipped)
 app.use(
