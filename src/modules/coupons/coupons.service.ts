@@ -441,15 +441,20 @@ export const validateCoupon = async (
 };
 
 export const getPublicCoupons = async () => {
-  const now = new Date();
-  const coupons = await prisma.coupon.findMany({
-    where: {
-      isActive: true,
-      OR: [{ startDate: null }, { startDate: { lte: now } }],
-      AND: [{ OR: [{ endDate: null }, { endDate: { gte: now } }] }],
-    },
-    select: couponSelect,
-    orderBy: { createdAt: 'desc' },
-  });
-  return coupons.map(formatCoupon);
+  try {
+    const now = new Date();
+    const coupons = await prisma.coupon.findMany({
+      where: {
+        isActive: true,
+        OR: [{ startDate: null }, { startDate: { lte: now } }],
+        AND: [{ OR: [{ endDate: null }, { endDate: { gte: now } }] }],
+      },
+      select: couponSelect,
+      orderBy: { createdAt: 'desc' },
+    });
+    return coupons.map(formatCoupon);
+  } catch (err) {
+    console.warn('[Coupons Service] Failed to load public coupons:', err);
+    return [];
+  }
 };
