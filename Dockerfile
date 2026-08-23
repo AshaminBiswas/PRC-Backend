@@ -25,4 +25,5 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/src/scripts ./src/scripts
 
 EXPOSE 3000
-CMD ["sh", "-c", "node src/scripts/fix-db.js && node dist/server.js"]
+CMD ["npm", "start"]
+

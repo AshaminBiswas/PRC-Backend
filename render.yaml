@@ -3,61 +3,122 @@ services:
   - type: web
     name: prc-hardware-api
     env: node
-    region: singapore # or oregon, frankfurt, etc.
-    plan: free # or starter / standard
+    region: singapore
+    plan: free
     buildCommand: npm install && npm run db:generate && npm run build
-    startCommand: node src/scripts/fix-db.js && npm run db:migrate:prod && npm start
+    startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
       - key: API_PREFIX
         value: /api/v1
+      - key: TRUST_PROXY
+        value: "true"
       - key: CLUSTER_MODE
         value: "false"
       - key: OSRM_FALLBACK_TO_HAVERSINE
         value: "true"
+      - key: OSRM_BASE_URL
+        value: https://router.project-osrm.org
+      - key: ALLOCATION_DEFAULT_STRATEGY
+        value: EWAY_BILL
+
+      # ── Database (Supabase) ─────────────────────────────────────────────────
+      # Set DATABASE_URL and DIRECT_URL in Render Dashboard → Environment
+      # DATABASE_URL: postgresql://postgres.lqukuaaonjaeqaxvfsfg:<PASSWORD>@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+      # DIRECT_URL:   postgresql://postgres.lqukuaaonjaeqaxvfsfg:<PASSWORD>@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
+      - key: DATABASE_URL
+        sync: false   # Set in Render Dashboard (Supabase Transaction Pooler URL, port 6543)
+      - key: DIRECT_URL
+        sync: false   # Set in Render Dashboard (Supabase Direct URL, port 5432)
+
+      # ── JWT Secrets ─────────────────────────────────────────────────────────
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
-      # ── SMTP (Brevo / any provider) ───────────────────────────────────────────
-      # Set these values in Render Dashboard → Environment (never commit secrets)
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: "1h"
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: "7d"
+
+      # ── Frontend / CORS ─────────────────────────────────────────────────────
+      - key: FRONTEND_URL
+        value: https://frontend-sage-pi-65.vercel.app
+      - key: ADMIN_FRONTEND_URL
+        value: https://admin-delta-kohl.vercel.app
+      - key: ALLOWED_ORIGINS
+        value: https://frontend-sage-pi-65.vercel.app,https://admin-delta-kohl.vercel.app
+
+      # ── Redis (Upstash) ─────────────────────────────────────────────────────
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false   # Set in Render Dashboard
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false   # Set in Render Dashboard
+      - key: REDIS_URL
+        sync: false   # Optional fallback TCP Redis URL
+
+      # ── SMTP (Brevo) ────────────────────────────────────────────────────────
       - key: SMTP_HOST
         value: smtp-relay.brevo.com
       - key: SMTP_PORT
-        value: "465"
+        value: "587"
       - key: SMTP_SECURE
-        value: "true"
-      - key: SMTP_USER
-        sync: false          # fill in Render Dashboard
-      - key: SMTP_PASS
-        sync: false          # fill in Render Dashboard
+        value: "false"
       - key: SMTP_FROM_NAME
         value: PRC Hardware
       - key: SMTP_FROM_EMAIL
         value: ashaminbiswas1@gmail.com
-      # ── Brevo HTTP API Key (bypasses SMTP port restrictions on Render) ───────
-      - key: BREVO_API_KEY
-        sync: false          # set in Render Dashboard (e.g. xkeysib-...)
-      # ── Resend HTTP API Key (recommended #1 choice for production Node.js) ──
-      - key: RESEND_API_KEY
-        sync: false          # set in Render Dashboard (e.g. re_...)
-      # ── Frontend URL (update to your deployed frontend domain) ────────────────
-      - key: FRONTEND_URL
-        sync: false          # e.g. https://your-frontend.vercel.app
-      - key: DATABASE_URL
-        fromDatabase:
-          name: prc-postgres
-          property: connectionString
-      # ── Pure Open-Source Redis URL ───────────────────────────────────────────
-      - key: REDIS_URL
-        sync: false          # e.g. redis://redis:6379 or rediss://:password@host:6379
+      - key: SMTP_USER
+        sync: false   # Set in Render Dashboard
+      - key: SMTP_PASS
+        sync: false   # Set in Render Dashboard
 
-databases:
-  # ─── PostgreSQL Database ───────────────────────────────────────────────────
-  - name: prc-postgres
-    region: singapore
-    plan: free
-    databaseName: prchardware
-    user: prcuser
+      # ── Email API Keys ──────────────────────────────────────────────────────
+      - key: BREVO_API_KEY
+        sync: false   # Set in Render Dashboard
+      - key: RESEND_API_KEY
+        sync: false   # Set in Render Dashboard
+
+      # ── Supabase Storage ────────────────────────────────────────────────────
+      - key: SUPABASE_URL
+        value: https://lqukuaaonjaeqaxvfsfg.supabase.co
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false   # Set in Render Dashboard
+      - key: SUPABASE_STORAGE_BUCKET_AVATARS
+        value: avatars
+      - key: SUPABASE_STORAGE_BUCKET_PRODUCTS
+        value: products
+      - key: SUPABASE_STORAGE_BUCKET_CATEGORIES
+        value: categories
+
+      # ── Image Hosting (ImageKit) ────────────────────────────────────────────
+      - key: IMAGEKIT_URL_ENDPOINT
+        value: https://ik.imagekit.io/1r254icf2
+      - key: IMAGEKIT_PUBLIC_KEY
+        sync: false   # Set in Render Dashboard
+      - key: IMAGEKIT_PRIVATE_KEY
+        sync: false   # Set in Render Dashboard
+
+      # ── Cloudinary ──────────────────────────────────────────────────────────
+      - key: CLOUDINARY_CLOUD_NAME
+        value: dxuq3xkby
+      - key: CLOUDINARY_API_KEY
+        sync: false   # Set in Render Dashboard
+      - key: CLOUDINARY_API_SECRET
+        sync: false   # Set in Render Dashboard
+
+      # ── Razorpay (Payment) ──────────────────────────────────────────────────
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+
+      # ── Background Jobs ─────────────────────────────────────────────────────
+      - key: ASYNC_JOBS_ENABLED
+        value: "true"
+      - key: CACHE_ENABLED
+        value: "true"

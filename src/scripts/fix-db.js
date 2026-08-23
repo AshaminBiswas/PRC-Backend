@@ -744,9 +744,10 @@ const STATEMENTS = [
 
 async function run() {
   const timeoutTimer = setTimeout(() => {
-    console.warn('[fix-db] Timeout reached (5s). Proceeding directly to server startup...');
+    console.warn('[fix-db] Timeout reached (15s). Proceeding directly to server startup...');
     process.exit(0);
-  }, 5000);
+  }, 15000);
+
 
   try {
     await prisma.$connect();
