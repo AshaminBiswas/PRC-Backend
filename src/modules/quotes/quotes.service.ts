@@ -12,6 +12,7 @@ import {
 } from './quotation-signature.service';
 import {
   sendQuotationSubmittedEmail,
+  sendQuotationNewSubmissionAdminNotification,
   sendQuotationUnderReviewEmail,
   sendQuotationPendingEmail,
   sendQuotationApprovedEmail,
@@ -283,14 +284,30 @@ export const createB2BQuote = async (input: CreateB2BQuoteInput, userId?: string
     newValue: { status: 'PENDING', referenceNo, basicPrice: basicPriceDecimal, grandTotal: grandTotalDecimal },
   });
 
-  // 5. Send Confirmation Email
+  // 5. Send Confirmation Email to Customer
   sendQuotationSubmittedEmail({
     to: input.email,
     customerName: `${input.firstName} ${input.lastName}`,
     companyName: input.companyName,
     referenceNo,
     projectName: input.projectName,
-  });
+    grandTotal: grandTotalDecimal,
+    accessToken,
+  }).catch((err) => console.warn('[QuotesService] Confirmation email warning:', err));
+
+  // 6. Send Alert Notification to Admin
+  sendQuotationNewSubmissionAdminNotification({
+    to: process.env.ADMIN_NOTIFY_EMAIL || env.smtp.fromEmail || 'admin@pacifichardware.com',
+    customerName: `${input.firstName} ${input.lastName}`,
+    companyName: input.companyName,
+    referenceNo,
+    projectName: input.projectName,
+    grandTotal: grandTotalDecimal,
+    phone: input.phone,
+    email: input.email,
+    gstNo: input.gstNo,
+    itemsCount: itemsToCreate.length,
+  }).catch((err) => console.warn('[QuotesService] Admin alert email warning:', err));
 
   return formatQuote(createdQuote);
 };
@@ -797,14 +814,49 @@ export const updateQuoteStatusByAdmin = async (
 
   const adminName = [admin.firstName, admin.lastName].filter(Boolean).join(' ') || admin.email || 'Admin';
 
+  const accessToken = quote.accessToken || crypto.randomBytes(24).toString('hex');
+  let digitalSignature = quote.digitalSignature;
+  let qrCodeData = quote.qrCodeData;
+  const signedAt = quote.signedAt || new Date();
+  const signedBy = quote.signedBy || adminName;
+
+  if (targetStatus === QuoteStatus.APPROVED && !digitalSignature) {
+    const basicPrice = Number(quote.basicPrice || quote.subtotal || 0);
+    const gstAmount = Math.round(basicPrice * 0.18 * 100) / 100;
+    const shippingCost = quote.shippingCost !== null ? Number(quote.shippingCost) : 0;
+    const grandTotal = Math.round((basicPrice + gstAmount + shippingCost) * 100) / 100;
+
+    digitalSignature = computeQuotationSignature({
+      referenceNo: quote.referenceNo || quote.quoteNumber,
+      financialYear: quote.financialYear || '2026-27',
+      projectName: quote.projectName || 'Project',
+      companyName: quote.companyName || 'Client',
+      gstNo: quote.gstNo || 'GSTIN',
+      grandTotal,
+      signedBy,
+      signedAt,
+    });
+
+    const verificationUrl = `${env.frontend.url}/quote/${accessToken}`;
+    qrCodeData = await generateQuotationQrCode(verificationUrl);
+  }
+
   const updatedQuote = await prisma.quote.update({
     where: { id },
     data: {
       status: targetStatus,
       statusReason: input.statusReason || null,
+      accessToken,
+      digitalSignature: targetStatus === QuoteStatus.APPROVED ? digitalSignature : quote.digitalSignature,
+      signedBy: targetStatus === QuoteStatus.APPROVED ? signedBy : quote.signedBy,
+      signedAt: targetStatus === QuoteStatus.APPROVED ? signedAt : quote.signedAt,
+      qrCodeData: targetStatus === QuoteStatus.APPROVED ? qrCodeData : quote.qrCodeData,
     },
     include: {
       items: { include: { product: true } },
+      activityLogs: { orderBy: { createdAt: 'desc' } },
+      revisions: { orderBy: { createdAt: 'desc' } },
+      user: true,
     },
   });
 
@@ -823,13 +875,26 @@ export const updateQuoteStatusByAdmin = async (
     companyName: quote.companyName || 'B2B Customer',
     referenceNo: quote.referenceNo || quote.quoteNumber,
     projectName: quote.projectName || 'Hardware Project',
-    grandTotal: Number(quote.grandTotal || 0),
+    grandTotal: Number(updatedQuote.grandTotal || quote.grandTotal || 0),
+    advancePercentage: quote.advancePercentage ? Number(quote.advancePercentage) : 30,
     statusReason: input.statusReason || undefined,
-    accessToken: quote.accessToken || undefined,
+    accessToken,
   };
 
   // Dispatch lifecycle notifications
-  if (targetStatus === QuoteStatus.UNDER_REVIEW) {
+  if (targetStatus === QuoteStatus.APPROVED) {
+    (async () => {
+      try {
+        const formattedQuote = formatQuote(updatedQuote);
+        const pdfBuffer = await generateQuotationPdf(formattedQuote as any);
+        await sendQuotationApprovedEmailWithPdf(emailContext, pdfBuffer);
+        console.log(`[QuotesService] Approval PDF emailed for quotation ${quote.referenceNo}`);
+      } catch (pdfErr: any) {
+        console.warn(`[QuotesService] PDF generation failed for ${quote.referenceNo}, sending HTML approval email:`, pdfErr?.message);
+        sendQuotationApprovedEmail(emailContext).catch(() => {});
+      }
+    })();
+  } else if (targetStatus === QuoteStatus.UNDER_REVIEW) {
     sendQuotationUnderReviewEmail(emailContext);
   } else if (targetStatus === QuoteStatus.PENDING) {
     sendQuotationPendingEmail(emailContext);

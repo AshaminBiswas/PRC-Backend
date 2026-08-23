@@ -8,12 +8,33 @@ interface QuoteEmailContext {
   referenceNo: string;
   projectName: string;
   grandTotal?: number;
+  advancePercentage?: number;
   statusReason?: string;
   accessToken?: string;
   customerResponse?: string;
   customerResponseNotes?: string;
   quoteNumber?: string;
 }
+
+const getFrontendUrl = (): string => {
+  const customUrl = env.frontend.url;
+  if (customUrl && !customUrl.includes('localhost')) {
+    return customUrl.replace(/\/+$/, '');
+  }
+  return process.env.NODE_ENV === 'production' || process.env.RENDER
+    ? 'https://frontend-sage-pi-65.vercel.app'
+    : (customUrl || 'http://localhost:5173').replace(/\/+$/, '');
+};
+
+const getAdminUrl = (): string => {
+  const customUrl = env.frontend.adminUrl;
+  if (customUrl && !customUrl.includes('localhost')) {
+    return customUrl.replace(/\/+$/, '');
+  }
+  return process.env.NODE_ENV === 'production' || process.env.RENDER
+    ? 'https://admin-delta-kohl.vercel.app'
+    : (customUrl || 'http://localhost:5174').replace(/\/+$/, '');
+};
 
 const baseQuotationTemplate = (title: string, bodyContent: string): string => `
 <!DOCTYPE html>
@@ -25,21 +46,21 @@ const baseQuotationTemplate = (title: string, bodyContent: string): string => `
   <style>
     body { font-family: 'Segoe UI', Helvetica, Arial, sans-serif; background: #f8fafc; margin: 0; padding: 0; }
     .container { max-width: 620px; margin: 30px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
-    .header { background: #0f172a; padding: 28px; text-align: center; border-bottom: 3px solid #f59e0b; }
-    .header h1 { color: #f59e0b; margin: 0; font-size: 22px; letter-spacing: 0.5px; font-weight: 800; }
-    .header p { color: #94a3b8; margin: 4px 0 0 0; font-size: 11px; }
+    .header { background: #34150F; padding: 28px; text-align: center; border-bottom: 3px solid #D39858; }
+    .header h1 { color: #EACEAA; margin: 0; font-size: 22px; letter-spacing: 0.5px; font-weight: 800; }
+    .header p { color: #D39858; margin: 4px 0 0 0; font-size: 11px; font-weight: 600; }
     .body { padding: 32px 28px; color: #1e293b; line-height: 1.6; }
-    .ref-badge { display: inline-block; background: #f1f5f9; color: #0f172a; padding: 6px 14px; border-radius: 6px; font-weight: 700; font-family: monospace; font-size: 14px; border: 1px solid #cbd5e1; }
-    .info-card { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 18px; margin: 20px 0; }
-    .btn-primary { display: inline-block; margin: 20px 0; padding: 14px 28px; background: #f59e0b; color: #0f172a; text-decoration: none; border-radius: 8px; font-weight: 700; font-size: 15px; text-align: center; }
-    .footer { background: #0f172a; padding: 20px; text-align: center; font-size: 11px; color: #64748b; }
+    .ref-badge { display: inline-block; background: #fef3c7; color: #92400e; padding: 6px 14px; border-radius: 6px; font-weight: 800; font-family: monospace; font-size: 15px; border: 1px solid #fde68a; }
+    .info-card { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #D39858; border-radius: 6px; padding: 18px; margin: 20px 0; }
+    .btn-primary { display: inline-block; margin: 20px 0; padding: 14px 28px; background: #D39858; color: #34150F; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 15px; text-align: center; }
+    .footer { background: #34150F; padding: 20px; text-align: center; font-size: 11px; color: #EACEAA; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <h1>PRC Hardware</h1>
-      <p>H -3, J.R. COMPLEX GATE NO 4, MELA RAM FARM, MANDOLI, DELHI 110093, INDIA</p>
+      <h1>PRC HARDWARE</h1>
+      <p>Architectural Hardware & Commercial Solutions &bull; Delhi, India</p>
     </div>
     <div class="body">
       ${bodyContent}
@@ -51,37 +72,103 @@ const baseQuotationTemplate = (title: string, bodyContent: string): string => `
 </body>
 </html>`;
 
+/**
+ * 1. Customer Email: Quotation Submitted (RFQ Received)
+ */
 export const sendQuotationSubmittedEmail = async (ctx: QuoteEmailContext): Promise<void> => {
+  const frontendUrl = getFrontendUrl();
+  const trackingUrl = ctx.accessToken
+    ? `${frontendUrl}/quote/${ctx.accessToken}`
+    : `${frontendUrl}/track-order`;
+  const formattedTotal = ctx.grandTotal ? `₹${Number(ctx.grandTotal).toLocaleString('en-IN')}` : 'Estimated at review';
+
   const content = `
-    <h2 style="margin-top:0; color:#0f172a;">Quotation Request Received</h2>
+    <h2 style="margin-top:0; color:#34150F;">Quotation Request Received Successfully</h2>
     <p>Dear <strong>${ctx.customerName}</strong> (${ctx.companyName}),</p>
-    <p>Thank you for submitting your B2B quotation request for project <strong>"${ctx.projectName}"</strong>. Our commercial hardware estimating team is currently reviewing your requested specifications and volume pricing.</p>
+    <p>Thank you for submitting your quotation request for project <strong>"${ctx.projectName}"</strong>. We have logged your request in our system under the unique Quotation Reference Number below:</p>
     
     <div class="info-card">
       <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
       <p style="margin: 4px 0;"><strong>Project Name:</strong> ${ctx.projectName}</p>
-      <p style="margin: 4px 0;"><strong>Status:</strong> <span style="color:#f59e0b; font-weight:bold;">Submitted (Pending Initial Review)</span></p>
+      <p style="margin: 4px 0;"><strong>Estimated Amount:</strong> <strong style="color:#34150F;">${formattedTotal}</strong></p>
+      <p style="margin: 4px 0;"><strong>Current Status:</strong> <span style="color:#b45309; font-weight:bold;">SUBMITTED (Pending Estimator Review)</span></p>
     </div>
 
-    <p>You can track the live progress of your quotation anytime on our portal using your <strong>Quotation Reference No</strong>, <strong>Email</strong>, <strong>GSTIN</strong>, or <strong>Phone Number</strong>.</p>
+    <p>Our commercial hardware estimating team is reviewing your requested product specifications and volume contractor pricing. Once approved, you will automatically receive an update with your official digitally-signed quotation and pricing terms.</p>
+
+    <p style="text-align:center;">
+      <a href="${trackingUrl}" class="btn-primary">Track Quotation Live</a>
+    </p>
+
+    <p style="font-size:12px; color:#64748b; margin-top:20px;">
+      You can track this quote anytime on our portal using your Quotation Reference No <strong>${ctx.referenceNo}</strong> or registered email address.
+    </p>
   `;
 
   await sendMail({
     to: ctx.to,
-    subject: `Quotation Request Received - [${ctx.referenceNo}] - PRC Hardware`,
+    subject: `Quotation Received: ${ctx.referenceNo} - PRC Hardware`,
     html: baseQuotationTemplate('Quotation Request Received', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
 
+/**
+ * 2. Admin Alert: New Quotation Submission Notification
+ */
+export const sendQuotationNewSubmissionAdminNotification = async (ctx: {
+  to: string;
+  customerName: string;
+  companyName: string;
+  referenceNo: string;
+  projectName: string;
+  grandTotal?: number;
+  phone?: string;
+  email?: string;
+  gstNo?: string;
+  itemsCount?: number;
+}): Promise<void> => {
+  const adminUrl = getAdminUrl();
+  const reviewUrl = `${adminUrl}/quotes`;
+  const formattedTotal = ctx.grandTotal ? `₹${Number(ctx.grandTotal).toLocaleString('en-IN')}` : 'N/A';
+
+  const content = `
+    <h2 style="margin-top:0; color:#34150F;">New B2B Quotation Request Submitted</h2>
+    <p>A new quotation request <strong>${ctx.referenceNo}</strong> has been submitted by <strong>${ctx.customerName}</strong>.</p>
+    
+    <div class="info-card">
+      <p style="margin: 4px 0;"><strong>Quotation Ref:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+      <p style="margin: 4px 0;"><strong>Customer:</strong> ${ctx.customerName} (${ctx.companyName})</p>
+      <p style="margin: 4px 0;"><strong>Email / Phone:</strong> ${ctx.email || 'N/A'} | ${ctx.phone || 'N/A'}</p>
+      <p style="margin: 4px 0;"><strong>GSTIN:</strong> ${ctx.gstNo || 'N/A'}</p>
+      <p style="margin: 4px 0;"><strong>Project:</strong> ${ctx.projectName}</p>
+      <p style="margin: 4px 0;"><strong>Line Items Count:</strong> ${ctx.itemsCount || 0}</p>
+      <p style="margin: 4px 0;"><strong>Estimated Total:</strong> <strong style="color:#047857;">${formattedTotal}</strong></p>
+    </div>
+
+    <p style="text-align:center;">
+      <a href="${reviewUrl}" class="btn-primary">Review in Admin Panel</a>
+    </p>
+  `;
+
+  await sendMail({
+    to: ctx.to,
+    subject: `[New Quotation RFQ] ${ctx.referenceNo} - ${ctx.companyName}`,
+    html: baseQuotationTemplate('New Quotation Request', content),
+  }).catch((err) => console.warn('[Email Warning]:', err.message));
+};
+
+/**
+ * 3. Customer Email: Quotation Under Review
+ */
 export const sendQuotationUnderReviewEmail = async (ctx: QuoteEmailContext): Promise<void> => {
   const content = `
-    <h2 style="margin-top:0; color:#0f172a;">Your Quotation is Under Review</h2>
+    <h2 style="margin-top:0; color:#34150F;">Your Quotation is Under Review</h2>
     <p>Dear <strong>${ctx.customerName}</strong>,</p>
     <p>Your quotation for project <strong>"${ctx.projectName}"</strong> has been assigned to a designated technical hardware estimator and is currently <strong>Under Review</strong>.</p>
     
-    <div class="info-card">
+    <div class="info-card" style="border-left-color: #0284c7; background:#f0f9ff;">
       <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
-      <p style="margin: 4px 0;"><strong>Current Status:</strong> <span style="color:#0284c7; font-weight:bold;">Under Review</span></p>
+      <p style="margin: 4px 0;"><strong>Current Status:</strong> <span style="color:#0284c7; font-weight:bold;">Under Technical Review</span></p>
     </div>
 
     <p>We are validating stock allocation, volume contractor discounts, and transport logistics. You will receive an update once the final quotation is approved.</p>
@@ -94,9 +181,12 @@ export const sendQuotationUnderReviewEmail = async (ctx: QuoteEmailContext): Pro
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
 
+/**
+ * 4. Customer Email: Quotation Pending Additional Information
+ */
 export const sendQuotationPendingEmail = async (ctx: QuoteEmailContext): Promise<void> => {
   const content = `
-    <h2 style="margin-top:0; color:#0f172a;">Information Required for Quotation</h2>
+    <h2 style="margin-top:0; color:#34150F;">Information Required for Quotation</h2>
     <p>Dear <strong>${ctx.customerName}</strong>,</p>
     <p>Our estimating team requires additional details to finalize your quotation for <strong>"${ctx.projectName}"</strong>.</p>
     
@@ -116,22 +206,28 @@ export const sendQuotationPendingEmail = async (ctx: QuoteEmailContext): Promise
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
 
+/**
+ * 5. Customer Email: Quotation APPROVED & Signed (HTML only)
+ */
 export const sendQuotationApprovedEmail = async (ctx: QuoteEmailContext): Promise<void> => {
-  const viewUrl = `${env.frontend.url}/quote/${ctx.accessToken}`;
+  const frontendUrl = getFrontendUrl();
+  const viewUrl = `${frontendUrl}/quote/${ctx.accessToken || ''}`;
   const formattedTotal = ctx.grandTotal ? `₹${Number(ctx.grandTotal).toLocaleString('en-IN')}` : 'View in link';
+  const advanceText = ctx.advancePercentage ? `${ctx.advancePercentage}% Advance Payment Terms` : 'Standard Payment Terms';
 
   const content = `
-    <h2 style="margin-top:0; color:#0f172a;">🎉 Your Quotation Has Been Approved & Digitally Signed!</h2>
+    <h2 style="margin-top:0; color:#065f46;">🎉 Your Quotation Has Been Approved!</h2>
     <p>Dear <strong>${ctx.customerName}</strong> (${ctx.companyName}),</p>
-    <p>We are pleased to inform you that your quotation for <strong>"${ctx.projectName}"</strong> has been approved, finalized with B2B contract pricing, and digitally signed with cryptographic verification.</p>
+    <p>We are pleased to inform you that your quotation for <strong>"${ctx.projectName}"</strong> has been <strong>approved with official commercial pricing and digitally signed</strong>.</p>
     
     <div class="info-card" style="border-left-color: #10b981; background:#f0fdf4;">
-      <p style="margin: 4px 0;"><strong>Quotation Ref No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
-      <p style="margin: 4px 0;"><strong>Approved Grand Total:</strong> <span style="font-size:18px; font-weight:bold; color:#065f46;">${formattedTotal}</span></p>
-      <p style="margin: 4px 0;"><strong>Digital Signature:</strong> <span style="color:#059669; font-weight:bold;">✔ Verified & QR Code Encoded</span></p>
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+      <p style="margin: 4px 0;"><strong>Status:</strong> <span style="color:#047857; font-weight:bold; font-size:15px;">✔ APPROVED & SIGNED</span></p>
+      <p style="margin: 4px 0;"><strong>Approved Grand Total:</strong> <span style="font-size:18px; font-weight:bold; color:#065f46;">${formattedTotal}</span> (Incl. 18% GST)</p>
+      <p style="margin: 4px 0;"><strong>Payment Terms:</strong> <span style="color:#047857; font-weight:600;">${advanceText}</span></p>
     </div>
 
-    <p>Click below to inspect the complete line items, download your official digitally-signed PDF, and record your Acceptance:</p>
+    <p>Click the button below to inspect all line items, download your official PDF, and record your formal Acceptance:</p>
     
     <p style="text-align:center;">
       <a href="${viewUrl}" class="btn-primary" style="background:#10b981; color:#ffffff;">View & Approve Quotation</a>
@@ -142,41 +238,43 @@ export const sendQuotationApprovedEmail = async (ctx: QuoteEmailContext): Promis
 
   await sendMail({
     to: ctx.to,
-    subject: `Official Quotation Approved & Signed - [${ctx.referenceNo}] - PRC Hardware`,
+    subject: `Approved Quotation: ${ctx.referenceNo} - PRC Hardware`,
     html: baseQuotationTemplate('Quotation Approved', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
 
 /**
- * Sends the approved quotation email WITH the PDF attached.
- * Used automatically when admin signs/approves a quotation.
- * Falls back to the non-attachment email if PDF fails.
+ * 6. Customer Email: Quotation APPROVED with PDF Attachment
  */
 export const sendQuotationApprovedEmailWithPdf = async (
   ctx: QuoteEmailContext,
   pdfBuffer: Buffer
 ): Promise<void> => {
-  const viewUrl = `${env.frontend.url}/quote/${ctx.accessToken}`;
+  const frontendUrl = getFrontendUrl();
+  const viewUrl = `${frontendUrl}/quote/${ctx.accessToken || ''}`;
   const formattedTotal = ctx.grandTotal ? `₹${Number(ctx.grandTotal).toLocaleString('en-IN')}` : 'View in link';
-  const fileName = `Quotation-${ctx.referenceNo || ctx.quoteNumber || 'PRC'}.pdf`;
+  const cleanRef = String(ctx.referenceNo || ctx.quoteNumber || 'PRC').replace(/[\/\\]/g, '-');
+  const fileName = `Quotation-${cleanRef}.pdf`;
+  const advanceText = ctx.advancePercentage ? `${ctx.advancePercentage}% Advance Payment Terms` : 'Standard Payment Terms';
 
   const content = `
-    <h2 style="margin-top:0; color:#0f172a;">🎉 Your Official Quotation is Ready!</h2>
+    <h2 style="margin-top:0; color:#065f46;">🎉 Your Official Quotation is Approved!</h2>
     <p>Dear <strong>${ctx.customerName}</strong> (${ctx.companyName}),</p>
-    <p>Your quotation for project <strong>"${ctx.projectName}"</strong> has been <strong>approved, finalized with B2B contract pricing, and digitally signed</strong>.</p>
-    <p>The official signed quotation PDF is attached to this email for your records.</p>
+    <p>Your quotation for project <strong>"${ctx.projectName}"</strong> has been <strong>approved with commercial contractor pricing and digitally signed</strong>.</p>
+    <p>The official signed quotation PDF (<strong>${fileName}</strong>) is attached to this email for your records.</p>
     
     <div class="info-card" style="border-left-color: #10b981; background:#f0fdf4;">
-      <p style="margin: 4px 0;"><strong>Quotation Ref No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
-      <p style="margin: 4px 0;"><strong>Approved Grand Total:</strong> <span style="font-size:18px; font-weight:bold; color:#065f46;">${formattedTotal}</span></p>
-      <p style="margin: 4px 0;"><strong>Digital Signature:</strong> <span style="color:#059669; font-weight:bold;">&#x2714; Verified &amp; QR Code Encoded</span></p>
-      <p style="margin: 4px 0;"><strong>PDF Attached:</strong> <span style="color:#059669; font-weight:bold;">📎 ${fileName}</span></p>
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+      <p style="margin: 4px 0;"><strong>Status:</strong> <span style="color:#047857; font-weight:bold; font-size:15px;">✔ APPROVED &amp; DIGITALLY SIGNED</span></p>
+      <p style="margin: 4px 0;"><strong>Approved Grand Total:</strong> <span style="font-size:18px; font-weight:bold; color:#065f46;">${formattedTotal}</span> (Incl. 18% GST)</p>
+      <p style="margin: 4px 0;"><strong>Payment Terms:</strong> <span style="color:#047857; font-weight:600;">${advanceText}</span></p>
+      <p style="margin: 4px 0;"><strong>PDF Attachment:</strong> <span style="color:#059669; font-weight:bold;">📎 ${fileName}</span></p>
     </div>
 
-    <p>You can also view your quotation online, inspect all line items, and record your formal Acceptance or Rejection:</p>
+    <p>You can also review the line items and record your formal Acceptance online:</p>
     
     <p style="text-align:center;">
-      <a href="${viewUrl}" class="btn-primary" style="background:#10b981; color:#ffffff;">View & Respond to Quotation</a>
+      <a href="${viewUrl}" class="btn-primary" style="background:#10b981; color:#ffffff;">View &amp; Accept Quotation</a>
     </p>
 
     <p style="font-size:12px; color:#64748b;">Direct Link: <br/><a href="${viewUrl}" style="color:#0284c7;">${viewUrl}</a></p>
@@ -185,7 +283,7 @@ export const sendQuotationApprovedEmailWithPdf = async (
   await sendMailWithAttachment(
     {
       to: ctx.to,
-      subject: `Official Quotation PDF - [${ctx.referenceNo}] - PRC Hardware`,
+      subject: `Approved Quotation PDF: ${ctx.referenceNo} - PRC Hardware`,
       html: baseQuotationTemplate('Official Quotation Approved', content),
     },
     [
@@ -197,21 +295,23 @@ export const sendQuotationApprovedEmailWithPdf = async (
     ]
   ).catch((err) => {
     console.warn('[Email Warning] PDF email failed, falling back to text-only approval email:', err.message);
-    // Fallback to plain approval email (no PDF)
     sendQuotationApprovedEmail(ctx).catch(() => {});
   });
 };
 
+/**
+ * 7. Customer Email: Quotation Rejected
+ */
 export const sendQuotationRejectedEmail = async (ctx: QuoteEmailContext): Promise<void> => {
   const content = `
-    <h2 style="margin-top:0; color:#0f172a;">Quotation Status Update</h2>
+    <h2 style="margin-top:0; color:#991b1b;">Quotation Status Update</h2>
     <p>Dear <strong>${ctx.customerName}</strong>,</p>
     <p>We regret to inform you that your quotation request for <strong>"${ctx.projectName}"</strong> (${ctx.referenceNo}) could not be approved at this time.</p>
     
     <div class="info-card" style="border-left-color: #ef4444; background:#fef2f2;">
       <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
       <p style="margin: 8px 0 4px 0; color:#991b1b;"><strong>Reason:</strong></p>
-      <p style="margin: 0; color:#7f1d1d;">${ctx.statusReason || 'Specifications outside commercial capability or MOQ.'}</p>
+      <p style="margin: 0; color:#7f1d1d; font-weight:600;">${ctx.statusReason || 'Specifications outside commercial capability or MOQ.'}</p>
     </div>
 
     <p>If you would like to revise the project scope or discuss alternate hardware models, please contact support@pacifichardware.com.</p>
@@ -219,18 +319,21 @@ export const sendQuotationRejectedEmail = async (ctx: QuoteEmailContext): Promis
 
   await sendMail({
     to: ctx.to,
-    subject: `Quotation Status Update - [${ctx.referenceNo}] - PRC Hardware`,
+    subject: `Quotation Status Update: ${ctx.referenceNo} - PRC Hardware`,
     html: baseQuotationTemplate('Quotation Declined', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
 
+/**
+ * 8. Customer Response Notification to Admin
+ */
 export const sendQuotationCustomerResponseNotification = async (ctx: QuoteEmailContext): Promise<void> => {
   const adminEmail = process.env.ADMIN_NOTIFY_EMAIL || env.smtp.fromEmail || 'admin@pacifichardware.com';
   const isAccepted = ctx.customerResponse === 'accepted';
   const badgeColor = isAccepted ? '#10b981' : '#ef4444';
 
   const content = `
-    <h2 style="margin-top:0; color:#0f172a;">Customer Response: Quotation ${ctx.referenceNo}</h2>
+    <h2 style="margin-top:0; color:#34150F;">Customer Response: Quotation ${ctx.referenceNo}</h2>
     <p>B2B Client <strong>${ctx.customerName}</strong> (${ctx.companyName}) has recorded their response to quotation <strong>${ctx.referenceNo}</strong>.</p>
     
     <div class="info-card" style="border-left-color: ${badgeColor};">
@@ -247,9 +350,12 @@ export const sendQuotationCustomerResponseNotification = async (ctx: QuoteEmailC
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
 
+/**
+ * 9. Revision Emails
+ */
 export const sendQuotationRevisionSubmittedEmail = async (ctx: QuoteEmailContext & { proposedAdvancePercent?: number; remark?: string }): Promise<void> => {
   const content = `
-    <h2 style="margin-top:0; color:#0f172a;">Quotation Revision Request Received</h2>
+    <h2 style="margin-top:0; color:#34150F;">Quotation Revision Request Received</h2>
     <p>Dear <strong>${ctx.customerName}</strong> (${ctx.companyName}),</p>
     <p>We have received your requested revision for quotation <strong>"${ctx.projectName}"</strong>.</p>
     
@@ -265,7 +371,7 @@ export const sendQuotationRevisionSubmittedEmail = async (ctx: QuoteEmailContext
 
   await sendMail({
     to: ctx.to,
-    subject: `Quotation Revision Under Review - [${ctx.referenceNo}] - PRC Hardware`,
+    subject: `Quotation Revision Under Review: ${ctx.referenceNo} - PRC Hardware`,
     html: baseQuotationTemplate('Quotation Revision Received', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
@@ -274,7 +380,7 @@ export const sendQuotationRevisionAdminNotification = async (ctx: QuoteEmailCont
   const adminEmail = process.env.ADMIN_NOTIFY_EMAIL || env.smtp.fromEmail || 'admin@pacifichardware.com';
 
   const content = `
-    <h2 style="margin-top:0; color:#0f172a;">⚠️ Customer Requested Quotation Revision</h2>
+    <h2 style="margin-top:0; color:#34150F;">⚠️ Customer Requested Quotation Revision</h2>
     <p>B2B Client <strong>${ctx.customerName}</strong> (${ctx.companyName}) has submitted their one-time revision request for quotation <strong>${ctx.referenceNo}</strong>.</p>
     
     <div class="info-card" style="border-left-color: #f59e0b;">
@@ -294,4 +400,3 @@ export const sendQuotationRevisionAdminNotification = async (ctx: QuoteEmailCont
     html: baseQuotationTemplate('Customer Revision Request', content),
   }).catch((err) => console.warn('[Email Warning]:', err.message));
 };
-
