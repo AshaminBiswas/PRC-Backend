@@ -192,6 +192,11 @@ model User {
   updatedAt            DateTime   @updatedAt
   deletedAt            DateTime?
 
+  // ─── Two-Factor Authentication ────────────────────────────────────────────
+  twoFactorEnabled     Boolean    @default(false)   @map("two_factor_enabled")
+  twoFactorSecret      String?                       @map("two_factor_secret")
+  twoFactorBackupCodes String[]                      @map("two_factor_backup_codes")
+
   // Relations
   userRoles            UserRole[]
   refreshTokens        RefreshToken[]
@@ -224,6 +229,7 @@ model User {
   @@index([email, deletedAt])
   @@map("users")
 }
+
 
 model Role {
   id          String   @id @default(uuid())

@@ -29,6 +29,11 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 
 const STATEMENTS = [
+  // ─── Add 2FA columns to users table ───────────────────────────────────────
+  `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_enabled"      BOOLEAN   NOT NULL DEFAULT false`,
+  `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_secret"       TEXT`,
+  `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_backup_codes" TEXT[]    NOT NULL DEFAULT ARRAY[]::TEXT[]`,
+
   // Create QuoteStatus enum if it doesn't exist
   `DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'QuoteStatus') THEN

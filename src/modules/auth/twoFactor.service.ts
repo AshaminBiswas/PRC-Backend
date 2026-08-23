@@ -5,7 +5,6 @@ import { AppError } from '../../middleware/error.middleware';
 import { getCache, setCache, deleteCache } from '../../services/redis/cache.redis';
 
 const BASE32_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-const MEMORY_CACHE = new Map<string, any>();
 
 // ─── TOTP RFC 6238 Core Implementation ────────────────────────────────────────
 
@@ -75,54 +74,47 @@ export function generateBackupCodes(count = 8): string[] {
   return codes;
 }
 
-// ─── Redis & In-Memory Caching Helpers ────────────────────────────────────────
+// ─── Redis Cache Helpers (cache-aside pattern) ─────────────────────────────────
 
-async function setStoreCache(key: string, data: any, ttl = 600) {
-  MEMORY_CACHE.set(key, data);
-  await setCache(key, data, ttl);
+async function cacheSet(key: string, data: any, ttl = 600) {
+  try { await setCache(key, data, ttl); } catch {}
 }
 
-async function getStoreCache<T = any>(key: string): Promise<T | null> {
-  const fromRedis = await getCache<T>(key);
-  if (fromRedis) return fromRedis;
-  return (MEMORY_CACHE.get(key) as T) || null;
+async function cacheGet<T = any>(key: string): Promise<T | null> {
+  try { return await getCache<T>(key); } catch { return null; }
 }
 
-async function deleteStoreCache(key: string) {
-  MEMORY_CACHE.delete(key);
-  await deleteCache(key);
+async function cacheDel(key: string) {
+  try { await deleteCache(key); } catch {}
 }
 
 // ─── 2FA Service Methods ──────────────────────────────────────────────────────
 
+/**
+ * Step 1: Initiate 2FA setup — generates secret + QR code.
+ * Stores the pending setup in Redis (not yet saved to DB until user confirms with a valid code).
+ */
 export const setup2Fa = async (userId: string, userEmail: string) => {
   const secret = generateBase32Secret(20);
   const otpauthUrl = `otpauth://totp/PRC%20Hardware:${encodeURIComponent(userEmail)}?secret=${secret}&issuer=PRC%20Hardware`;
   const qrCodeUrl = await QRCode.toDataURL(otpauthUrl);
   const backupCodes = generateBackupCodes(8);
 
-  const setupData = {
-    secret,
-    backupCodes,
-    createdAt: new Date().toISOString(),
-  };
+  // Cache pending setup in Redis for 10 minutes (not written to DB yet)
+  await cacheSet(`2fa:setup:${userId}`, { secret, backupCodes }, 600);
 
-  // Cache pending setup in Redis for 10 minutes (600 seconds)
-  await setStoreCache(`2fa:setup:${userId}`, setupData, 600);
-
-  return {
-    secret,
-    qrCodeUrl,
-    otpauthUrl,
-    backupCodes,
-  };
+  return { secret, qrCodeUrl, otpauthUrl, backupCodes };
 };
 
+/**
+ * Step 2: Confirm 2FA enable — verifies user's first TOTP code,
+ * then persists 2FA secret + backup codes to the database.
+ */
 export const enable2Fa = async (userId: string, userCode: string) => {
-  const setupData = await getStoreCache<{ secret: string; backupCodes: string[] }>(`2fa:setup:${userId}`);
+  const setupData = await cacheGet<{ secret: string; backupCodes: string[] }>(`2fa:setup:${userId}`);
 
   if (!setupData || !setupData.secret) {
-    throw new AppError('BAD_REQUEST', '2FA setup session expired or not initialized. Please initiate 2FA setup first.', 400);
+    throw new AppError('BAD_REQUEST', '2FA setup session expired or not initialized. Please initiate 2FA setup again.', 400);
   }
 
   const isValid = verifyTotpCode(setupData.secret, userCode);
@@ -130,18 +122,21 @@ export const enable2Fa = async (userId: string, userCode: string) => {
     throw new AppError('BAD_REQUEST', 'Invalid 2FA code. Please check your authenticator app and try again.', 400);
   }
 
-  const enabledData = {
-    secret: setupData.secret,
-    backupCodes: setupData.backupCodes,
-    enabledAt: new Date().toISOString(),
-  };
+  // ✅ Persist to database (primary source of truth)
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      twoFactorEnabled: true,
+      twoFactorSecret: setupData.secret,
+      twoFactorBackupCodes: setupData.backupCodes,
+    },
+  });
 
-  // Store enabled 2FA state in Redis cache (long TTL / persistent)
-  await setStoreCache(`2fa:enabled:${userId}`, enabledData, 86400 * 365);
-  await setStoreCache(`2fa:status:${userId}`, { enabled: true, enabledAt: enabledData.enabledAt }, 86400 * 365);
+  // Cache the enabled state for fast reads
+  await cacheSet(`2fa:enabled:${userId}`, { secret: setupData.secret, backupCodes: setupData.backupCodes }, 86400);
 
-  // Clear setup cache
-  await deleteStoreCache(`2fa:setup:${userId}`);
+  // Clear pending setup cache
+  await cacheDel(`2fa:setup:${userId}`);
 
   return {
     success: true,
@@ -150,58 +145,103 @@ export const enable2Fa = async (userId: string, userCode: string) => {
   };
 };
 
+/**
+ * Get 2FA status — checks DB first (source of truth), falls back to Redis cache.
+ */
 export const get2FaStatus = async (userId: string) => {
-  const status = await getStoreCache<{ enabled: boolean; enabledAt?: string }>(`2fa:status:${userId}`);
-  if (status && status.enabled) {
-    return { enabled: true, enabledAt: status.enabledAt };
-  }
+  // Primary: check database
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { twoFactorEnabled: true },
+  });
 
-  const enabledData = await getStoreCache(`2fa:enabled:${userId}`);
-  if (enabledData && enabledData.secret) {
-    return { enabled: true, enabledAt: enabledData.enabledAt };
+  if (user) {
+    return { enabled: user.twoFactorEnabled };
   }
 
   return { enabled: false };
 };
 
+/**
+ * Verify a TOTP code or backup code for a user.
+ * Loads secret from DB (primary), with Redis cache as fast path.
+ */
 export const verify2FaCode = async (userId: string, code: string): Promise<boolean> => {
   if (!code) return false;
 
-  const enabledData = await getStoreCache<{ secret: string; backupCodes: string[] }>(`2fa:enabled:${userId}`);
-  if (!enabledData || !enabledData.secret) {
-    return false;
+  // 1. Try Redis cache first (fast path)
+  let secret: string | null = null;
+  let backupCodes: string[] = [];
+
+  const cached = await cacheGet<{ secret: string; backupCodes: string[] }>(`2fa:enabled:${userId}`);
+  if (cached?.secret) {
+    secret = cached.secret;
+    backupCodes = cached.backupCodes || [];
+  } else {
+    // 2. Load from database (source of truth)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { twoFactorEnabled: true, twoFactorSecret: true, twoFactorBackupCodes: true },
+    });
+
+    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+      return false;
+    }
+
+    secret = user.twoFactorSecret;
+    backupCodes = user.twoFactorBackupCodes || [];
+
+    // Repopulate Redis cache
+    await cacheSet(`2fa:enabled:${userId}`, { secret, backupCodes }, 86400);
   }
 
-  // 1. Verify TOTP Code
-  const isValidTotp = verifyTotpCode(enabledData.secret, code);
+  if (!secret) return false;
+
+  // 3. Verify TOTP code (±1 window = ±30s clock drift tolerance)
+  const isValidTotp = verifyTotpCode(secret, code);
   if (isValidTotp) return true;
 
-  // 2. Verify Single-Use Backup Recovery Code
+  // 4. Verify single-use backup recovery code
   const cleanCode = code.trim().toUpperCase();
-  if (enabledData.backupCodes && enabledData.backupCodes.includes(cleanCode)) {
-    // Remove used backup code & update Redis cache
-    enabledData.backupCodes = enabledData.backupCodes.filter((c) => c !== cleanCode);
-    await setStoreCache(`2fa:enabled:${userId}`, enabledData, 86400 * 365);
+  if (backupCodes.includes(cleanCode)) {
+    // Remove used backup code from DB
+    const updatedCodes = backupCodes.filter((c) => c !== cleanCode);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorBackupCodes: updatedCodes },
+    });
+    // Update Redis cache
+    await cacheSet(`2fa:enabled:${userId}`, { secret, backupCodes: updatedCodes }, 86400);
     return true;
   }
 
   return false;
 };
 
+/**
+ * Disable 2FA — removes from DB and clears Redis cache.
+ */
 export const disable2Fa = async (userId: string, userCode?: string) => {
   if (userCode) {
     const isValid = await verify2FaCode(userId, userCode);
     if (!isValid) {
-      throw new AppError('BAD_REQUEST', 'Invalid 2FA code', 400);
+      throw new AppError('BAD_REQUEST', 'Invalid 2FA code. Cannot disable 2FA.', 400);
     }
   }
 
-  await deleteStoreCache(`2fa:enabled:${userId}`);
-  await deleteStoreCache(`2fa:status:${userId}`);
-  await deleteStoreCache(`2fa:setup:${userId}`);
+  // Remove from database
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      twoFactorEnabled: false,
+      twoFactorSecret: null,
+      twoFactorBackupCodes: [],
+    },
+  });
 
-  return {
-    success: true,
-    message: '2FA disabled successfully',
-  };
+  // Clear all Redis cache entries
+  await cacheDel(`2fa:enabled:${userId}`);
+  await cacheDel(`2fa:setup:${userId}`);
+
+  return { success: true, message: '2FA disabled successfully' };
 };

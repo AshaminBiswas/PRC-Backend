@@ -227,11 +227,22 @@ export const adminLogin = async (input: AdminLoginInput) => {
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
+  // ─── 2FA Check ──────────────────────────────────────────────────────────────
+  if (user.twoFactorEnabled) {
+    // Issue a short-lived MFA token (5 min) so frontend can complete the 2FA challenge
+    const mfaToken = generateAccessToken({ userId: user.id, email: user.email, roleSlug });
+    return {
+      requiresTwoFactor: true,
+      mfaToken,
+    };
+  }
+
   const permissions = user.userRoles.flatMap((ur) => ur.role.rolePermissions.map((rp) => rp.permission.slug));
   const { accessToken, refreshToken } = await buildTokenPair(user.id, user.email, roleSlug);
 
   return {
     accessToken, refreshToken, expiresIn: 3600, tokenType: 'Bearer',
+    requiresTwoFactor: false,
     user: {
       id: user.id,
       email: user.email,
@@ -242,9 +253,9 @@ export const adminLogin = async (input: AdminLoginInput) => {
       avatar: user.avatar,
       mustChangePassword: user.mustChangePassword ?? false,
     },
-    requiresTwoFactor: false,
   };
 };
+
 
 export const getMe = async (userId: string) => {
   const user = await prisma.user.findUnique({

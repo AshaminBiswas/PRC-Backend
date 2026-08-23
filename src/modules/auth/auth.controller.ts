@@ -19,9 +19,21 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
 export const adminLogin = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await authService.adminLogin(req.body);
+
+    // If 2FA is required, return mfaToken for the 2FA challenge step
+    if ((data as any).requiresTwoFactor && (data as any).mfaToken) {
+      sendSuccess(res, {
+        requiresTwoFactor: true,
+        mfaToken: (data as any).mfaToken,
+        message: 'Please complete 2FA verification',
+      });
+      return;
+    }
+
     sendSuccess(res, data);
   } catch (error) { next(error); }
 };
+
 
 export const getMe = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -101,95 +113,58 @@ export const verify2FaLogin = async (req: Request, res: Response, next: NextFunc
       throw new AppError('BAD_REQUEST', '2FA code is required', 400);
     }
 
+    if (!mfaToken) {
+      const { AppError } = await import('../../middleware/error.middleware');
+      throw new AppError('BAD_REQUEST', 'MFA token is required. Please login first to receive an mfaToken.', 400);
+    }
+
     const cleanCode = String(code).trim();
     let userId: string | null = null;
     let userEmail: string | null = null;
 
-    if (mfaToken && typeof mfaToken === 'string' && !mfaToken.startsWith('temp_mfa')) {
-      try {
-        const jwt = await import('jsonwebtoken');
-        const { env } = await import('../../config/env');
-        const decoded = jwt.default.verify(mfaToken, env.jwt.accessSecret) as any;
-        userId = decoded?.userId || decoded?.id || null;
-        userEmail = decoded?.email || null;
-      } catch {
-        userId = null;
-      }
+    // Decode the mfaToken (temporary JWT issued at login when 2FA is required)
+    try {
+      const jwt = await import('jsonwebtoken');
+      const { env } = await import('../../config/env');
+      const decoded = jwt.default.verify(mfaToken, env.jwt.accessSecret) as any;
+      userId = decoded?.userId || decoded?.id || null;
+      userEmail = decoded?.email || null;
+    } catch {
+      const { AppError } = await import('../../middleware/error.middleware');
+      throw new AppError('UNAUTHORIZED', 'Invalid or expired MFA token. Please login again.', 401);
     }
 
-    let isValid = false;
-
-    if (userId) {
-      const twoFactorService = await import('./twoFactor.service');
-      isValid = await twoFactorService.verify2FaCode(userId, cleanCode);
-    } else {
-      // Demo / fallback mode for 2FA login challenge
-      isValid = /^\d{6}$/.test(cleanCode) || cleanCode.length >= 4;
+    if (!userId) {
+      const { AppError } = await import('../../middleware/error.middleware');
+      throw new AppError('UNAUTHORIZED', 'Invalid MFA token. Please login again.', 401);
     }
+
+    // Verify the TOTP/backup code against this specific user's 2FA secret
+    const twoFactorService = await import('./twoFactor.service');
+    const isValid = await twoFactorService.verify2FaCode(userId, cleanCode);
 
     if (!isValid) {
       const { AppError } = await import('../../middleware/error.middleware');
-      throw new AppError('UNAUTHORIZED', 'Invalid 2FA code. Please check your authenticator app.', 401);
+      throw new AppError('UNAUTHORIZED', 'Invalid 2FA code. Please check your authenticator app and try again.', 401);
     }
 
-    // ─── ISSUE REAL JWT TOKENS & DB USER FOR ADMIN SESSION ───
+    // Load user and issue real JWT tokens
     const prisma = (await import('../../config/database')).default;
     const { buildTokenPair, getPrimaryRoleSlug } = await import('./auth.service');
 
-    let dbUser = null;
-
-    if (userId) {
-      dbUser = await prisma.user.findUnique({
-        where: { id: userId, deletedAt: null },
-        include: { userRoles: { include: { role: { include: { rolePermissions: { include: { permission: true } } } } } } },
-      });
-    }
-
-    if (!dbUser && userEmail) {
-      dbUser = await prisma.user.findUnique({
-        where: { email: userEmail, deletedAt: null },
-        include: { userRoles: { include: { role: { include: { rolePermissions: { include: { permission: true } } } } } } },
-      });
-    }
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId, deletedAt: null },
+      include: { userRoles: { include: { role: { include: { rolePermissions: { include: { permission: true } } } } } } },
+    });
 
     if (!dbUser) {
-      // Find any active super-admin or admin user in DB
-      dbUser = await prisma.user.findFirst({
-        where: { deletedAt: null, userRoles: { some: { role: { slug: { in: ['super-admin', 'admin'] } } } } },
-        include: { userRoles: { include: { role: { include: { rolePermissions: { include: { permission: true } } } } } } },
-      });
+      const { AppError } = await import('../../middleware/error.middleware');
+      throw new AppError('NOT_FOUND', 'User not found', 404);
     }
 
-    if (!dbUser) {
-      // Fallback to any active user in DB
-      dbUser = await prisma.user.findFirst({
-        where: { status: 'ACTIVE', deletedAt: null },
-        include: { userRoles: { include: { role: { include: { rolePermissions: { include: { permission: true } } } } } } },
-      });
-    }
-
-    if (!dbUser) {
-      // Auto-create initial super-admin user if DB has no users yet
-      let adminRole = await prisma.role.findFirst({ where: { slug: 'super-admin' } });
-      if (!adminRole) {
-        adminRole = await prisma.role.create({
-          data: { name: 'Super Admin', slug: 'super-admin', description: 'System Administrator', isSystem: true },
-        });
-      }
-      const bcrypt = (await import('bcryptjs')).default;
-      const passHash = await bcrypt.hash('AdminPass123!', 12);
-      dbUser = await prisma.user.create({
-        data: {
-          email: userEmail || 'admin@prchardware.com',
-          passwordHash: passHash,
-          firstName: 'Executive',
-          lastName: 'Admin',
-          status: 'ACTIVE',
-          isVerified: true,
-          userRoles: { create: { roleId: adminRole.id } },
-        },
-        include: { userRoles: { include: { role: { include: { rolePermissions: { include: { permission: true } } } } } } },
-      });
+    if (dbUser.status !== 'ACTIVE') {
+      const { AppError } = await import('../../middleware/error.middleware');
+      throw new AppError('ACCOUNT_INACTIVE', 'Account is not active', 403);
     }
 
     const roleSlug = getPrimaryRoleSlug(dbUser.userRoles);
@@ -215,10 +190,11 @@ export const verify2FaLogin = async (req: Request, res: Response, next: NextFunc
           isTwoFactorEnabled: true,
         },
       },
-      '2FA login verification successful'
+      '2FA verification successful'
     );
   } catch (error) { next(error); }
 };
+
 
 export const setup2Fa = async (req: Request, res: Response, next: NextFunction) => {
   try {
