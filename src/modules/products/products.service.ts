@@ -5,6 +5,8 @@ import { generateUniqueSlug } from '../../utils/slug.utils';
 import { buildPagination, getPaginationParams } from '../../utils/response';
 import type { CreateProductInput, UpdateProductInput } from './products.schema';
 import type { Prisma } from '@prisma/client';
+import { recordStockMovement } from '../inventory/movement/movement.service';
+import { StockMovementType } from '@prisma/client';
 
 // ─── Fast Projections (Separating Lightweight Catalog from Heavy Detail Views) ─
 
@@ -312,7 +314,7 @@ export const createProduct = async (input: CreateProductInput) => {
     select: productDetailSelect,
   });
 
-  // Automatically sync to Inventory Module
+  // ─── Sync to Inventory Module using the canonical recordStockMovement pipeline ─
   try {
     const defaultVenture = await prisma.venture.findFirst({ where: { deletedAt: null } });
     if (defaultVenture) {
@@ -322,49 +324,48 @@ export const createProduct = async (input: CreateProductInput) => {
       });
 
       if (defaultWh) {
-        const invProduct = await prisma.inventoryProduct.create({
-          data: {
-            productId: product.id,
-            ventureId: defaultVenture.id,
-            sku: product.sku,
-            barcode: `BC-${product.sku}`,
-            purchasePrice: product.price,
-            sellingPrice: product.salePrice || product.price,
-            currentStock: Number(product.stock) || 0,
-            availableStock: Number(product.stock) || 0,
-            reorderLevel: product.reorderLevel,
-          }
+        // Check if an InventoryProduct already exists (guard against duplicate runs)
+        const existingInvProduct = await prisma.inventoryProduct.findFirst({
+          where: { productId: product.id },
         });
 
-        // Initialize warehouse stock if greater than 0
-        if (product.stock > 0) {
-          await prisma.inventoryStock.create({
-            data: {
-              inventoryProductId: invProduct.id,
-              warehouseId: defaultWh.id,
-              ventureId: defaultVenture.id,
-              quantity: product.stock,
-            }
-          });
+        let invProductId = existingInvProduct?.id;
 
-          // Create a stock movement record for opening stock
-          await prisma.stockMovement.create({
+        if (!existingInvProduct) {
+          const invProduct = await prisma.inventoryProduct.create({
             data: {
+              productId: product.id,
               ventureId: defaultVenture.id,
-              inventoryProductId: invProduct.id,
-              warehouseId: defaultWh.id,
-              movementType: 'OPENING',
-              qtyChanged: product.stock,
-              qtyBefore: 0,
-              qtyAfter: product.stock,
-              reason: 'Initial stock from product creation',
-            }
+              sku: product.sku,
+              barcode: `BC-${product.sku}`,
+              purchasePrice: product.price,
+              sellingPrice: product.salePrice ?? product.price,
+              currentStock: 0,
+              availableStock: 0,
+              reorderLevel: product.reorderLevel,
+            },
+          });
+          invProductId = invProduct.id;
+        }
+
+        // Use recordStockMovement() for the opening stock — this correctly updates
+        // InventoryProduct.currentStock + availableStock and logs the StockMovement ledger
+        if (invProductId && product.stock > 0) {
+          await recordStockMovement({
+            ventureId: defaultVenture.id,
+            inventoryProductId: invProductId,
+            warehouseId: defaultWh.id,
+            qtyChanged: product.stock,
+            movementType: StockMovementType.OPENING,
+            channel: 'SYSTEM',
+            reason: 'Initial stock from product creation',
           });
         }
       }
     }
   } catch (err) {
-    console.error("Failed to sync new product to inventory:", err);
+    // Non-fatal — product is created, but log the inventory sync failure for debugging
+    console.error('[Inventory Sync] Failed to sync new product to inventory:', err);
   }
 
   return formatProduct(product);

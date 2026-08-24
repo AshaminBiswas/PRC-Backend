@@ -165,25 +165,27 @@ export const getStockHistory = async (ventureId: string, query: any) => {
 
 export const syncLegacyProducts = async (ventureId: string) => {
   let synced = 0;
-  
+  let skipped = 0;
+
   // Find primary warehouse for this venture
   const warehouse = await prisma.warehouse.findFirst({
     where: { ventureId, deletedAt: null },
     orderBy: { isDefault: 'desc' },
   });
 
-  if (!warehouse) throw new AppError('NOT_FOUND', 'No warehouse found to sync stock into', 404);
+  if (!warehouse) throw new AppError('NOT_FOUND', 'No warehouse found to sync stock into. Please create a warehouse first.', 404);
 
-  // Find all products that DO NOT have an InventoryProduct
+  // Find all products that DO NOT have an InventoryProduct linked to this venture
   const legacyProducts = await prisma.product.findMany({
     where: {
       deletedAt: null,
-      inventoryProducts: { none: {} }
-    }
+      inventoryProducts: { none: { ventureId } },
+    },
   });
 
   for (const product of legacyProducts) {
     try {
+      // Create the InventoryProduct profile (starts at 0; recordStockMovement will set real qty)
       const invProduct = await prisma.inventoryProduct.create({
         data: {
           productId: product.id,
@@ -191,41 +193,38 @@ export const syncLegacyProducts = async (ventureId: string) => {
           sku: product.sku,
           barcode: `BC-${product.sku}`,
           purchasePrice: product.price,
-          sellingPrice: product.salePrice || product.price,
-          currentStock: product.stock > 0 ? product.stock : 0,
-          availableStock: product.stock > 0 ? product.stock : 0,
+          sellingPrice: product.salePrice ?? product.price,
+          currentStock: 0,
+          availableStock: 0,
           reorderLevel: product.reorderLevel,
-        }
+        },
       });
 
+      // Only call recordStockMovement if there is actual stock to record
+      // This correctly updates InventoryProduct.currentStock + availableStock and logs the ledger
       if (product.stock > 0) {
-        await prisma.inventoryStock.create({
-          data: {
-            inventoryProductId: invProduct.id,
-            warehouseId: warehouse.id,
-            ventureId,
-            quantity: product.stock,
-          }
-        });
-
-        await prisma.stockMovement.create({
-          data: {
-            ventureId,
-            inventoryProductId: invProduct.id,
-            warehouseId: warehouse.id,
-            movementType: 'OPENING',
-            qtyChanged: product.stock,
-            qtyBefore: 0,
-            qtyAfter: product.stock,
-            reason: 'Legacy product sync',
-          }
+        await recordStockMovement({
+          ventureId,
+          inventoryProductId: invProduct.id,
+          warehouseId: warehouse.id,
+          qtyChanged: product.stock,
+          movementType: StockMovementType.OPENING,
+          channel: 'SYSTEM',
+          reason: 'Legacy product sync',
         });
       }
+
       synced++;
-    } catch (err) {
-      console.error(`Failed to sync legacy product ${product.sku}:`, err);
+    } catch (err: any) {
+      // SKU collision or other per-product error — skip and continue
+      if (err?.code === 'P2002') {
+        skipped++;
+      } else {
+        console.error(`[Inventory Sync] Failed to sync legacy product ${product.sku}:`, err);
+        skipped++;
+      }
     }
   }
 
-  return { synced, totalFound: legacyProducts.length };
+  return { synced, skipped, totalFound: legacyProducts.length };
 };
