@@ -79,7 +79,7 @@ export const authenticate = async (
     const hasAdmin = roleSlugs.some((s) => ['admin'].includes(s));
 
     let primaryRoleSlug = hasSuperAdmin
-      ? 'super_admin'
+      ? 'super-admin'
       : hasAdmin
       ? 'admin'
       : (user.userRoles[0]?.role?.slug ?? 'customer');

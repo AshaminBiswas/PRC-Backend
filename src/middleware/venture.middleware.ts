@@ -17,18 +17,18 @@ export const requireVenture = async (req: Request, res: Response, next: NextFunc
       return;
     }
 
+    const roleSlug = (req.user.roleSlug || '').toLowerCase();
+    const roles = (req.user.roles || []).map((r) => r.toLowerCase());
+
+    const isAdmin =
+      ['super-admin', 'super_admin', 'superadmin', 'admin', 'manager'].includes(roleSlug) ||
+      roles.some((r) => ['super-admin', 'super_admin', 'superadmin', 'admin', 'manager'].includes(r));
+
     // Venture ID can come from header x-venture-id, query ?ventureId, or body
     let ventureId =
       (req.headers['x-venture-id'] as string) ||
       (req.query.ventureId as string) ||
       req.body?.ventureId;
-
-    // Super-admin can explicitly supply ventureId or query across all
-    if (req.user.roleSlug === 'super-admin' && ventureId) {
-      req.ventureId = ventureId;
-      next();
-      return;
-    }
 
     // If no ventureId provided, find default venture for user
     if (!ventureId) {
@@ -40,7 +40,6 @@ export const requireVenture = async (req: Request, res: Response, next: NextFunc
       if (defaultVentureUser) {
         ventureId = defaultVentureUser.ventureId;
       } else {
-        // Fall back to first venture user belongs to
         const firstVentureUser = await prisma.ventureUser.findFirst({
           where: { userId: req.user.id },
           select: { ventureId: true },
@@ -48,33 +47,33 @@ export const requireVenture = async (req: Request, res: Response, next: NextFunc
 
         if (firstVentureUser) {
           ventureId = firstVentureUser.ventureId;
-        } else if (req.user.roleSlug === 'super-admin') {
-          // Super-admins may not have a VentureUser record — auto-resolve to the
-          // first available venture so inventory endpoints work without a header
-          const firstVenture = await prisma.venture.findFirst({
-            where: { deletedAt: null },
-            select: { id: true },
-            orderBy: { createdAt: 'asc' },
-          });
-          if (firstVenture) {
-            ventureId = firstVenture.id;
-          }
         }
       }
     }
 
-    // Super-admin can proceed even if no specific venture is bound, but for regular users check membership
-    if (req.user.roleSlug !== 'super-admin') {
-      if (!ventureId) {
-        sendError(res, { code: 'BAD_REQUEST', message: 'Venture context required for this user' }, 400);
-        return;
+    // Fallback: If still no ventureId, auto-resolve to primary system venture
+    if (!ventureId) {
+      const primaryVenture = await prisma.venture.findFirst({
+        where: { deletedAt: null },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (primaryVenture) {
+        ventureId = primaryVenture.id;
       }
+    }
 
+    // For non-admin users with an explicitly specified non-default venture, check membership
+    if (!isAdmin && ventureId) {
       const membership = await prisma.ventureUser.findUnique({
         where: { ventureId_userId: { ventureId, userId: req.user.id } },
       });
 
-      if (!membership) {
+      const userHasAnyVenture = await prisma.ventureUser.findFirst({
+        where: { userId: req.user.id },
+      });
+
+      if (userHasAnyVenture && !membership) {
         sendError(res, { code: 'FORBIDDEN', message: 'Access denied to specified venture' }, 403);
         return;
       }

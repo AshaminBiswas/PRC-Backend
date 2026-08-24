@@ -24,7 +24,7 @@ export const listInventoryProducts = async (ventureId: string, query: any) => {
 
   if (query.status) where.status = query.status;
   if (query.lowStock === 'true') {
-    where.currentStock = { lte: prisma.inventoryProduct.fields.reorderLevel };
+    where.currentStock = { lte: 10 };
   }
 
   const [products, totalItems] = await Promise.all([
