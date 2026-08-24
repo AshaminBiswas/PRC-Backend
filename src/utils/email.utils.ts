@@ -108,6 +108,7 @@ const getTransporter = (): Transporter => {
       host: env.smtp.host || 'smtp.gmail.com',
       port,
       secure: isSecure,
+      family: 4, // Explicitly force IPv4 for Alpine/Docker on Render
       auth: { user: env.smtp.user, pass: env.smtp.pass },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
