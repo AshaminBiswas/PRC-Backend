@@ -74,6 +74,21 @@ export interface SystemAlertPayload {
   timestamp: string;
 }
 
+export interface EnquirySubmittedPayload {
+  enquiryId: string;
+  name: string;
+  email: string;
+  subject: string;
+}
+
+export interface PaymentFailedPayload {
+  orderId: string;
+  orderNumber: string;
+  paymentId?: string;
+  amount: number;
+  reason: string;
+}
+
 export type DomainEvents = {
   'order.created': OrderCreatedPayload;
   'order.status_changed': OrderStatusChangedPayload;
@@ -83,6 +98,8 @@ export type DomainEvents = {
   'inventory.low_stock': LowStockPayload;
   'notification.created': NotificationCreatedPayload;
   'system.alert': SystemAlertPayload;
+  'enquiry.submitted': EnquirySubmittedPayload;
+  'payment.failed': PaymentFailedPayload;
 };
 
 // ─── Type-Safe Domain Event Bus ──────────────────────────────────────────────
@@ -190,5 +207,47 @@ export const initEventBus = () => {
     sseService.broadcastAll('system:alert', payload);
   });
 
-  logger.info('[Domain Event Bus] Subscribers active: order.created, order.status_changed, quote.created, inventory.low_stock, notification.created, system.alert');
+  // 7. Admin Notifications for Edge Cases
+  eventBus.onEvent('enquiry.submitted', async (payload) => {
+    const { notifyAdmins } = await import('../modules/notifications/admin-notification.service');
+    await notifyAdmins(
+      'New Customer Enquiry',
+      `A new enquiry has been submitted by ${payload.name} (${payload.email}). Subject: ${payload.subject}`,
+      'ENQUIRY_SUBMITTED',
+      payload
+    );
+  });
+
+  eventBus.onEvent('payment.failed', async (payload) => {
+    const { notifyAdmins } = await import('../modules/notifications/admin-notification.service');
+    await notifyAdmins(
+      'Payment Failed',
+      `A payment of ₹${payload.amount} failed for Order #${payload.orderNumber}. Reason: ${payload.reason}`,
+      'PAYMENT_FAILED',
+      payload
+    );
+  });
+
+  // Also hook into existing events for Admin emails
+  eventBus.onEvent('quote.created', async (payload) => {
+    const { notifyAdmins } = await import('../modules/notifications/admin-notification.service');
+    await notifyAdmins(
+      'New Quotation Request',
+      `A new B2B quotation request has been submitted by ${payload.customerName || 'a customer'} for ${payload.itemsCount} items.`,
+      'QUOTE_CREATED',
+      payload
+    );
+  });
+
+  eventBus.onEvent('inventory.low_stock', async (payload) => {
+    const { notifyAdmins } = await import('../modules/notifications/admin-notification.service');
+    await notifyAdmins(
+      'Low Stock Alert',
+      `Product "${payload.productName}" (SKU: ${payload.sku}) is running low. Only ${payload.currentStock} units remaining.`,
+      'LOW_STOCK',
+      payload
+    );
+  });
+
+  logger.info('[Domain Event Bus] Subscribers active: order.created, order.status_changed, quote.created, inventory.low_stock, notification.created, system.alert, enquiry.submitted, payment.failed');
 };

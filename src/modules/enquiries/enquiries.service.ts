@@ -65,6 +65,19 @@ export const submitEnquiry = async (input: CreateEnquiryInput, userId?: string) 
     },
   });
 
+  // Emit event to notify admins
+  try {
+    const { eventBus } = await import('../../events/eventBus');
+    eventBus.emitEvent('enquiry.submitted', {
+      enquiryId: enquiry.id,
+      name: enquiry.name,
+      email: enquiry.email,
+      subject: enquiry.subject,
+    });
+  } catch (err) {
+    console.error('[Enquiry Event Error]', err);
+  }
+
   return enquiry;
 };
 

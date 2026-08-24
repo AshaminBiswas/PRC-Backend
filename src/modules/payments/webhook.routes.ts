@@ -6,7 +6,7 @@ import { PaymentStatus, OrderStatus } from "@prisma/client";
 
 const router = Router();
 
-// Razorpay sends events as raw body — we need to parse it ourselves
+// Razorpay sends events as raw body ï¿½ we need to parse it ourselves
 router.post(
   "/",
   // Use raw body so we can verify the signature before parsing JSON
@@ -26,7 +26,7 @@ router.post(
           .update(rawBody)
           .digest("hex");
         if (expected !== signature) {
-          logger.warn("[Webhook] Invalid Razorpay signature — request rejected");
+          logger.warn("[Webhook] Invalid Razorpay signature ï¿½ request rejected");
           res.status(400).json({ error: "Invalid signature" });
           return;
         }
@@ -62,7 +62,7 @@ router.post(
             });
 
             if (payment && payment.status !== PaymentStatus.COMPLETED) {
-              await prisma.$transaction([
+              const [_, updatedOrder] = await prisma.$transaction([
                 prisma.payment.update({
                   where: { id: payment.id },
                   data: {
@@ -78,7 +78,7 @@ router.post(
                   },
                 }),
               ]);
-              logger.info(`[Webhook] payment.captured — order ${payment.orderId} marked PROCESSING`);
+              logger.info(`[Webhook] payment.captured ï¿½ order ${payment.orderId} marked PROCESSING`);
             }
           }
         }
@@ -96,7 +96,7 @@ router.post(
             });
 
             if (payment && payment.status === PaymentStatus.PENDING) {
-              await prisma.$transaction([
+              const [_, updatedOrder] = await prisma.$transaction([
                 prisma.payment.update({
                   where: { id: payment.id },
                   data: {
@@ -109,7 +109,19 @@ router.post(
                   data: { paymentStatus: PaymentStatus.FAILED },
                 }),
               ]);
-              logger.warn(`[Webhook] payment.failed — order ${payment.orderId}`);
+              logger.warn(`[Webhook] payment.failed - order ${payment.orderId}`);
+              
+              try {
+                const { eventBus } = await import('../../events/eventBus');
+                eventBus.emitEvent('payment.failed', {
+                  orderId: updatedOrder.id,
+                  orderNumber: updatedOrder.orderNumber,
+                  amount: Number(payment.amount),
+                  reason: errorDesc ?? "Payment failed",
+                });
+              } catch (err) {
+                logger.error('[Webhook] Failed to emit payment.failed event', err);
+              }
             }
           }
         }
@@ -123,7 +135,7 @@ router.post(
       } catch (err) {
         logger.error("[Webhook] Handler error:", err);
         // Return 200 anyway to prevent Razorpay from retrying on our logic errors
-        res.json({ received: true, warning: "Handler error — check logs" });
+        res.json({ received: true, warning: "Handler error ï¿½ check logs" });
       }
     });
   }
