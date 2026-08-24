@@ -758,8 +758,14 @@ async function run() {
     await prisma.$connect();
     console.log(`[fix-db] Connected. Verifying ${STATEMENTS.length} schema patches...`);
     
-    // Execute all statements with Promise.allSettled for maximum speed (< 500ms)
-    await Promise.allSettled(STATEMENTS.map((sql) => prisma.$executeRawUnsafe(sql)));
+    // Execute all statements sequentially to prevent PostgreSQL concurrent lock/deadlock errors
+    for (let i = 0; i < STATEMENTS.length; i++) {
+      try {
+        await prisma.$executeRawUnsafe(STATEMENTS[i]);
+      } catch (stmtErr) {
+        console.warn(`[fix-db] Statement ${i + 1} failed:`, stmtErr?.message || stmtErr);
+      }
+    }
     console.log('[fix-db] ✅ Schema verification completed.');
   } catch (err) {
     console.warn('[fix-db] Schema patch non-fatal notice:', err?.message || err);
