@@ -44,29 +44,51 @@ const baseQuotationTemplate = (title: string, bodyContent: string): string => `
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>${title} - PRC Hardware</title>
   <style>
-    body { font-family: 'Segoe UI', Helvetica, Arial, sans-serif; background: #f8fafc; margin: 0; padding: 0; }
-    .container { max-width: 620px; margin: 30px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
-    .header { background: #34150F; padding: 28px; text-align: center; border-bottom: 3px solid #D39858; }
-    .header h1 { color: #EACEAA; margin: 0; font-size: 22px; letter-spacing: 0.5px; font-weight: 800; }
-    .header p { color: #D39858; margin: 4px 0 0 0; font-size: 11px; font-weight: 600; }
-    .body { padding: 32px 28px; color: #1e293b; line-height: 1.6; }
+    /* Reset & Base */
+    body, p, h1, h2, h3, h4, h5, h6 { margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; -webkit-font-smoothing: antialiased; }
+    
+    /* Layout */
+    .wrapper { width: 100%; background-color: #f3f4f6; padding: 40px 0; }
+    .container { max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); }
+    
+    /* Header */
+    .header { background-color: #34150F; padding: 32px 40px; text-align: center; border-bottom: 4px solid #D39858; }
+    .header h1 { color: #EACEAA; font-size: 24px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+    .header p { color: #D39858; font-size: 12px; margin-top: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
+    
+    /* Body */
+    .body { padding: 40px; color: #374151; font-size: 16px; line-height: 1.625; }
+    .body h2 { color: #111827; font-size: 20px; font-weight: 600; margin-bottom: 16px; }
+    .body p { margin-bottom: 16px; }
+    
+    /* Components */
     .ref-badge { display: inline-block; background: #fef3c7; color: #92400e; padding: 6px 14px; border-radius: 6px; font-weight: 800; font-family: monospace; font-size: 15px; border: 1px solid #fde68a; }
     .info-card { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #D39858; border-radius: 6px; padding: 18px; margin: 20px 0; }
-    .btn-primary { display: inline-block; margin: 20px 0; padding: 14px 28px; background: #D39858; color: #34150F; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 15px; text-align: center; }
-    .footer { background: #34150F; padding: 20px; text-align: center; font-size: 11px; color: #EACEAA; }
+    .btn-primary { display: inline-block; background-color: #D39858; color: #ffffff !important; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; margin: 8px 0; transition: background-color 0.2s; }
+    
+    /* Footer */
+    .footer { background-color: #f9fafb; padding: 32px 40px; text-align: center; border-top: 1px solid #e5e7eb; }
+    .footer p { color: #6b7280; font-size: 13px; line-height: 1.5; margin-bottom: 8px; }
+    .footer .links { margin-top: 16px; }
+    .footer a { color: #D39858; text-decoration: none; font-size: 13px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>PRC HARDWARE</h1>
-      <p>Architectural Hardware & Commercial Solutions &bull; Delhi, India</p>
-    </div>
-    <div class="body">
-      ${bodyContent}
-    </div>
-    <div class="footer">
-      PRC Hardware &bull; Official B2B Quotation Notification &bull; support@pacifichardware.com
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <h1>PRC HARDWARE</h1>
+        <p>Architectural &amp; Commercial Solutions &bull; Delhi, India</p>
+      </div>
+      <div class="body">
+        ${bodyContent}
+      </div>
+      <div class="footer">
+        <p><strong>PRC Hardware</strong><br>Official B2B Quotation Notification</p>
+        <p>This is an automated operational email. Please direct inquiries to support@pacifichardware.com.</p>
+        <p>&copy; ${new Date().getFullYear()} PRC Hardware. All rights reserved.</p>
+      </div>
     </div>
   </div>
 </body>
