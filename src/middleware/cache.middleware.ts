@@ -19,7 +19,9 @@ export const cacheMiddleware = (options: CacheMiddlewareOptions = {}) => {
     }
 
     const startHrTime = process.hrtime();
-    const cacheKey = `${prefix}:${req.originalUrl || req.url}`;
+    // Include userId in the key so authenticated users never share cached responses
+    const userSegment = (req as any).user?.id ? `:u:${(req as any).user.id}` : '';
+    const cacheKey = `${prefix}${userSegment}:${req.originalUrl || req.url}`;
 
     try {
       const cached = await getCacheWithTier(cacheKey);
