@@ -218,73 +218,156 @@ const baseTemplate = (content: string): string => `
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="x-apple-disable-message-reformatting" />
   <title>PRC Hardware</title>
   <style>
-    /* Reset & Base */
-    body, p, h1, h2, h3, h4, h5, h6 { margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; -webkit-font-smoothing: antialiased; }
-    
-    /* Layout */
-    .wrapper { width: 100%; background-color: #f3f4f6; padding: 40px 0; }
-    .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); }
-    
-    /* Header */
-    .header { background-color: #34150F; padding: 32px 40px; text-align: center; border-bottom: 4px solid #D39858; }
-    .header h1 { color: #EACEAA; font-size: 24px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
-    .header p { color: #D39858; font-size: 12px; margin-top: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
-    
-    /* Body */
-    .body { padding: 40px; color: #374151; font-size: 16px; line-height: 1.625; }
-    .body h2 { color: #111827; font-size: 20px; font-weight: 600; margin-bottom: 16px; }
-    .body p { margin-bottom: 16px; }
-    
-    /* Components */
-    .btn { display: inline-block; background-color: #D39858; color: #ffffff !important; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; margin: 8px 0; transition: background-color 0.2s; }
-    .otp-box { display: block; margin: 32px auto; padding: 20px; background-color: #f9fafb; border: 2px dashed #D39858; color: #34150F; border-radius: 8px; font-size: 32px; font-weight: 700; letter-spacing: 8px; text-align: center; width: fit-content; min-width: 180px; }
-    .info-card { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #D39858; border-radius: 6px; padding: 18px; margin: 20px 0; font-size: 15px; }
-    
-    /* Footer */
-    .footer { background-color: #f9fafb; padding: 32px 40px; text-align: center; border-top: 1px solid #e5e7eb; }
-    .footer p { color: #6b7280; font-size: 13px; line-height: 1.5; margin-bottom: 8px; }
-    .footer .links { margin-top: 16px; }
-    .footer a { color: #D39858; text-decoration: none; font-size: 13px; }
-    
-    /* Utilities */
-    .text-center { text-align: center; }
-    .muted { color: #6b7280; font-size: 14px; }
-    .divider { height: 1px; background-color: #e5e7eb; margin: 24px 0; }
-    /* Responsive Media Queries */
-    @media only screen and (max-width: 600px) {
-      .wrapper { padding: 10px 0 !important; }
-      .container { max-width: 100% !important; border-radius: 4px !important; margin: 0 10px !important; width: auto !important; }
-      .header { padding: 24px 20px !important; }
-      .body { padding: 24px 20px !important; }
-      .footer { padding: 24px 20px !important; }
-      .header h1 { font-size: 20px !important; }
-      .logo-img { height: 50px !important; }
-      .otp-box { font-size: 24px !important; letter-spacing: 4px !important; padding: 15px !important; min-width: 140px !important; }
-      .info-card { padding: 12px !important; font-size: 14px !important; }
+    html, body { margin:0 !important; padding:0 !important; width:100% !important; }
+    body {
+      background:#f4f6f8;
+      color:#1f2937;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      -webkit-font-smoothing:antialiased;
+      text-rendering:optimizeLegibility;
+    }
+    table { border-collapse:collapse; }
+    img { border:0; outline:none; text-decoration:none; display:block; }
+    a { text-decoration:none; }
+    .preheader { display:none !important; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden; }
+    .page { width:100%; background:#f4f6f8; padding:32px 16px; }
+    .shell { width:100%; max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e5e7eb; }
+    .brandbar { background:#1f2937; padding:22px 32px; border-bottom:3px solid #d39858; }
+    .brand { font-size:19px; line-height:24px; font-weight:800; letter-spacing:.02em; color:#ffffff; }
+    .tagline { margin-top:4px; font-size:11px; line-height:16px; letter-spacing:.08em; text-transform:uppercase; color:#d39858; }
+    .content { padding:40px 40px 32px; }
+    .eyebrow {
+      margin:0 0 10px;
+      font-size:11px;
+      line-height:16px;
+      font-weight:700;
+      letter-spacing:.1em;
+      text-transform:uppercase;
+      color:#9a6a37;
+    }
+    h2 { margin:0 0 14px; color:#111827; font-size:25px; line-height:32px; font-weight:750; letter-spacing:-.02em; }
+    h3 { margin:0 0 10px; color:#111827; font-size:16px; line-height:22px; font-weight:700; }
+    p { margin:0 0 16px; color:#4b5563; font-size:15px; line-height:24px; }
+    .muted { color:#6b7280 !important; font-size:13px !important; line-height:20px !important; }
+    .divider { height:1px; background:#e5e7eb; margin:28px 0; }
+    .btn-wrap { padding:8px 0 18px; text-align:left; }
+    .btn {
+      display:inline-block;
+      background:#34150f;
+      color:#ffffff !important;
+      padding:13px 22px;
+      border-radius:5px;
+      font-size:14px;
+      line-height:20px;
+      font-weight:700;
+      letter-spacing:.01em;
+    }
+    .btn:hover { background:#24100c; }
+    .card {
+      margin:24px 0;
+      border:1px solid #e5e7eb;
+      border-radius:6px;
+      background:#f8fafc;
+      padding:20px;
+    }
+    .card-accent {
+      border-left:4px solid #d39858;
+      padding-left:17px;
+    }
+    .dark-card {
+      margin:24px 0;
+      border-radius:6px;
+      background:#1f2937;
+      padding:22px;
+    }
+    .dark-card h3 { color:#d39858; }
+    .dark-card p { color:#d1d5db; margin-bottom:8px; }
+    .dark-card strong { color:#ffffff; }
+    .credential {
+      display:inline-block;
+      margin-left:4px;
+      padding:3px 7px;
+      border-radius:4px;
+      background:#111827;
+      color:#f1d6b3;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+      font-size:14px;
+      font-weight:700;
+    }
+    .otp {
+      margin:26px auto;
+      max-width:260px;
+      border:1px solid #ead8c1;
+      border-radius:8px;
+      background:#fffaf4;
+      padding:18px 22px;
+      text-align:center;
+      color:#34150f;
+      font-size:31px;
+      line-height:38px;
+      font-weight:800;
+      letter-spacing:7px;
+    }
+    .notice {
+      margin:20px 0;
+      padding:14px 16px;
+      border:1px solid #ead8c1;
+      border-radius:5px;
+      background:#fffaf4;
+      color:#5f4630;
+      font-size:13px;
+      line-height:20px;
+    }
+    .details { width:100%; }
+    .details td { padding:10px 0; border-bottom:1px solid #e5e7eb; vertical-align:top; }
+    .details tr:last-child td { border-bottom:0; }
+    .label { width:38%; color:#6b7280; font-size:13px; }
+    .value { color:#111827; font-size:14px; font-weight:600; }
+    .footer {
+      border-top:1px solid #e5e7eb;
+      background:#fafafa;
+      padding:24px 40px 28px;
+    }
+    .footer p { margin:0 0 7px; color:#6b7280; font-size:12px; line-height:18px; }
+    .footer a { color:#7b542c; }
+    .footer .legal { margin-top:14px; color:#9ca3af; font-size:11px; }
+    @media only screen and (max-width:600px) {
+      .page { padding:12px 8px !important; }
+      .brandbar { padding:20px 22px !important; }
+      .content { padding:28px 22px 22px !important; }
+      .footer { padding:20px 22px 24px !important; }
+      h2 { font-size:22px !important; line-height:29px !important; }
+      p { font-size:14px !important; line-height:22px !important; }
+      .btn { display:block !important; text-align:center !important; }
+      .label { width:42% !important; }
+      .otp { font-size:27px !important; letter-spacing:5px !important; }
     }
   </style>
 </head>
 <body>
-  <div class="wrapper">
-    <div class="container">
-      <div class="header">
-        <img src="https://ui-avatars.com/api/?name=PRC+Hardware&background=EACEAA&color=34150F&size=128&bold=true" alt="PRC Hardware Logo" class="logo-img" style="height: 64px; margin-bottom: 16px; border-radius: 50%; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 2px solid #D39858;" />
-        <h1>PRC Hardware</h1>
-        <p>Premium Architectural Hardware</p>
-      </div>
-      <div class="body">
-        ${content}
-      </div>
-      <div class="footer">
-        <p><strong>PRC Hardware</strong><br>New Delhi, India</p>
-        <p>This is an automated operational email. Please do not reply directly to this address.</p>
-        <p>&copy; ${new Date().getFullYear()} PRC Hardware. All rights reserved.</p>
-      </div>
-    </div>
-  </div>
+  <div class="preheader">PRC Hardware — premium architectural hardware and B2B solutions.</div>
+  <table role="presentation" width="100%" class="page">
+    <tr><td align="center">
+      <table role="presentation" class="shell">
+        <tr><td class="brandbar">
+          <div class="brand">PRC HARDWARE</div>
+          <div class="tagline">Premium Architectural Hardware</div>
+        </td></tr>
+        <tr><td class="content">
+          ${content}
+        </td></tr>
+        <tr><td class="footer">
+          <p><strong>PRC Hardware</strong> · New Delhi, India</p>
+          <p>Need assistance? Contact your account representative or support team.</p>
+          <p class="legal">This is an automated operational email. Please do not reply directly to this message.</p>
+          <p class="legal">&copy; ${new Date().getFullYear()} PRC Hardware. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>`;
 
@@ -297,12 +380,14 @@ export const sendOtpEmail = async (to: string, firstName: string, otp: string): 
     to,
     subject: 'Your PRC Hardware verification code',
     html: baseTemplate(`
-      <h2>Hello ${firstName},</h2>
-      <p>Thank you for registering with PRC Hardware. Use the verification code below to confirm your email address.</p>
-      <div class="otp-box">${otp}</div>
-      <p>This code expires in <strong>10 minutes</strong>. Please do not share it with anyone.</p>
+      <div class="eyebrow">Email verification</div>
+      <h2>Verify your email address</h2>
+      <p>Hello ${firstName},</p>
+      <p>Thank you for registering with PRC Hardware. Enter the verification code below to confirm your email address.</p>
+      <div class="otp">${otp}</div>
+      <p><strong>This code expires in 10 minutes.</strong> Never share this code with anyone.</p>
       <div class="divider"></div>
-      <p class="muted">If you did not request this code, you can safely ignore this email. Someone may have typed their email address incorrectly.</p>
+      <p class="muted">If you did not request this code, you can safely ignore this email.</p>
     `),
   });
 };
@@ -315,15 +400,14 @@ export const sendVerificationEmail = async (to: string, firstName: string, token
     to,
     subject: 'Verify your PRC Hardware account',
     html: baseTemplate(`
-      <h2>Hello ${firstName},</h2>
-      <p>Welcome to PRC Hardware! Please verify your email address by clicking the button below.</p>
-      <div class="text-center">
-        <a href="${link}" class="btn">Verify Email Address</a>
+      <div class="eyebrow">Account verification</div>
+      <h2>Confirm your email</h2>
+      <p>Hello ${firstName},</p>
+      <p>Welcome to PRC Hardware. Confirm your email address to activate your account.</p>
+      <div class="btn-wrap">
+        <a href="${link}" class="btn">Verify email address</a>
       </div>
-      <p>Or copy and paste this link into your browser:</p>
-      <p class="muted"><a href="${link}" style="color: #D39858;">${link}</a></p>
-      <div class="divider"></div>
-      <p class="muted">This link expires in 24 hours.</p>
+      <p class="muted">This verification link expires in 24 hours.</p>
     `),
   });
 };
@@ -336,15 +420,14 @@ export const sendPasswordResetEmail = async (to: string, firstName: string, toke
     to,
     subject: 'Reset your PRC Hardware password',
     html: baseTemplate(`
-      <h2>Hello ${firstName},</h2>
-      <p>We received a request to reset your password. Click the button below to choose a new one.</p>
-      <div class="text-center">
-        <a href="${link}" class="btn">Reset Password</a>
+      <div class="eyebrow">Account security</div>
+      <h2>Reset your password</h2>
+      <p>Hello ${firstName},</p>
+      <p>We received a request to reset your PRC Hardware password. Use the button below to choose a new password.</p>
+      <div class="btn-wrap">
+        <a href="${link}" class="btn">Reset password</a>
       </div>
-      <p>Or copy and paste this link into your browser:</p>
-      <p class="muted"><a href="${link}" style="color: #D39858;">${link}</a></p>
-      <div class="divider"></div>
-      <p class="muted">If you did not request a password reset, please ignore this email. This link expires in 1 hour.</p>
+      <p class="muted">This link expires in 1 hour. If you did not request this change, you can safely ignore this email.</p>
     `),
   });
 };
@@ -356,11 +439,11 @@ export const sendPasswordChangedEmail = async (to: string, firstName: string): P
     to,
     subject: 'Your PRC Hardware password was changed',
     html: baseTemplate(`
-      <h2>Hello ${firstName},</h2>
-      <p>This is a confirmation that the password for your PRC Hardware account was just changed.</p>
-      <p>If you made this change, you can safely ignore this email.</p>
-      <div class="divider"></div>
-      <p class="muted"><strong>Didn't change your password?</strong> Please contact our support team immediately to secure your account.</p>
+      <div class="eyebrow">Account security</div>
+      <h2>Password changed successfully</h2>
+      <p>Hello ${firstName},</p>
+      <p>This is a confirmation that your PRC Hardware account password was changed successfully.</p>
+      <div class="notice"><strong>Didn't make this change?</strong> Contact our support team immediately to secure your account.</div>
     `),
   });
 };
@@ -372,11 +455,12 @@ export const sendWelcomeEmail = async (to: string, firstName: string): Promise<v
     to,
     subject: 'Welcome to PRC Hardware!',
     html: baseTemplate(`
-      <h2>Welcome, ${firstName}!</h2>
-      <p>Thank you for creating an account with PRC Hardware. We are thrilled to have you on board.</p>
-      <p>Your email has been verified and your account is now active. You can now explore our full catalog of hardware products.</p>
-      <div class="text-center">
-        <a href="${env.frontend.url}/shop" class="btn">Start Shopping</a>
+      <div class="eyebrow">Account activated</div>
+      <h2>Welcome to PRC Hardware, ${firstName}</h2>
+      <p>Your email has been verified and your account is now active.</p>
+      <p>You can now explore the full catalog of architectural hardware products.</p>
+      <div class="btn-wrap">
+        <a href="${env.frontend.url}/shop" class="btn">Explore catalog</a>
       </div>
     `),
   });
@@ -458,5 +542,3 @@ export const sendB2BCustomerWelcomeEmail = async (params: {
     `),
   });
 };
-
-
