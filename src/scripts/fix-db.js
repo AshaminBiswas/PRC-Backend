@@ -749,9 +749,9 @@ const STATEMENTS = [
 
 async function run() {
   const timeoutTimer = setTimeout(() => {
-    console.warn('[fix-db] Timeout reached (15s). Proceeding directly to server startup...');
+    console.warn('[fix-db] Timeout reached (30s). Proceeding directly to server startup...');
     process.exit(0);
-  }, 15000);
+  }, 30000);
 
 
   try {
