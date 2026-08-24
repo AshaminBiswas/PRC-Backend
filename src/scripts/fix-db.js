@@ -43,43 +43,43 @@ const STATEMENTS = [
 
   // Rename camelCase columns on quotes table
   `DO $$ BEGIN
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='quoteNumber') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='quoteNumber') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='quote_number') THEN
       ALTER TABLE "quotes" RENAME COLUMN "quoteNumber" TO "quote_number";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='createdAt') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='createdAt') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='created_at') THEN
       ALTER TABLE "quotes" RENAME COLUMN "createdAt" TO "created_at";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='updatedAt') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='updatedAt') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='updated_at') THEN
       ALTER TABLE "quotes" RENAME COLUMN "updatedAt" TO "updated_at";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='userId') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='userId') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='user_id') THEN
       ALTER TABLE "quotes" RENAME COLUMN "userId" TO "user_id";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='discountTotal') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='discountTotal') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='discount_total') THEN
       ALTER TABLE "quotes" RENAME COLUMN "discountTotal" TO "discount_total";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='taxTotal') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='taxTotal') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='tax_total') THEN
       ALTER TABLE "quotes" RENAME COLUMN "taxTotal" TO "tax_total";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='grandTotal') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='grandTotal') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='grand_total') THEN
       ALTER TABLE "quotes" RENAME COLUMN "grandTotal" TO "grand_total";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='adminNotes') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='adminNotes') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='admin_notes') THEN
       ALTER TABLE "quotes" RENAME COLUMN "adminNotes" TO "admin_notes";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='validUntil') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='validUntil') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='valid_until') THEN
       ALTER TABLE "quotes" RENAME COLUMN "validUntil" TO "valid_until";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='convertedOrderId') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='convertedOrderId') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='converted_order_id') THEN
       ALTER TABLE "quotes" RENAME COLUMN "convertedOrderId" TO "converted_order_id";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customerProposedAdvancePercent') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customerProposedAdvancePercent') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customer_proposed_advance_percent') THEN
       ALTER TABLE "quotes" RENAME COLUMN "customerProposedAdvancePercent" TO "customer_proposed_advance_percent";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customerEditCount') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customerEditCount') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customer_edit_count') THEN
       ALTER TABLE "quotes" RENAME COLUMN "customerEditCount" TO "customer_edit_count";
     END IF;
-    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customerEditRemark') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customerEditRemark') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='quotes' AND column_name='customer_edit_remark') THEN
       ALTER TABLE "quotes" RENAME COLUMN "customerEditRemark" TO "customer_edit_remark";
     END IF;
   END $$`,
