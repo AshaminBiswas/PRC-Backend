@@ -72,14 +72,27 @@ const baseQuotationTemplate = (title: string, bodyContent: string): string => `
     .footer p { color: #6b7280; font-size: 13px; line-height: 1.5; margin-bottom: 8px; }
     .footer .links { margin-top: 16px; }
     .footer a { color: #D39858; text-decoration: none; font-size: 13px; }
+    /* Responsive Media Queries */
+    @media only screen and (max-width: 600px) {
+      .wrapper { padding: 10px 0 !important; }
+      .container { max-width: 100% !important; border-radius: 4px !important; margin: 0 10px !important; width: auto !important; }
+      .header { padding: 24px 20px !important; }
+      .body { padding: 24px 20px !important; }
+      .footer { padding: 24px 20px !important; }
+      .header h1 { font-size: 20px !important; }
+      .logo-img { height: 50px !important; }
+      .otp-box { font-size: 24px !important; letter-spacing: 4px !important; padding: 15px !important; min-width: 140px !important; }
+      .info-card { padding: 12px !important; font-size: 14px !important; }
+    }
   </style>
 </head>
 <body>
   <div class="wrapper">
     <div class="container">
       <div class="header">
-        <h1>PRC HARDWARE</h1>
-        <p>Architectural &amp; Commercial Solutions &bull; Delhi, India</p>
+        <img src="https://ui-avatars.com/api/?name=PRC+Hardware&background=EACEAA&color=34150F&size=128&bold=true" alt="PRC Hardware Logo" class="logo-img" style="height: 64px; margin-bottom: 16px; border-radius: 50%; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 2px solid #D39858;" />
+        <h1>PRC Hardware</h1>
+        <p>Premium Architectural Hardware</p>
       </div>
       <div class="body">
         ${bodyContent}
