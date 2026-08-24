@@ -312,6 +312,61 @@ export const createProduct = async (input: CreateProductInput) => {
     select: productDetailSelect,
   });
 
+  // Automatically sync to Inventory Module
+  try {
+    const defaultVenture = await prisma.venture.findFirst({ where: { deletedAt: null } });
+    if (defaultVenture) {
+      const defaultWh = await prisma.warehouse.findFirst({
+        where: { ventureId: defaultVenture.id, deletedAt: null },
+        orderBy: { isDefault: 'desc' },
+      });
+
+      if (defaultWh) {
+        const invProduct = await prisma.inventoryProduct.create({
+          data: {
+            productId: product.id,
+            ventureId: defaultVenture.id,
+            sku: product.sku,
+            barcode: `BC-${product.sku}`,
+            purchasePrice: product.price,
+            sellingPrice: product.salePrice || product.price,
+            currentStock: Number(product.stock) || 0,
+            availableStock: Number(product.stock) || 0,
+            reorderLevel: product.reorderLevel,
+          }
+        });
+
+        // Initialize warehouse stock if greater than 0
+        if (product.stock > 0) {
+          await prisma.inventoryStock.create({
+            data: {
+              inventoryProductId: invProduct.id,
+              warehouseId: defaultWh.id,
+              ventureId: defaultVenture.id,
+              quantity: product.stock,
+            }
+          });
+
+          // Create a stock movement record for opening stock
+          await prisma.stockMovement.create({
+            data: {
+              ventureId: defaultVenture.id,
+              inventoryProductId: invProduct.id,
+              warehouseId: defaultWh.id,
+              movementType: 'OPENING',
+              qtyChanged: product.stock,
+              qtyBefore: 0,
+              qtyAfter: product.stock,
+              reason: 'Initial stock from product creation',
+            }
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to sync new product to inventory:", err);
+  }
+
   return formatProduct(product);
 };
 
