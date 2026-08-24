@@ -72,7 +72,7 @@ export const submitEnquiry = async (input: CreateEnquiryInput, userId?: string) 
       enquiryId: enquiry.id,
       name: enquiry.name,
       email: enquiry.email,
-      subject: enquiry.subject,
+      subject: enquiry.subject || 'General Enquiry',
     });
   } catch (err) {
     console.error('[Enquiry Event Error]', err);
