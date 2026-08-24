@@ -298,6 +298,7 @@ app.use(`${prefix}/notifications`, notificationsRoutes);
 app.use(`${prefix}/search`, searchRoutes);
 app.use(`${prefix}/settings`, settingsRoutes);
 app.use(`${prefix}/dashboard`, dashboardRoutes);
+app.use(`${prefix}/analytics`, dashboardRoutes);
 app.use(`${prefix}/reports`, reportsRoutes);
 app.use(`${prefix}/inventory`, inventoryRoutes);
 app.use(`${prefix}/ventures`, venturesRoutes);

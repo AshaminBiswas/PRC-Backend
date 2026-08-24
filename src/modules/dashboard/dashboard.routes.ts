@@ -14,6 +14,7 @@ const router = Router();
 router.use(authenticate, authorize('dashboard.read'), adminLimiter);
 
 router.get('/overview', validate(DashboardOverviewQuerySchema, 'query'), controller.getOverview);
+router.get('/stats', validate(DashboardOverviewQuerySchema, 'query'), controller.getOverview);
 router.get('/sales-chart', validate(SalesChartQuerySchema, 'query'), controller.getSalesChart);
 router.get('/recent-orders', validate(RecentOrdersQuerySchema, 'query'), controller.getRecentOrders);
 router.get('/inventory', validate(DashboardInventoryQuerySchema, 'query'), controller.getInventory);
