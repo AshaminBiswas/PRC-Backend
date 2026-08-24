@@ -1,6 +1,7 @@
 import EventEmitter from 'events';
 import { sseService } from './sse.service';
 import { addEmailJob, addInvoiceJob } from '../queues/bullmq.queue';
+import { logger } from '../config/logger';
 
 // ─── Domain Event Definitions & Payloads ─────────────────────────────────────
 
@@ -93,7 +94,7 @@ class DomainEventBus extends EventEmitter {
   }
 
   public emitEvent<K extends keyof DomainEvents>(event: K, payload: DomainEvents[K]): boolean {
-    console.log(`📣 [Domain Event Bus] Emitting event: "${event}"`, payload);
+    logger.debug(`[Domain Event Bus] Emitting event: "${event}"`, payload as any);
     return this.emit(event, payload);
   }
 
@@ -107,7 +108,7 @@ export const eventBus = new DomainEventBus();
 // ─── Default Event Subscribers & Side-Effect Handlers ────────────────────────
 
 export const initEventBus = () => {
-  console.log('⚡ [Domain Event Bus] Initialising event subscribers & real-time dispatchers...');
+  logger.info('[Domain Event Bus] Initialising event subscribers & real-time dispatchers...');
 
   // 1. Order Created Subscriber
   eventBus.onEvent('order.created', async (payload) => {
@@ -136,7 +137,7 @@ export const initEventBus = () => {
         orderNumber: payload.orderNumber,
       });
     } catch (err: any) {
-      console.error('[EventBus] Failed to enqueue invoice job:', err.message);
+      logger.error('[EventBus] Failed to enqueue invoice job: ' + err.message);
     }
   });
 
@@ -189,5 +190,5 @@ export const initEventBus = () => {
     sseService.broadcastAll('system:alert', payload);
   });
 
-  console.log('🚀 [Domain Event Bus] Subscribers active: order.created, order.status_changed, quote.created, inventory.low_stock, notification.created, system.alert');
+  logger.info('[Domain Event Bus] Subscribers active: order.created, order.status_changed, quote.created, inventory.low_stock, notification.created, system.alert');
 };
