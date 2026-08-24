@@ -3,6 +3,10 @@ import { Resend } from 'resend';
 import { env } from '../config/env';
 import { Prisma } from '@prisma/client';
 import { enqueueJob } from '../jobs/asyncJob.service';
+import dns from 'dns';
+
+// Force Node.js to use IPv4 for DNS resolution (Fixes Render ENETUNREACH IPv6 error)
+dns.setDefaultResultOrder('ipv4first');
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
