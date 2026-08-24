@@ -42,68 +42,150 @@ const baseQuotationTemplate = (title: string, bodyContent: string): string => `
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>${title} - PRC Hardware</title>
+  <meta name="x-apple-disable-message-reformatting" />
+  <title>${title}</title>
   <style>
-    /* Reset & Base */
-    body, p, h1, h2, h3, h4, h5, h6 { margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; -webkit-font-smoothing: antialiased; }
-    
-    /* Layout */
-    .wrapper { width: 100%; background-color: #f3f4f6; padding: 40px 0; }
-    .container { max-width: 620px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); }
-    
-    /* Header */
-    .header { background-color: #34150F; padding: 32px 40px; text-align: center; border-bottom: 4px solid #D39858; }
-    .header h1 { color: #EACEAA; font-size: 24px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
-    .header p { color: #D39858; font-size: 12px; margin-top: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
-    
-    /* Body */
-    .body { padding: 40px; color: #374151; font-size: 16px; line-height: 1.625; }
-    .body h2 { color: #111827; font-size: 20px; font-weight: 600; margin-bottom: 16px; }
-    .body p { margin-bottom: 16px; }
-    
-    /* Components */
-    .ref-badge { display: inline-block; background: #fef3c7; color: #92400e; padding: 6px 14px; border-radius: 6px; font-weight: 800; font-family: monospace; font-size: 15px; border: 1px solid #fde68a; }
-    .info-card { background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #D39858; border-radius: 6px; padding: 18px; margin: 20px 0; }
-    .btn-primary { display: inline-block; background-color: #D39858; color: #ffffff !important; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; margin: 8px 0; transition: background-color 0.2s; }
-    
-    /* Footer */
-    .footer { background-color: #f9fafb; padding: 32px 40px; text-align: center; border-top: 1px solid #e5e7eb; }
-    .footer p { color: #6b7280; font-size: 13px; line-height: 1.5; margin-bottom: 8px; }
-    .footer .links { margin-top: 16px; }
-    .footer a { color: #D39858; text-decoration: none; font-size: 13px; }
-    /* Responsive Media Queries */
-    @media only screen and (max-width: 600px) {
-      .wrapper { padding: 10px 0 !important; }
-      .container { max-width: 100% !important; border-radius: 4px !important; margin: 0 10px !important; width: auto !important; }
-      .header { padding: 24px 20px !important; }
-      .body { padding: 24px 20px !important; }
-      .footer { padding: 24px 20px !important; }
-      .header h1 { font-size: 20px !important; }
-      .logo-img { height: 50px !important; }
-      .otp-box { font-size: 24px !important; letter-spacing: 4px !important; padding: 15px !important; min-width: 140px !important; }
-      .info-card { padding: 12px !important; font-size: 14px !important; }
+    html, body { margin:0 !important; padding:0 !important; width:100% !important; }
+    body {
+      background:#f4f6f8;
+      color:#1f2937;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      -webkit-font-smoothing:antialiased;
+      text-rendering:optimizeLegibility;
+    }
+    table { border-collapse:collapse; }
+    img { border:0; outline:none; text-decoration:none; display:block; }
+    a { text-decoration:none; }
+    .preheader { display:none !important; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden; }
+    .page { width:100%; background:#f4f6f8; padding:32px 16px; }
+    .shell { width:100%; max-width:640px; margin:0 auto; background:#ffffff; border:1px solid #e5e7eb; }
+    .brandbar { background:#1f2937; padding:22px 32px; border-bottom:3px solid #d39858; }
+    .brand { font-size:19px; line-height:24px; font-weight:800; letter-spacing:.02em; color:#ffffff; }
+    .tagline { margin-top:4px; font-size:11px; line-height:16px; letter-spacing:.08em; text-transform:uppercase; color:#d39858; }
+    .content { padding:40px 40px 32px; }
+    .eyebrow {
+      margin:0 0 10px;
+      font-size:11px;
+      line-height:16px;
+      font-weight:700;
+      letter-spacing:.1em;
+      text-transform:uppercase;
+      color:#9a6a37;
+    }
+    h2 { margin:0 0 14px; color:#111827; font-size:25px; line-height:32px; font-weight:750; letter-spacing:-.02em; }
+    h3 { margin:0 0 10px; color:#111827; font-size:16px; line-height:22px; font-weight:700; }
+    p { margin:0 0 16px; color:#4b5563; font-size:15px; line-height:24px; }
+    .muted { color:#6b7280 !important; font-size:13px !important; line-height:20px !important; }
+    .divider { height:1px; background:#e5e7eb; margin:28px 0; }
+    .btn-wrap { padding:8px 0 18px; text-align:left; }
+    .btn {
+      display:inline-block;
+      background:#34150f;
+      color:#ffffff !important;
+      padding:13px 22px;
+      border-radius:5px;
+      font-size:14px;
+      line-height:20px;
+      font-weight:700;
+      letter-spacing:.01em;
+    }
+    .btn:hover { background:#24100c; }
+    .card {
+      margin:24px 0;
+      border:1px solid #e5e7eb;
+      border-radius:6px;
+      background:#f8fafc;
+      padding:20px;
+    }
+    .card-accent {
+      border-left:4px solid #d39858;
+      padding-left:17px;
+    }
+    .dark-card {
+      margin:24px 0;
+      border-radius:6px;
+      background:#1f2937;
+      padding:22px;
+    }
+    .dark-card h3 { color:#d39858; }
+    .dark-card p { color:#d1d5db; margin-bottom:8px; }
+    .dark-card strong { color:#ffffff; }
+    .credential {
+      display:inline-block;
+      margin-left:4px;
+      padding:3px 7px;
+      border-radius:4px;
+      background:#111827;
+      color:#f1d6b3;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+      font-size:14px;
+      font-weight:700;
+    }
+    .notice {
+      margin:20px 0;
+      padding:14px 16px;
+      border:1px solid #ead8c1;
+      border-radius:5px;
+      background:#fffaf4;
+      color:#5f4630;
+      font-size:13px;
+      line-height:20px;
+    }
+    .details { width:100%; }
+    .details td { padding:10px 0; border-bottom:1px solid #e5e7eb; vertical-align:top; }
+    .details tr:last-child td { border-bottom:0; }
+    .label { width:38%; color:#6b7280; font-size:13px; }
+    .value { color:#111827; font-size:14px; font-weight:600; }
+    .footer {
+      border-top:1px solid #e5e7eb;
+      background:#fafafa;
+      padding:24px 40px 28px;
+    }
+    .footer p { margin:0 0 7px; color:#6b7280; font-size:12px; line-height:18px; }
+    .footer a { color:#7b542c; }
+    .footer .legal { margin-top:14px; color:#9ca3af; font-size:11px; }
+    @media only screen and (max-width:600px) {
+      .page { padding:12px 8px !important; }
+      .brandbar { padding:20px 22px !important; }
+      .content { padding:28px 22px 22px !important; }
+      .footer { padding:20px 22px 24px !important; }
+      h2 { font-size:22px !important; line-height:29px !important; }
+      p { font-size:14px !important; line-height:22px !important; }
+      .btn { display:block !important; text-align:center !important; }
+      .label { width:42% !important; }
     }
   </style>
 </head>
 <body>
-  <div class="wrapper">
-    <div class="container">
-      <div class="header">
-        <img src="https://ui-avatars.com/api/?name=PRC+Hardware&background=EACEAA&color=34150F&size=128&bold=true" alt="PRC Hardware Logo" class="logo-img" style="height: 64px; margin-bottom: 16px; border-radius: 50%; box-shadow: 0 4px 6px rgba(0,0,0,0.3); border: 2px solid #D39858;" />
-        <h1>PRC Hardware</h1>
-        <p>Premium Architectural Hardware</p>
-      </div>
-      <div class="body">
-        ${bodyContent}
-      </div>
-      <div class="footer">
-        <p><strong>PRC Hardware</strong><br>Official B2B Quotation Notification</p>
-        <p>This is an automated operational email. Please direct inquiries to support@pacifichardware.com.</p>
-        <p>&copy; ${new Date().getFullYear()} PRC Hardware. All rights reserved.</p>
-      </div>
-    </div>
-  </div>
+  <div class="preheader">${title}</div>
+  <table role="presentation" width="100%" class="page">
+    <tr><td align="center">
+      <table role="presentation" class="shell">
+        <tr><td class="brandbar">
+          <table role="presentation" width="100%">
+            <tr>
+              <td width="64" valign="middle">
+                <img src="https://ui-avatars.com/api/?name=PRC+Hardware&background=EACEAA&color=34150F&size=128&bold=true" alt="PRC Logo" style="width: 56px; height: 56px; border-radius: 50%; border: 2px solid #D39858; display: block;" />
+              </td>
+              <td valign="middle" style="padding-left: 16px;">
+                <div class="brand">PRC HARDWARE</div>
+                <div class="tagline">Premium Architectural Hardware</div>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+        <tr><td class="content">
+          ${bodyContent}
+        </td></tr>
+        <tr><td class="footer">
+          <p><strong>PRC Hardware</strong> · New Delhi, India</p>
+          <p>Need assistance? Contact your account representative or support team.</p>
+          <p class="legal">This is an automated operational email. Please do not reply directly to this message.</p>
+          <p class="legal">&copy; ${new Date().getFullYear()} PRC Hardware. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>`;
 
@@ -122,8 +204,8 @@ export const sendQuotationSubmittedEmail = async (ctx: QuoteEmailContext): Promi
     <p>Dear <strong>${ctx.customerName}</strong> (${ctx.companyName}),</p>
     <p>Thank you for submitting your quotation request for project <strong>"${ctx.projectName}"</strong>. We have logged your request in our system under the unique Quotation Reference Number below:</p>
     
-    <div class="info-card">
-      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent">
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       <p style="margin: 4px 0;"><strong>Project Name:</strong> ${ctx.projectName}</p>
       <p style="margin: 4px 0;"><strong>Estimated Amount:</strong> <strong style="color:#34150F;">${formattedTotal}</strong></p>
       <p style="margin: 4px 0;"><strong>Current Status:</strong> <span style="color:#b45309; font-weight:bold;">SUBMITTED (Pending Estimator Review)</span></p>
@@ -132,7 +214,7 @@ export const sendQuotationSubmittedEmail = async (ctx: QuoteEmailContext): Promi
     <p>Our commercial hardware estimating team is reviewing your requested product specifications and volume contractor pricing. Once approved, you will automatically receive an update with your official digitally-signed quotation and pricing terms.</p>
 
     <p style="text-align:center;">
-      <a href="${trackingUrl}" class="btn-primary">Track Quotation Live</a>
+      <a href="${trackingUrl}" class="btn">Track Quotation Live</a>
     </p>
 
     <p style="font-size:12px; color:#64748b; margin-top:20px;">
@@ -170,8 +252,8 @@ export const sendQuotationNewSubmissionAdminNotification = async (ctx: {
     <h2 style="margin-top:0; color:#34150F;">New B2B Quotation Request Submitted</h2>
     <p>A new quotation request <strong>${ctx.referenceNo}</strong> has been submitted by <strong>${ctx.customerName}</strong>.</p>
     
-    <div class="info-card">
-      <p style="margin: 4px 0;"><strong>Quotation Ref:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent">
+      <p style="margin: 4px 0;"><strong>Quotation Ref:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       <p style="margin: 4px 0;"><strong>Customer:</strong> ${ctx.customerName} (${ctx.companyName})</p>
       <p style="margin: 4px 0;"><strong>Email / Phone:</strong> ${ctx.email || 'N/A'} | ${ctx.phone || 'N/A'}</p>
       <p style="margin: 4px 0;"><strong>GSTIN:</strong> ${ctx.gstNo || 'N/A'}</p>
@@ -181,7 +263,7 @@ export const sendQuotationNewSubmissionAdminNotification = async (ctx: {
     </div>
 
     <p style="text-align:center;">
-      <a href="${reviewUrl}" class="btn-primary">Review in Admin Panel</a>
+      <a href="${reviewUrl}" class="btn">Review in Admin Panel</a>
     </p>
   `;
 
@@ -201,8 +283,8 @@ export const sendQuotationUnderReviewEmail = async (ctx: QuoteEmailContext): Pro
     <p>Dear <strong>${ctx.customerName}</strong>,</p>
     <p>Your quotation for project <strong>"${ctx.projectName}"</strong> has been assigned to a designated technical hardware estimator and is currently <strong>Under Review</strong>.</p>
     
-    <div class="info-card" style="border-left-color: #0284c7; background:#f0f9ff;">
-      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent" style="border-left-color: #0284c7; background:#f0f9ff;">
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       <p style="margin: 4px 0;"><strong>Current Status:</strong> <span style="color:#0284c7; font-weight:bold;">Under Technical Review</span></p>
     </div>
 
@@ -225,8 +307,8 @@ export const sendQuotationPendingEmail = async (ctx: QuoteEmailContext): Promise
     <p>Dear <strong>${ctx.customerName}</strong>,</p>
     <p>Our estimating team requires additional details to finalize your quotation for <strong>"${ctx.projectName}"</strong>.</p>
     
-    <div class="info-card" style="border-left-color: #eab308; background:#fefce8;">
-      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent" style="border-left-color: #eab308; background:#fefce8;">
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       <p style="margin: 8px 0 4px 0; color:#854d0e;"><strong>Estimator Notes / Reason:</strong></p>
       <p style="margin: 0; font-weight:600; color:#713f12;">${ctx.statusReason || 'Please contact our B2B team to clarify dimensions/specifications.'}</p>
     </div>
@@ -255,8 +337,8 @@ export const sendQuotationApprovedEmail = async (ctx: QuoteEmailContext): Promis
     <p>Dear <strong>${ctx.customerName}</strong> (${ctx.companyName}),</p>
     <p>We are pleased to inform you that your quotation for <strong>"${ctx.projectName}"</strong> has been <strong>approved with official commercial pricing and digitally signed</strong>.</p>
     
-    <div class="info-card" style="border-left-color: #10b981; background:#f0fdf4;">
-      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent" style="border-left-color: #10b981; background:#f0fdf4;">
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       <p style="margin: 4px 0;"><strong>Status:</strong> <span style="color:#047857; font-weight:bold; font-size:15px;">✔ APPROVED & SIGNED</span></p>
       <p style="margin: 4px 0;"><strong>Approved Grand Total:</strong> <span style="font-size:18px; font-weight:bold; color:#065f46;">${formattedTotal}</span> (Incl. 18% GST)</p>
       <p style="margin: 4px 0;"><strong>Payment Terms:</strong> <span style="color:#047857; font-weight:600;">${advanceText}</span></p>
@@ -265,7 +347,7 @@ export const sendQuotationApprovedEmail = async (ctx: QuoteEmailContext): Promis
     <p>Click the button below to inspect all line items, download your official PDF, and record your formal Acceptance:</p>
     
     <p style="text-align:center;">
-      <a href="${viewUrl}" class="btn-primary" style="background:#10b981; color:#ffffff;">View & Approve Quotation</a>
+      <a href="${viewUrl}" class="btn" style="background:#10b981; color:#ffffff;">View & Approve Quotation</a>
     </p>
 
     <p style="font-size:12px; color:#64748b;">Direct Link: <br/><a href="${viewUrl}" style="color:#0284c7;">${viewUrl}</a></p>
@@ -298,8 +380,8 @@ export const sendQuotationApprovedEmailWithPdf = async (
     <p>Your quotation for project <strong>"${ctx.projectName}"</strong> has been <strong>approved with commercial contractor pricing and digitally signed</strong>.</p>
     <p>The official signed quotation PDF (<strong>${fileName}</strong>) is attached to this email for your records.</p>
     
-    <div class="info-card" style="border-left-color: #10b981; background:#f0fdf4;">
-      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent" style="border-left-color: #10b981; background:#f0fdf4;">
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       <p style="margin: 4px 0;"><strong>Status:</strong> <span style="color:#047857; font-weight:bold; font-size:15px;">✔ APPROVED &amp; DIGITALLY SIGNED</span></p>
       <p style="margin: 4px 0;"><strong>Approved Grand Total:</strong> <span style="font-size:18px; font-weight:bold; color:#065f46;">${formattedTotal}</span> (Incl. 18% GST)</p>
       <p style="margin: 4px 0;"><strong>Payment Terms:</strong> <span style="color:#047857; font-weight:600;">${advanceText}</span></p>
@@ -309,7 +391,7 @@ export const sendQuotationApprovedEmailWithPdf = async (
     <p>You can also review the line items and record your formal Acceptance online:</p>
     
     <p style="text-align:center;">
-      <a href="${viewUrl}" class="btn-primary" style="background:#10b981; color:#ffffff;">View &amp; Accept Quotation</a>
+      <a href="${viewUrl}" class="btn" style="background:#10b981; color:#ffffff;">View &amp; Accept Quotation</a>
     </p>
 
     <p style="font-size:12px; color:#64748b;">Direct Link: <br/><a href="${viewUrl}" style="color:#0284c7;">${viewUrl}</a></p>
@@ -343,8 +425,8 @@ export const sendQuotationRejectedEmail = async (ctx: QuoteEmailContext): Promis
     <p>Dear <strong>${ctx.customerName}</strong>,</p>
     <p>We regret to inform you that your quotation request for <strong>"${ctx.projectName}"</strong> (${ctx.referenceNo}) could not be approved at this time.</p>
     
-    <div class="info-card" style="border-left-color: #ef4444; background:#fef2f2;">
-      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent" style="border-left-color: #ef4444; background:#fef2f2;">
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       <p style="margin: 8px 0 4px 0; color:#991b1b;"><strong>Reason:</strong></p>
       <p style="margin: 0; color:#7f1d1d; font-weight:600;">${ctx.statusReason || 'Specifications outside commercial capability or MOQ.'}</p>
     </div>
@@ -371,8 +453,8 @@ export const sendQuotationCustomerResponseNotification = async (ctx: QuoteEmailC
     <h2 style="margin-top:0; color:#34150F;">Customer Response: Quotation ${ctx.referenceNo}</h2>
     <p>B2B Client <strong>${ctx.customerName}</strong> (${ctx.companyName}) has recorded their response to quotation <strong>${ctx.referenceNo}</strong>.</p>
     
-    <div class="info-card" style="border-left-color: ${badgeColor};">
-      <p style="margin: 4px 0;"><strong>Quotation Reference:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent" style="border-left-color: ${badgeColor};">
+      <p style="margin: 4px 0;"><strong>Quotation Reference:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       <p style="margin: 4px 0;"><strong>Customer Decision:</strong> <span style="color:${badgeColor}; font-weight:bold; font-size:16px; text-transform:uppercase;">${ctx.customerResponse}</span></p>
       ${ctx.customerResponseNotes ? `<p style="margin: 6px 0 0 0;"><strong>Client Notes:</strong> ${ctx.customerResponseNotes}</p>` : ''}
     </div>
@@ -394,8 +476,8 @@ export const sendQuotationRevisionSubmittedEmail = async (ctx: QuoteEmailContext
     <p>Dear <strong>${ctx.customerName}</strong> (${ctx.companyName}),</p>
     <p>We have received your requested revision for quotation <strong>"${ctx.projectName}"</strong>.</p>
     
-    <div class="info-card" style="border-left-color: #f59e0b; background:#fefce8;">
-      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent" style="border-left-color: #f59e0b; background:#fefce8;">
+      <p style="margin: 4px 0;"><strong>Quotation Reference No:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       ${ctx.proposedAdvancePercent !== undefined ? `<p style="margin: 4px 0;"><strong>Proposed Advance Percentage:</strong> <span style="font-weight:bold; color:#b45309;">${ctx.proposedAdvancePercent}%</span></p>` : ''}
       ${ctx.remark ? `<p style="margin: 6px 0 0 0;"><strong>Your Reason / Remark:</strong> <em>${ctx.remark}</em></p>` : ''}
       <p style="margin: 8px 0 0 0;"><strong>Status:</strong> <span style="color:#0284c7; font-weight:bold;">Under Admin Review</span></p>
@@ -418,8 +500,8 @@ export const sendQuotationRevisionAdminNotification = async (ctx: QuoteEmailCont
     <h2 style="margin-top:0; color:#34150F;">⚠️ Customer Requested Quotation Revision</h2>
     <p>B2B Client <strong>${ctx.customerName}</strong> (${ctx.companyName}) has submitted their one-time revision request for quotation <strong>${ctx.referenceNo}</strong>.</p>
     
-    <div class="info-card" style="border-left-color: #f59e0b;">
-      <p style="margin: 4px 0;"><strong>Quotation Reference:</strong> <span class="ref-badge">${ctx.referenceNo}</span></p>
+    <div class="card card-accent" style="border-left-color: #f59e0b;">
+      <p style="margin: 4px 0;"><strong>Quotation Reference:</strong> <span class="credential">${ctx.referenceNo}</span></p>
       <p style="margin: 4px 0;"><strong>Project Name:</strong> ${ctx.projectName}</p>
       ${ctx.previousAdvancePercent !== undefined ? `<p style="margin: 4px 0;"><strong>Previous Advance %:</strong> ${ctx.previousAdvancePercent}%</p>` : ''}
       ${ctx.proposedAdvancePercent !== undefined ? `<p style="margin: 4px 0;"><strong>Customer Proposed Advance %:</strong> <span style="color:#b45309; font-weight:bold; font-size:15px;">${ctx.proposedAdvancePercent}%</span></p>` : ''}

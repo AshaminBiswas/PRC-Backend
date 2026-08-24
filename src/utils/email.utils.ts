@@ -353,8 +353,17 @@ const baseTemplate = (content: string): string => `
     <tr><td align="center">
       <table role="presentation" class="shell">
         <tr><td class="brandbar">
-          <div class="brand">PRC HARDWARE</div>
-          <div class="tagline">Premium Architectural Hardware</div>
+          <table role="presentation" width="100%">
+            <tr>
+              <td width="64" valign="middle">
+                <img src="https://ui-avatars.com/api/?name=PRC+Hardware&background=EACEAA&color=34150F&size=128&bold=true" alt="PRC Logo" style="width: 56px; height: 56px; border-radius: 50%; border: 2px solid #D39858; display: block;" />
+              </td>
+              <td valign="middle" style="padding-left: 16px;">
+                <div class="brand">PRC HARDWARE</div>
+                <div class="tagline">Premium Architectural Hardware</div>
+              </td>
+            </tr>
+          </table>
         </td></tr>
         <tr><td class="content">
           ${content}
