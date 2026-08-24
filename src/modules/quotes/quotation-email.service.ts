@@ -165,7 +165,7 @@ const baseQuotationTemplate = (title: string, bodyContent: string): string => `
           <table role="presentation" width="100%">
             <tr>
               <td width="64" valign="middle">
-                <img src="https://ui-avatars.com/api/?name=PRC+Hardware&background=EACEAA&color=34150F&size=128&bold=true" alt="PRC Logo" style="width: 56px; height: 56px; border-radius: 50%; border: 2px solid #D39858; display: block;" />
+                <img src="${env.frontend.url}/prc-logo.png" alt="PRC Logo" style="width: auto; height: 56px; display: block;" />
               </td>
               <td valign="middle" style="padding-left: 16px;">
                 <div class="brand">PRC HARDWARE</div>

@@ -48,7 +48,7 @@ export const notifyAdmins = async (
       const emailHtml = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #34150F; padding: 30px 20px; text-align: center; border-bottom: 4px solid #D39858;">
-            <img src="https://ui-avatars.com/api/?name=PRC+Hardware&background=EACEAA&color=34150F&size=128&bold=true" alt="PRC Logo" style="height: 56px; margin-bottom: 12px; border-radius: 50%; border: 2px solid #D39858; display: inline-block;" />
+            <img src="${env.frontend.url}/prc-logo.png" alt="PRC Logo" style="height: 56px; margin-bottom: 12px; display: inline-block;" />
             <h2 style="color: #EACEAA; margin: 0; font-size: 22px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Admin Alert</h2>
           </div>
           <div style="padding: 30px; color: #333333;">
