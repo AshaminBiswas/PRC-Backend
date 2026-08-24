@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { getCache, setCache } from '../services/redis/cache.redis';
 import { sendError } from '../utils/response';
+import { verifyAccessToken } from '../utils/token.utils';
 
 interface RateLimitOptions {
   windowMs: number;
@@ -15,8 +16,10 @@ const memoryStore = new Map<string, { count: number; expiresAt: number }>();
 /**
  * 🛡️ Redis-Backed Sliding Window Rate Limiting Middleware
  * - Intelligently keys by authenticated User ID (when available) or Client IP.
+ * - Auto-decodes Authorization Bearer token to identify user & role before route middleware.
+ * - Bypasses super-admin and executive admin console traffic to prevent dashboard lockouts.
  * - Falls back safely to in-memory store if Redis is unavailable.
- * - Bypasses localhost in local development to avoid React StrictMode double-fire false positives.
+ * - Bypasses localhost in local development.
  */
 export const createRateLimiter = (options: RateLimitOptions) => {
   const windowSeconds = Math.ceil(options.windowMs / 1000);
@@ -32,18 +35,46 @@ export const createRateLimiter = (options: RateLimitOptions) => {
       '127.0.0.1';
 
     // ── Dev bypass: skip rate limiting for localhost traffic entirely.
-    // React StrictMode fires every useEffect twice in development, and admin
-    // pages load many endpoints concurrently — this prevents spurious 429s
-    // during local development without loosening production limits.
     if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') {
+      return next();
+    }
+
+    // Inspect user from request or decode Authorization header if not yet populated
+    let userId = (req as any).user?.id;
+    let roleSlug = (req as any).user?.roleSlug || (req as any).user?.role;
+
+    if (!userId) {
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.startsWith('Bearer ')
+        ? authHeader.substring(7)
+        : typeof req.query.token === 'string'
+        ? req.query.token
+        : undefined;
+
+      if (token) {
+        try {
+          const decoded: any = verifyAccessToken(token);
+          if (decoded?.userId) {
+            userId = decoded.userId;
+            roleSlug = decoded.roleSlug || decoded.role;
+            (req as any).user = decoded;
+          }
+        } catch (e) {
+          // Token invalid or expired — fall back to IP identifier
+        }
+      }
+    }
+
+    // ── Super-Admin & Executive Admin Bypass: Never rate-limit management dashboard traffic
+    if (roleSlug === 'super-admin' || roleSlug === 'admin' || roleSlug === 'manager') {
       return next();
     }
 
     // Key by custom generator, authenticated user ID, or client IP
     const identifier = options.keyGenerator
       ? options.keyGenerator(req)
-      : (req as any).user?.id
-      ? `usr:${(req as any).user.id}`
+      : userId
+      ? `usr:${userId}`
       : `ip:${ip}`;
 
     const key = `rl:${prefix}:${identifier}`;
@@ -97,6 +128,7 @@ export const createRateLimiter = (options: RateLimitOptions) => {
     }
   };
 };
+
 
 // ─── Standard Rate Limiter Profiles ──────────────────────────────────────────
 
@@ -190,7 +222,7 @@ export const adminLimiter = createRateLimiter({
 
 /** 11. Global General Umbrella (Public Catalog Reads & Generic Fallback) */
 export const generalLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000, // 15 mins
-  max: 1500,
+  windowMs: 60 * 1000, // 1 minute sliding window
+  max: 300, // 300 req/min per unauthenticated IP
   keyPrefix: 'general',
 });
