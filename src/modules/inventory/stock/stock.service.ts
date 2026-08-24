@@ -162,3 +162,70 @@ export const getStockHistory = async (ventureId: string, query: any) => {
 
   return { data: movements, pagination: buildPagination(page, limit, totalItems) };
 };
+
+export const syncLegacyProducts = async (ventureId: string) => {
+  let synced = 0;
+  
+  // Find primary warehouse for this venture
+  const warehouse = await prisma.warehouse.findFirst({
+    where: { ventureId, deletedAt: null },
+    orderBy: { isDefault: 'desc' },
+  });
+
+  if (!warehouse) throw new AppError('NOT_FOUND', 'No warehouse found to sync stock into', 404);
+
+  // Find all products that DO NOT have an InventoryProduct
+  const legacyProducts = await prisma.product.findMany({
+    where: {
+      deletedAt: null,
+      inventoryProducts: { none: {} }
+    }
+  });
+
+  for (const product of legacyProducts) {
+    try {
+      const invProduct = await prisma.inventoryProduct.create({
+        data: {
+          productId: product.id,
+          ventureId,
+          sku: product.sku,
+          barcode: `BC-${product.sku}`,
+          purchasePrice: product.price,
+          sellingPrice: product.salePrice || product.price,
+          currentStock: product.stock > 0 ? product.stock : 0,
+          availableStock: product.stock > 0 ? product.stock : 0,
+          reorderLevel: product.reorderLevel,
+        }
+      });
+
+      if (product.stock > 0) {
+        await prisma.inventoryStock.create({
+          data: {
+            inventoryProductId: invProduct.id,
+            warehouseId: warehouse.id,
+            ventureId,
+            quantity: product.stock,
+          }
+        });
+
+        await prisma.stockMovement.create({
+          data: {
+            ventureId,
+            inventoryProductId: invProduct.id,
+            warehouseId: warehouse.id,
+            movementType: 'OPENING',
+            qtyChanged: product.stock,
+            qtyBefore: 0,
+            qtyAfter: product.stock,
+            reason: 'Legacy product sync',
+          }
+        });
+      }
+      synced++;
+    } catch (err) {
+      console.error(`Failed to sync legacy product ${product.sku}:`, err);
+    }
+  }
+
+  return { synced, totalFound: legacyProducts.length };
+};

@@ -2,6 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import * as stockService from './stock.service';
 import { sendSuccess, sendPaginated } from '../../../utils/response';
 
+export const syncLegacyProducts = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await stockService.syncLegacyProducts(req.ventureId!);
+    sendSuccess(res, result, 'Legacy products synchronized successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const listStock = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await stockService.listStock(req.ventureId!, req.query);
