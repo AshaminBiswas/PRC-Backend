@@ -309,6 +309,28 @@ app.use(`${prefix}/invoices`, invoiceRoutes);
 app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
 app.use(`${prefix}/events`, sseRoutes);
 
+app.get(`${prefix}/test-email`, async (req, res) => {
+  try {
+    const { sendMail } = await import('./utils/email.utils');
+    const toEmail = (req.query.email as string) || 'ashaminbiswas1@gmail.com';
+    await sendMail({
+      to: toEmail,
+      subject: 'PRC Diagnostic Email Test',
+      html: `<h2>Hello!</h2><p>If you see this, your Render SMTP configuration is fully working for ${toEmail}!</p>`
+    });
+    res.status(200).json({
+      success: true,
+      message: `Diagnostic email successfully dispatched to ${toEmail}`
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err.message || String(err),
+      hint: "Check if BREVO_API_KEY is still populated in Render and remove it if you want to force Gmail SMTP fallback."
+    });
+  }
+});
+
 // ─── Initialize Event-Driven Architecture & BullMQ Background Workers ────────
 initEventBus();
 if (env.NODE_ENV !== 'test') {
