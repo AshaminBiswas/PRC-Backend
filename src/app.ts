@@ -48,6 +48,7 @@ import b2bPricingRoutes from './modules/b2b-pricing/b2b-pricing.routes';
 import sseRoutes from './events/sse.routes';
 import { initEventBus } from './events/eventBus';
 import { startBullMQWorkers } from './queues/bullmq.worker';
+import { startKeepAlive } from './jobs/keepAlive';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -312,6 +313,7 @@ app.use(`${prefix}/events`, sseRoutes);
 initEventBus();
 if (env.NODE_ENV !== 'test') {
   startBullMQWorkers();
+  startKeepAlive(); // Prevent Render free-tier cold starts (pings /health every 10 min)
 }
 
 // ─── Error Handling ───────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import http from 'http';
 import app from './app';
 import { env } from './config/env';
 import { connectDatabases, disconnectDatabases } from './config/database';
+import { stopKeepAlive } from './jobs/keepAlive';
 
 const workerCount = env.scaling.workers > 0 ? env.scaling.workers : os.availableParallelism?.() ?? os.cpus().length;
 
@@ -31,6 +32,7 @@ const startWorker = async () => {
 
   const shutdown = async (signal: string) => {
     console.log(`${signal} received by ${env.INSTANCE_ID}. Shutting down gracefully...`);
+    stopKeepAlive();
 
     const forceExit = setTimeout(() => {
       console.error(`Graceful shutdown timed out for ${env.INSTANCE_ID}`);

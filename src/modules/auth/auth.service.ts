@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import prisma from '../../config/database';
 import { env } from '../../config/env';
 import { AppError } from '../../middleware/error.middleware';
+import { logger } from '../../config/logger';
 import { storeOtpInRedis, verifyOtpFromRedis } from '../../services/redis/otp.redis';
 import {
   generateAccessToken,
@@ -113,22 +114,39 @@ export const register = async (input: RegisterInput) => {
   });
 
   const otp = generateOtp();
+  logger.info(`[Auth] OTP generated for registration`, { email: user.email, userId: user.id });
+
   await prisma.emailVerification.create({
     data: { token: otp, userId: user.id, expiresAt: getOtpExpiry() },
   });
+  logger.info(`[Auth] OTP stored in DB`, { userId: user.id, expiresAt: getOtpExpiry() });
 
   await storeOtpInRedis(user.email, otp, env.auth.otpTtlSeconds);
+  logger.info(`[Auth] OTP stored in Redis`, { email: user.email, ttl: env.auth.otpTtlSeconds });
 
+  let emailDelivered = false;
+  let emailError: string | null = null;
   try {
     await sendOtpEmail(user.email, user.firstName, otp);
+    emailDelivered = true;
+    logger.info(`[Auth] OTP email sent successfully`, { to: user.email });
   } catch (emailErr: any) {
-    console.error('[Register] Failed to send OTP email:', emailErr?.message || emailErr);
+    emailError = emailErr?.message || String(emailErr);
+    logger.error(`[Auth] OTP email delivery FAILED`, { to: user.email, error: emailError });
   }
 
-  return { userId: user.id, email: user.email, requiresVerification: true };
+  return {
+    userId: user.id,
+    email: user.email,
+    requiresVerification: true,
+    emailDelivered,
+    ...(emailError && { emailError: 'Email delivery failed. Use "Resend OTP" to try again.' }),
+  };
 };
 
 export const verifyOtp = async (input: VerifyOtpInput) => {
+  logger.info(`[Auth] OTP verification attempt`, { email: input.email });
+
   const user = await prisma.user.findUnique({
     where: { email: input.email, deletedAt: null },
     include: { userRoles: { include: { role: true } } },
@@ -138,8 +156,17 @@ export const verifyOtp = async (input: VerifyOtpInput) => {
   if (user.isVerified) throw new AppError('ALREADY_VERIFIED', 'Email is already verified', 400);
 
   const redisResult = await verifyOtpFromRedis(input.email, input.otp);
-  if (!redisResult.valid && redisResult.message.includes('attempts')) {
-    throw new AppError('TOO_MANY_ATTEMPTS', redisResult.message, 429);
+  logger.info(`[Auth] Redis OTP check`, { email: input.email, valid: redisResult.valid, message: redisResult.message });
+
+  if (!redisResult.valid) {
+    if (redisResult.message.includes('attempts')) {
+      throw new AppError('TOO_MANY_ATTEMPTS', redisResult.message, 429);
+    }
+    // Redis has the OTP and it didn't match — throw immediately with correct message
+    if (redisResult.message.includes('Incorrect OTP')) {
+      throw new AppError('INVALID_OTP', 'Incorrect OTP code. Please try again.', 400);
+    }
+    // Redis unavailable or expired — fall through to DB check
   }
 
   const record = await prisma.emailVerification.findFirst({
@@ -147,15 +174,20 @@ export const verifyOtp = async (input: VerifyOtpInput) => {
     orderBy: { createdAt: 'desc' },
   });
 
-  if (!record) throw new AppError('INVALID_OTP', 'Invalid or expired OTP. Please request a new code.', 400);
+  if (!record) {
+    logger.warn(`[Auth] OTP DB check failed — invalid or expired`, { email: input.email });
+    throw new AppError('INVALID_OTP', 'Invalid or expired OTP. Please request a new code.', 400);
+  }
 
   await prisma.$transaction([
     prisma.user.update({ where: { id: user.id }, data: { isVerified: true, status: 'ACTIVE' } }),
     prisma.emailVerification.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
   ]);
 
+  logger.info(`[Auth] OTP verified — user activated`, { userId: user.id, email: user.email });
+
   sendWelcomeEmail(user.email, user.firstName).catch((err) =>
-    console.error('[VerifyOtp] Failed to send welcome email:', err?.message || err)
+    logger.error(`[Auth] Welcome email failed`, { to: user.email, error: err?.message || err })
   );
 
   const roleSlug = getPrimaryRoleSlug(user.userRoles);
@@ -163,6 +195,7 @@ export const verifyOtp = async (input: VerifyOtpInput) => {
   if (roleSlug === 'customer') {
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     const { accessToken, refreshToken } = await buildTokenPair(user.id, user.email, roleSlug);
+    logger.info(`[Auth] Auto-login tokens issued post-verification`, { userId: user.id });
     return {
       verified: true, autoLogin: true, accessToken, refreshToken,
       expiresIn: 3600, tokenType: 'Bearer',
@@ -369,15 +402,23 @@ export const resendVerification = async (email: string) => {
   if (!user) return;
   if (user.isVerified) throw new AppError('ALREADY_VERIFIED', 'Email is already verified', 400);
 
+  logger.info(`[Auth] Resending OTP`, { email: user.email, userId: user.id });
+
+  // Invalidate all previous OTP records in DB
   await prisma.emailVerification.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } });
 
   const otp = generateOtp();
   await prisma.emailVerification.create({ data: { token: otp, userId: user.id, expiresAt: getOtpExpiry() } });
+
+  // Overwrite previous OTP in Redis (also resets failed-attempt counter)
   await storeOtpInRedis(user.email, otp, env.auth.otpTtlSeconds);
+  logger.info(`[Auth] New OTP stored for resend`, { email: user.email, ttl: env.auth.otpTtlSeconds });
 
   try {
     await sendOtpEmail(user.email, user.firstName, otp);
+    logger.info(`[Auth] Resend OTP email sent successfully`, { to: user.email });
   } catch (err: any) {
-    console.error('[ResendVerification] Failed to send OTP email:', err?.message || err);
+    logger.error(`[Auth] Resend OTP email delivery FAILED`, { to: user.email, error: err?.message || err });
+    throw new AppError('EMAIL_SEND_FAILED', 'Failed to deliver the OTP email. Please check your email address or try again.', 502);
   }
 };

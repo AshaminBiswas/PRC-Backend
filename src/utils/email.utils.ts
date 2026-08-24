@@ -29,7 +29,7 @@ const sendViaResend = async (options: SendMailOptions, apiKey: string): Promise<
   }
 
   const payload: any = {
-    from: `${env.smtp.fromName} <onboarding@resend.dev>`,
+    from: `${env.smtp.fromName} <${env.smtp.fromEmail}>`,
     to: [options.to],
     subject: options.subject,
     html: options.html,
