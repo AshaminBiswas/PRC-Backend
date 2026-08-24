@@ -14,6 +14,7 @@ import reportsRoutes from './reports/reports.routes';
 import analyticsRoutes from './analytics/analytics.routes';
 import searchRoutes from './search/search.routes';
 import auditRoutes from './audit/audit.routes';
+import venturesRoutes from './ventures/ventures.routes';
 
 const router = Router();
 
@@ -32,6 +33,7 @@ router.use('/reports', reportsRoutes);
 router.use('/analytics', analyticsRoutes);
 router.use('/search', searchRoutes);
 router.use('/audit', auditRoutes);
+router.use('/ventures', venturesRoutes);
 router.use('/', barcodeRoutes); // /barcodes & /qr
 
 export default router;

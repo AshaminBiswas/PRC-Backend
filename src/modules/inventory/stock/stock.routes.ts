@@ -11,6 +11,7 @@ const router = Router();
 router.use(authenticate, requireVenture);
 
 router.post('/sync-legacy', authorize(INVENTORY_PERMISSIONS.STOCK_UPDATE), controller.syncLegacyProducts);
+router.get('/sync-legacy', authorize(INVENTORY_PERMISSIONS.STOCK_UPDATE), controller.syncLegacyProducts);
 router.get('/', authorize(INVENTORY_PERMISSIONS.STOCK_READ), controller.listStock);
 router.get('/history', authorize(INVENTORY_PERMISSIONS.STOCK_READ), controller.getStockHistory);
 router.get('/movement', authorize(INVENTORY_PERMISSIONS.STOCK_READ), controller.getStockHistory);
