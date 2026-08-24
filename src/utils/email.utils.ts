@@ -137,40 +137,52 @@ const sendViaSmtp = async (options: SendMailOptions): Promise<void> => {
 // ─── Unified sendMail Cascade ─────────────────────────────────────────────────
 
 export const sendMail = async (options: SendMailOptions): Promise<void> => {
+  const logger = await import('../config/logger').then(m => m.logger);
+
   // 1. Try Resend HTTP API if RESEND_API_KEY (re_...) is set
   if (env.resend.apiKey && env.resend.apiKey.startsWith('re_')) {
     try {
+      logger.info(`[Email] Trying Resend → ${options.to}`);
       await sendViaResend(options, env.resend.apiKey);
       return;
     } catch (resendErr: any) {
-      console.warn('[Email Warning] Resend API failed, falling back:', resendErr?.message || resendErr);
+      logger.warn(`[Email] Resend failed → ${resendErr?.message || resendErr}. Trying Brevo...`);
     }
+  } else {
+    logger.info(`[Email] Resend skipped (no valid RESEND_API_KEY)`);
   }
 
   // 2. Try Brevo REST API if BREVO_API_KEY (xkeysib-) is set
   if (env.brevo.apiKey && env.brevo.apiKey.startsWith('xkeysib-')) {
     try {
+      logger.info(`[Email] Trying Brevo REST API → ${options.to}`);
       await sendViaBrevoApi(options, env.brevo.apiKey);
       return;
     } catch (apiErr: any) {
-      console.warn('[Email Warning] Brevo REST API failed, falling back:', apiErr?.message || apiErr);
+      logger.warn(`[Email] Brevo REST failed → ${apiErr?.message || apiErr}. Trying SMTP...`);
     }
+  } else {
+    logger.info(`[Email] Brevo REST skipped (no valid BREVO_API_KEY)`);
   }
 
-  // 3. Try Nodemailer SMTP (Gmail App Password or Brevo SMTP on Port 465 SSL)
+  // 3. Try Nodemailer SMTP (Brevo SMTP on port 587 or 465)
   if (env.smtp.user && env.smtp.pass) {
     try {
+      logger.info(`[Email] Trying SMTP (${env.smtp.host}:${env.smtp.port}) → ${options.to}`);
       await sendViaSmtp(options);
       return;
     } catch (smtpErr: any) {
       transporter = null;
-      console.error(`[Email Error] SMTP failed for ${options.to}:`, smtpErr?.message || smtpErr);
+      logger.error(`[Email] SMTP failed → ${smtpErr?.message || smtpErr}`);
       throw smtpErr;
     }
+  } else {
+    logger.warn(`[Email] SMTP skipped (SMTP_USER or SMTP_PASS not set)`);
   }
 
-  throw new Error('[Email] No valid email provider configured. Set RESEND_API_KEY, BREVO_API_KEY, or SMTP credentials.');
+  throw new Error('[Email] All providers failed or unconfigured. Check RESEND_API_KEY, BREVO_API_KEY, SMTP_USER/SMTP_PASS in Render dashboard.');
 };
+
 
 /**
  * Convenience wrapper — sends an email with one or more file attachments.
@@ -222,10 +234,12 @@ const baseTemplate = (content: string): string => `
 </body>
 </html>`;
 
-// ─── OTP Email ────────────────────────────────────────────────────────────────
+// ─── OTP Email (calls sendMail directly — errors must propagate to caller) ────
 
 export const sendOtpEmail = async (to: string, firstName: string, otp: string): Promise<void> => {
-  await enqueueEmail({
+  // NOTE: intentionally NOT using enqueueEmail — OTP errors must throw so the
+  // caller (auth.service register/resend) can detect delivery failure and tell the user.
+  await sendMail({
     to,
     subject: 'Your PRC Hardware verification code',
     html: baseTemplate(`

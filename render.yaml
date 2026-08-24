@@ -69,11 +69,11 @@ services:
       - key: SMTP_FROM_NAME
         value: PRC Hardware
       - key: SMTP_FROM_EMAIL
-        value: ashaminbiswas1@gmail.com
+        value: ashaminbiswas1@gmail.com   # Must be a verified sender in Brevo dashboard
       - key: SMTP_USER
-        sync: false   # Set in Render Dashboard
+        sync: false   # Set in Render Dashboard → your Brevo SMTP login (e.g. b3ea15001@smtp-brevo.com)
       - key: SMTP_PASS
-        sync: false   # Set in Render Dashboard
+        sync: false   # Set in Render Dashboard → your Brevo SMTP password (xsmtpsib-...)
 
       # ── Email API Keys ──────────────────────────────────────────────────────
       - key: BREVO_API_KEY
