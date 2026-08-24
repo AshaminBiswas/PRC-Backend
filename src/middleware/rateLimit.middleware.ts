@@ -168,7 +168,7 @@ export const searchLimiter = createRateLimiter({
 /** 8. Real-time SSE Stream Connection Setup */
 export const sseLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 mins
-  max: 30,
+  max: 150, // SSE reconnects on every page load, tab open, network drop, and idle logout
   message: 'Too many real-time connection attempts. Please try again later.',
   keyPrefix: 'sse',
 });

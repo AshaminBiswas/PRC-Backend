@@ -48,6 +48,17 @@ export const requireVenture = async (req: Request, res: Response, next: NextFunc
 
         if (firstVentureUser) {
           ventureId = firstVentureUser.ventureId;
+        } else if (req.user.roleSlug === 'super-admin') {
+          // Super-admins may not have a VentureUser record — auto-resolve to the
+          // first available venture so inventory endpoints work without a header
+          const firstVenture = await prisma.venture.findFirst({
+            where: { deletedAt: null },
+            select: { id: true },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (firstVenture) {
+            ventureId = firstVenture.id;
+          }
         }
       }
     }
