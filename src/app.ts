@@ -36,8 +36,6 @@ import settingsRoutes from './modules/settings/settings.routes';
 import dashboardRoutes from './modules/dashboard/dashboard.routes';
 import reportsRoutes from './modules/reports/reports.routes';
 
-import inventoryRoutes from './modules/inventory';
-import venturesRoutes from './modules/inventory/ventures/ventures.routes';
 import appointmentsRoutes from './modules/appointments/appointments.routes';
 import allocationRoutes from './modules/allocation/allocation.routes';
 import logisticsRoutes from './modules/logistics/logistics.routes';
@@ -300,8 +298,6 @@ app.use(`${prefix}/settings`, settingsRoutes);
 app.use(`${prefix}/dashboard`, dashboardRoutes);
 app.use(`${prefix}/analytics`, dashboardRoutes);
 app.use(`${prefix}/reports`, reportsRoutes);
-app.use(`${prefix}/inventory`, inventoryRoutes);
-app.use(`${prefix}/ventures`, venturesRoutes);
 app.use(`${prefix}/appointments`, appointmentsRoutes);
 app.use(`${prefix}/allocation`, allocationRoutes);
 app.use('/api/warehouse', allocationRoutes);

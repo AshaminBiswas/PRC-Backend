@@ -2,8 +2,7 @@ import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 import { calculateDistance, isValidCoordinates } from '../../utils/haversine.utils';
 import { getParallelRoutes } from '../../utils/osrm.client';
-import { recordStockMovement } from '../inventory/movement/movement.service';
-import { StockMovementType, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { resolveShippingZone } from '../logistics/zone.service';
 import { calculateCourierRate } from '../logistics/rate.service';
 import { env } from '../../config/env';
@@ -36,8 +35,6 @@ export interface EvaluatedWarehouseLogistics {
   zoneId: string | null;
   zoneName: string | null;
   allocationScore: number;
-  isInventorySufficient: boolean;
-  missingItems: Array<{ sku: string; requestedQty: number; availableQty: number }>;
 }
 
 export interface AllocationResultLogistics {
@@ -88,7 +85,7 @@ export const allocateWarehouseForOrder = async (
   txClient?: Prisma.TransactionClient
 ): Promise<AllocationResultLogistics> => {
   const db = txClient || prisma;
-  const { pincode, items, reserveStock = false, ventureId, orderId } = input;
+  const { pincode, items, reserveStock = false, orderId } = input;
 
   // 1. Resolve Customer Location from PIN Code DB (Auto-resolves missing PIN codes)
   const pincodeRecord = await resolveOrFetchPincode(pincode, db);
@@ -100,18 +97,12 @@ export const allocateWarehouseForOrder = async (
   const { latitude: custLat, longitude: custLon, city, district, state } = pincodeRecord;
 
   // 2. Fetch Active Warehouses
-  const warehouseWhere: Prisma.WarehouseWhereInput = {
-    isActive: true,
-    status: 'ACTIVE',
-    deletedAt: null,
-  };
-
-  if (ventureId) {
-    warehouseWhere.ventureId = ventureId;
-  }
-
   const warehouses = await db.warehouse.findMany({
-    where: warehouseWhere,
+    where: {
+      isActive: true,
+      status: 'ACTIVE',
+      deletedAt: null,
+    },
   });
 
   if (warehouses.length === 0) {
@@ -127,47 +118,7 @@ export const allocateWarehouseForOrder = async (
   const evaluatedWarehouses: EvaluatedWarehouseLogistics[] = [];
 
   for (const wh of warehouses) {
-    // 3. Priority 1: Check 100% SKU Inventory Availability
-    let isInventorySufficient = true;
-    const missingItems: Array<{ sku: string; requestedQty: number; availableQty: number }> = [];
-
-    for (const item of itemsList) {
-      let invProd = await db.inventoryProduct.findFirst({
-        where: { sku: item.sku, deletedAt: null },
-        include: {
-          stocks: {
-            where: { warehouseId: wh.id },
-          },
-        },
-      });
-
-      if (!invProd && item.productId) {
-        invProd = await db.inventoryProduct.findFirst({
-          where: { productId: item.productId, deletedAt: null },
-          include: {
-            stocks: {
-              where: { warehouseId: wh.id },
-            },
-          },
-        });
-      }
-
-      const stockRecord = invProd?.stocks[0];
-      const availableQty = stockRecord ? stockRecord.quantity - stockRecord.reservedQty : 0;
-
-      if (!stockRecord || availableQty < item.quantity) {
-        isInventorySufficient = false;
-        missingItems.push({
-          sku: item.sku,
-          requestedQty: item.quantity,
-          availableQty: Math.max(0, availableQty),
-        });
-      }
-    }
-
-    // 4. Distance placeholder — will be replaced with OSRM road distance below
-    const whLat = wh.latitude || 0;
-    const whLon = wh.longitude || 0;
+    // 3. Distance placeholder — will be replaced with OSRM road distance below
     const distanceKm = 0; // Will be overwritten by OSRM parallel results
 
     let shippingCost = 150;
@@ -204,7 +155,6 @@ export const allocateWarehouseForOrder = async (
     // Dynamic Multi-Priority Weighted Allocation Score Calculation
     const maxCost = 500;
     const costScore = Math.max(0, 100 - (shippingCost / maxCost) * 100);
-    const inventoryScore = isInventorySufficient ? 100 : 0;
     const maxDays = 7;
     const slaScore = Math.max(0, 100 - (deliveryDays / maxDays) * 100);
     const maxPriority = 10;
@@ -214,10 +164,9 @@ export const allocateWarehouseForOrder = async (
 
     const allocationScore = Number(
       (
-        0.50 * costScore +
-        0.25 * inventoryScore +
-        0.15 * slaScore +
-        0.05 * priorityScore +
+        0.65 * costScore +
+        0.20 * slaScore +
+        0.10 * priorityScore +
         0.05 * loadScore
       ).toFixed(2)
     );
@@ -239,8 +188,6 @@ export const allocateWarehouseForOrder = async (
       zoneId,
       zoneName,
       allocationScore,
-      isInventorySufficient,
-      missingItems,
     });
   }
 
@@ -283,18 +230,15 @@ export const allocateWarehouseForOrder = async (
   }
 
 
-  // Filter warehouses meeting 100% stock requirement AND having available daily capacity
+  // Filter warehouses that have available daily capacity
   const qualifyingWarehouses = evaluatedWarehouses.filter(
-    (w) => w.isInventorySufficient && w.currentLoad < w.dailyCapacity
+    (w) => w.currentLoad < w.dailyCapacity
   );
 
-  // Fallback 1: Warehouses with inventory
-  // Fallback 2: All active warehouses (Delhi/Kolkata) sorted by lowest shipping cost
+  // Fallback: All active warehouses sorted by lowest shipping cost
   const candidatePool = qualifyingWarehouses.length > 0
     ? qualifyingWarehouses
-    : (evaluatedWarehouses.filter((w) => w.isInventorySufficient).length > 0
-        ? evaluatedWarehouses.filter((w) => w.isInventorySufficient)
-        : evaluatedWarehouses);
+    : evaluatedWarehouses;
 
   if (candidatePool.length === 0) {
     throw new AppError(
@@ -317,80 +261,11 @@ export const allocateWarehouseForOrder = async (
 
   const selected = candidatePool[0];
 
-  // 6. Optional Inventory Reservation & Shipment Record Creation
+  // 5. Optional Shipment Record Creation
   let isReserved = false;
   let shipmentId: string | undefined = undefined;
 
   if (reserveStock) {
-    const targetWh = await db.warehouse.findUnique({
-      where: { id: selected.warehouseId },
-      select: { id: true, ventureId: true },
-    });
-
-    // Reserve stock for items
-    for (const item of itemsList) {
-      let invProd = await db.inventoryProduct.findFirst({
-        where: { sku: item.sku, deletedAt: null },
-      });
-
-      if (!invProd && item.productId) {
-        invProd = await db.inventoryProduct.findFirst({
-          where: { productId: item.productId, deletedAt: null },
-        });
-      }
-
-      if (invProd && targetWh) {
-        const targetVentureId = targetWh.ventureId || invProd.ventureId;
-
-        const existingStock = await db.inventoryStock.findUnique({
-          where: {
-            inventoryProductId_warehouseId: {
-              inventoryProductId: invProd.id,
-              warehouseId: selected.warehouseId,
-            },
-          },
-        });
-
-        if (existingStock) {
-          await db.inventoryStock.update({
-            where: {
-              inventoryProductId_warehouseId: {
-                inventoryProductId: invProd.id,
-                warehouseId: selected.warehouseId,
-              },
-            },
-            data: {
-              reservedQty: { increment: item.quantity },
-            },
-          });
-        } else {
-          await db.inventoryStock.create({
-            data: {
-              ventureId: targetVentureId,
-              inventoryProductId: invProd.id,
-              warehouseId: selected.warehouseId,
-              quantity: 0,
-              reservedQty: item.quantity,
-            },
-          });
-        }
-
-        await recordStockMovement(
-          {
-            ventureId: targetVentureId,
-            inventoryProductId: invProd.id,
-            warehouseId: selected.warehouseId,
-            qtyChanged: item.quantity,
-            movementType: StockMovementType.RESERVED,
-            channel: 'ONLINE',
-            referenceType: 'ALLOCATION_RESERVE',
-            reason: `Stock reserved by lowest cost allocation engine for PIN ${pincode} (Shipping Cost: ₹${selected.shippingCost})`,
-          },
-          txClient
-        );
-      }
-    }
-
     // Increment current workload on selected warehouse
     await db.warehouse.update({
       where: { id: selected.warehouseId },
@@ -456,7 +331,7 @@ export const allocateWarehouseForOrder = async (
     shippingCost: selected.shippingCost,
     deliveryDays: selected.deliveryDays,
     allocationScore: selected.allocationScore,
-    allocationReason: `Selected ${selected.name} (${selected.code}) based on Lowest Shipping Cost (₹${selected.shippingCost}) with ${selected.deliveryDays}-day SLA and 100% stock availability.`,
+    allocationReason: `Selected ${selected.name} (${selected.code}) based on Lowest Shipping Cost (₹${selected.shippingCost}) with ${selected.deliveryDays}-day SLA.`,
     distanceKm: selected.distanceKm,
     isReserved,
     shipmentId,
@@ -480,9 +355,6 @@ export const findNearestWarehouses = async (query: NearestWarehousesQueryInput) 
       deletedAt: null,
       latitude: { not: null },
       longitude: { not: null },
-    },
-    include: {
-      venture: { select: { id: true, name: true, code: true } },
     },
   });
 
@@ -643,15 +515,6 @@ export const allocateByShortestDistance = async (
 // ─── ADMIN WAREHOUSE & ALLOCATION MANAGEMENT LOGIC ─────────────────────────────
 
 export const createAdminWarehouse = async (input: CreateAdminWarehouseInput) => {
-  let ventureId = input.ventureId;
-  if (!ventureId) {
-    const defaultVenture = await prisma.venture.findFirst({ where: { deletedAt: null } });
-    if (!defaultVenture) {
-      throw new AppError('BAD_REQUEST', 'Default venture not found', 400);
-    }
-    ventureId = defaultVenture.id;
-  }
-
   const existing = await prisma.warehouse.findUnique({ where: { code: input.code } });
   if (existing) {
     throw new AppError('CONFLICT', `Warehouse with code '${input.code}' already exists`, 409);
@@ -659,7 +522,6 @@ export const createAdminWarehouse = async (input: CreateAdminWarehouseInput) => 
 
   return prisma.warehouse.create({
     data: {
-      ventureId,
       name: input.name,
       code: input.code,
       address: input.address,

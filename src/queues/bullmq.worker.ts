@@ -62,45 +62,7 @@ export const startBullMQWorkers = () => {
     invoiceWorker.on('failed', (job, err) => console.error(`[BullMQ Worker] Invoice job ${job?.id} failed:`, err.message));
     invoiceWorker.on('error', () => {});
 
-    // 3. Inventory Reconciliation & Low-Stock Monitor Worker Processor
-    const inventoryWorker = new Worker(
-      'inventory-queue',
-      async (job) => {
-        console.log(`[BullMQ Worker] Processing inventory job ${job.id} (${job.name})`);
-        const { action } = job.data || {};
-
-        if (action === 'check-low-stock' || !action) {
-          const lowStockVariants = await prisma.productVariant.findMany({
-            where: {
-              stock: { lte: 5 },
-              isAvailable: true,
-            },
-            include: {
-              product: { select: { id: true, name: true, sku: true } },
-            },
-            take: 20,
-          });
-
-          for (const variant of lowStockVariants) {
-            eventBus.emitEvent('inventory.low_stock', {
-              variantId: variant.id,
-              productId: variant.productId,
-              sku: variant.sku,
-              productName: variant.product?.name || variant.name || 'Hardware Item',
-              currentStock: variant.stock,
-              reorderLevel: 5,
-            });
-          }
-        }
-      },
-      { connection }
-    );
-
-    inventoryWorker.on('completed', (job) => console.log(`[BullMQ Worker] Inventory job ${job.id} completed`));
-    inventoryWorker.on('failed', (job, err) => console.error(`[BullMQ Worker] Inventory job ${job?.id} failed:`, err.message));
-    inventoryWorker.on('error', () => {});
-
-    // 4. Notification Dispatcher Worker Processor
+    // 3. Notification Dispatcher Worker Processor
     const notificationWorker = new Worker(
       'notification-queue',
       async (job) => {
@@ -136,7 +98,7 @@ export const startBullMQWorkers = () => {
     notificationWorker.on('failed', (job, err) => console.error(`[BullMQ Worker] Notification job ${job?.id} failed:`, err.message));
     notificationWorker.on('error', () => {});
 
-    console.log('🚀 [BullMQ Workers] Registered & active on email-queue, invoice-queue, inventory-queue, notification-queue');
+    console.log('🚀 [BullMQ Workers] Registered & active on email-queue, invoice-queue, notification-queue');
     } catch (err: any) {
       console.warn('⚠️ [BullMQ Workers Startup Warning]:', err.message);
     }

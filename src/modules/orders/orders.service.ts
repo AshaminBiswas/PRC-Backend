@@ -1,8 +1,7 @@
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 import { buildPagination, getPaginationParams } from '../../utils/response';
-import { OrderStatus, Prisma, StockMovementType } from '@prisma/client';
-import { recordStockMovement } from '../inventory/movement/movement.service';
+import { OrderStatus, Prisma } from '@prisma/client';
 import { createInvoice as createInvoiceService } from '../invoices/invoices.service';
 import type { ListOrdersQuery } from './orders.schema';
 
@@ -292,32 +291,6 @@ const restockOrderItems = async (items: any[], tx: any, userId: string, reason: 
         where: { id: item.productId },
         data: { stock: { increment: item.quantity } },
       });
-    }
-
-    if (item.productId) {
-      const invProduct = await tx.inventoryProduct.findFirst({
-        where: { productId: item.productId, deletedAt: null },
-        include: { stocks: true },
-      });
-
-      if (invProduct && invProduct.stocks.length > 0) {
-        const mainWhId = invProduct.stocks[0].warehouseId;
-        await recordStockMovement(
-          {
-            ventureId: invProduct.ventureId,
-            inventoryProductId: invProduct.id,
-            warehouseId: mainWhId,
-            qtyChanged: item.quantity,
-            movementType: StockMovementType.RETURN,
-            channel: 'ONLINE',
-            referenceType: 'ORDER_CANCEL',
-            referenceId: item.orderId,
-            createdBy: userId,
-            reason: reason,
-          },
-          tx
-        );
-      }
     }
   });
 

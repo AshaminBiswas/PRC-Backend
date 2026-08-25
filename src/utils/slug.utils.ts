@@ -19,7 +19,7 @@ export const generateSlug = (name: string): string => {
  */
 export const generateUniqueSlug = async (
   name: string,
-  model: 'category' | 'product' | 'venture' | 'appointmentService',
+  model: 'category' | 'product' | 'appointmentService',
   excludeId?: string
 ): Promise<string> => {
   const base = generateSlug(name);
@@ -36,11 +36,6 @@ export const generateUniqueSlug = async (
       });
     } else if (model === 'product') {
       existing = await prisma.product.findFirst({
-        where: { slug, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
-        select: { id: true },
-      });
-    } else if (model === 'venture') {
-      existing = await prisma.venture.findFirst({
         where: { slug, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
         select: { id: true },
       });

@@ -19,7 +19,6 @@ async function main() {
   await prisma.enquiry.deleteMany();
   await prisma.invoiceItem.deleteMany();
   await prisma.invoice.deleteMany();
-  await prisma.inventoryProduct.deleteMany();
   await prisma.cart.deleteMany();
   await prisma.wishlist.deleteMany();
   await prisma.productVariant.deleteMany();
@@ -31,9 +30,6 @@ async function main() {
   await prisma.warehouseZoneMapping.deleteMany();
   await prisma.shippingZone.deleteMany();
   await prisma.courier.deleteMany();
-  await prisma.ventureUser.deleteMany();
-  await prisma.venture.deleteMany();
-  await prisma.inventoryStock.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.staffAvailability.deleteMany();
   await prisma.appointment.deleteMany();

@@ -47,15 +47,6 @@ export interface QuoteStatusChangedPayload {
   approvedAmount?: number;
 }
 
-export interface LowStockPayload {
-  variantId?: string;
-  productId: string;
-  sku: string;
-  productName: string;
-  currentStock: number;
-  reorderLevel?: number;
-}
-
 export interface NotificationCreatedPayload {
   id: string;
   userId?: string;
@@ -95,7 +86,6 @@ export type DomainEvents = {
   'order.paid': OrderPaidPayload;
   'quote.created': QuoteCreatedPayload;
   'quote.status_changed': QuoteStatusChangedPayload;
-  'inventory.low_stock': LowStockPayload;
   'notification.created': NotificationCreatedPayload;
   'system.alert': SystemAlertPayload;
   'enquiry.submitted': EnquirySubmittedPayload;
@@ -182,18 +172,7 @@ export const initEventBus = () => {
     });
   });
 
-  // 4. Low Stock Alert Subscriber
-  eventBus.onEvent('inventory.low_stock', (payload) => {
-    sseService.sendToRoles(['super_admin', 'admin', 'inventory_manager'], 'inventory:low_stock', {
-      type: 'LOW_STOCK_ALERT',
-      title: `Low Stock Alert: ${payload.sku}`,
-      message: `Product "${payload.productName}" (SKU: ${payload.sku}) is low on stock (${payload.currentStock} units remaining).`,
-      data: payload,
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  // 5. In-App Notification Created Subscriber
+  // 4. In-App Notification Created Subscriber
   eventBus.onEvent('notification.created', (payload) => {
     if (payload.broadcast) {
       sseService.broadcastAll('notification:broadcast', payload);
@@ -239,15 +218,5 @@ export const initEventBus = () => {
     );
   });
 
-  eventBus.onEvent('inventory.low_stock', async (payload) => {
-    const { notifyAdmins } = await import('../modules/notifications/admin-notification.service');
-    await notifyAdmins(
-      'Low Stock Alert',
-      `Product "${payload.productName}" (SKU: ${payload.sku}) is running low. Only ${payload.currentStock} units remaining.`,
-      'LOW_STOCK',
-      payload
-    );
-  });
-
-  logger.info('[Domain Event Bus] Subscribers active: order.created, order.status_changed, quote.created, inventory.low_stock, notification.created, system.alert, enquiry.submitted, payment.failed');
+  logger.info('[Domain Event Bus] Subscribers active: order.created, order.status_changed, quote.created, notification.created, system.alert, enquiry.submitted, payment.failed');
 };

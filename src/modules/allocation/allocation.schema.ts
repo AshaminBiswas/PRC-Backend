@@ -11,7 +11,6 @@ export const allocateOrderSchema = z.object({
   pincode: z.string().regex(/^\d{6}$/, 'Indian PIN code must be a 6-digit number'),
   items: z.array(allocationItemSchema).optional(),
   reserveStock: z.boolean().optional(),
-  ventureId: z.string().optional(),
   orderId: z.string().optional(),
   strategy: z.string().optional(),
 });
@@ -45,7 +44,6 @@ export const bulkImportPincodeSchema = z.object({
 export const nearestWarehousesQuerySchema = z.object({
   pincode: z.string().regex(/^\d{6}$/, 'Indian PIN code must be a 6-digit number'),
   limit: z.coerce.number().int().positive().optional(),
-  ventureId: z.string().optional(),
 });
 
 export const createAdminWarehouseSchema = z.object({
@@ -60,7 +58,6 @@ export const createAdminWarehouseSchema = z.object({
   priority: z.number().int().optional(),
   contactPhone: z.string().optional(),
   isActive: z.boolean().optional(),
-  ventureId: z.string().optional(),
 });
 
 export const updateAdminWarehouseSchema = createAdminWarehouseSchema.partial();

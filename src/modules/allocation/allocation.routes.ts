@@ -26,49 +26,49 @@ router.use('/admin', authenticate, adminLimiter);
 router.post(
   '/pincodes',
   authenticate,
-  authorize('inventory.warehouses.create', 'allocation.manage'),
+  authorize('allocation.manage'),
   allocationController.createPincode
 );
 
 router.post(
   '/pincodes/import',
   authenticate,
-  authorize('inventory.warehouses.create', 'allocation.manage'),
+  authorize('allocation.manage'),
   allocationController.bulkImportPincodes
 );
 
 router.post(
   '/admin/warehouses',
   authenticate,
-  authorize('inventory.warehouses.create', 'allocation.manage'),
+  authorize('allocation.manage'),
   allocationController.createAdminWarehouse
 );
 
 router.put(
   '/admin/warehouses/:id',
   authenticate,
-  authorize('inventory.warehouses.update', 'allocation.manage'),
+  authorize('allocation.manage'),
   allocationController.updateAdminWarehouse
 );
 
 router.delete(
   '/admin/warehouses/:id',
   authenticate,
-  authorize('inventory.warehouses.delete', 'allocation.manage'),
+  authorize('allocation.manage'),
   allocationController.deleteAdminWarehouse
 );
 
 router.get(
   '/admin/logs',
   authenticate,
-  authorize('inventory.warehouses.read', 'allocation.manage'),
+  authorize('allocation.manage'),
   allocationController.listAllocationLogs
 );
 
 router.get(
   '/admin/logs/export',
   authenticate,
-  authorize('inventory.warehouses.read', 'allocation.manage'),
+  authorize('allocation.manage'),
   allocationController.exportAllocationLogsCsv
 );
 

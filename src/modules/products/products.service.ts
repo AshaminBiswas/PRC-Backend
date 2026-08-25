@@ -5,8 +5,6 @@ import { generateUniqueSlug } from '../../utils/slug.utils';
 import { buildPagination, getPaginationParams } from '../../utils/response';
 import type { CreateProductInput, UpdateProductInput } from './products.schema';
 import type { Prisma } from '@prisma/client';
-import { recordStockMovement } from '../inventory/movement/movement.service';
-import { StockMovementType } from '@prisma/client';
 
 // ─── Fast Projections (Separating Lightweight Catalog from Heavy Detail Views) ─
 
@@ -314,103 +312,6 @@ export const createProduct = async (input: CreateProductInput) => {
     select: productDetailSelect,
   });
 
-  // ─── Sync to Inventory Module using the canonical recordStockMovement pipeline ─
-  try {
-    let defaultVenture = await prisma.venture.findFirst({ where: { deletedAt: null } });
-    if (!defaultVenture) {
-      defaultVenture = await prisma.venture.create({
-        data: {
-          name: 'Pacific Hardware & Co.',
-          slug: 'prc-main',
-          code: 'PRC-MAIN',
-          currency: 'INR',
-          status: 'ACTIVE',
-        },
-      });
-    }
-
-    let defaultWh = await prisma.warehouse.findFirst({
-      where: { ventureId: defaultVenture.id, deletedAt: null },
-      orderBy: { isDefault: 'desc' },
-    });
-
-    if (!defaultWh) {
-      defaultWh = await prisma.warehouse.create({
-        data: {
-          name: 'Main Fulfillment Hub',
-          code: 'WH-MAIN',
-          ventureId: defaultVenture.id,
-          isDefault: true,
-          status: 'ACTIVE',
-        },
-      });
-    }
-
-    // Check if an InventoryProduct already exists
-    let invProduct = await prisma.inventoryProduct.findFirst({
-      where: { productId: product.id },
-    });
-
-    const targetQty = Number(product.stock) || 0;
-
-    if (!invProduct) {
-      invProduct = await prisma.inventoryProduct.create({
-        data: {
-          productId: product.id,
-          ventureId: defaultVenture.id,
-          sku: product.sku,
-          barcode: `BC-${product.sku}`,
-          purchasePrice: product.price,
-          sellingPrice: product.salePrice ?? product.price,
-          currentStock: targetQty,
-          availableStock: targetQty,
-          reorderLevel: product.reorderLevel || 10,
-        },
-      });
-    }
-
-    // Ensure warehouse stock record exists
-    const existingStock = await prisma.inventoryStock.findUnique({
-      where: {
-        inventoryProductId_warehouseId: {
-          inventoryProductId: invProduct.id,
-          warehouseId: defaultWh.id,
-        },
-      },
-    });
-
-    if (!existingStock) {
-      await prisma.inventoryStock.create({
-        data: {
-          inventoryProductId: invProduct.id,
-          warehouseId: defaultWh.id,
-          ventureId: defaultVenture.id,
-          quantity: targetQty,
-          reservedQty: 0,
-          damagedQty: 0,
-        },
-      });
-
-      if (targetQty > 0) {
-        await prisma.stockMovement.create({
-          data: {
-            ventureId: defaultVenture.id,
-            inventoryProductId: invProduct.id,
-            warehouseId: defaultWh.id,
-            movementType: StockMovementType.OPENING,
-            qtyChanged: targetQty,
-            qtyBefore: 0,
-            qtyAfter: targetQty,
-            channel: 'SYSTEM',
-            reason: 'Initial stock from product creation',
-          },
-        });
-      }
-    }
-  } catch (err) {
-    console.error('[Inventory Sync] Failed to sync new product to inventory:', err);
-  }
-
   return formatProduct(product);
 };
 
@@ -464,61 +365,6 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
     },
     select: productDetailSelect,
   });
-
-  // Sync updates with InventoryProduct & InventoryStock
-  try {
-    const invProduct = await prisma.inventoryProduct.findFirst({
-      where: { productId: id },
-    });
-
-    if (invProduct) {
-      const updateData: any = {};
-      if (input.sku) updateData.sku = input.sku;
-      if (input.price) updateData.purchasePrice = input.price;
-      if (input.salePrice !== undefined) updateData.sellingPrice = input.salePrice ?? input.price ?? invProduct.sellingPrice;
-      if (input.reorderLevel !== undefined) updateData.reorderLevel = input.reorderLevel;
-
-      if (input.stock !== undefined) {
-        updateData.currentStock = input.stock;
-        updateData.availableStock = input.stock;
-
-        // Update default warehouse stock
-        const defaultWh = await prisma.warehouse.findFirst({
-          where: { ventureId: invProduct.ventureId, deletedAt: null },
-          orderBy: { isDefault: 'desc' },
-        });
-
-        if (defaultWh) {
-          await prisma.inventoryStock.upsert({
-            where: {
-              inventoryProductId_warehouseId: {
-                inventoryProductId: invProduct.id,
-                warehouseId: defaultWh.id,
-              },
-            },
-            create: {
-              inventoryProductId: invProduct.id,
-              warehouseId: defaultWh.id,
-              ventureId: invProduct.ventureId,
-              quantity: input.stock,
-            },
-            update: {
-              quantity: input.stock,
-            },
-          });
-        }
-      }
-
-      if (Object.keys(updateData).length > 0) {
-        await prisma.inventoryProduct.update({
-          where: { id: invProduct.id },
-          data: updateData,
-        });
-      }
-    }
-  } catch (err) {
-    console.error('[Inventory Sync] Failed to update inventory for product:', err);
-  }
 
   return formatProduct(product);
 };
