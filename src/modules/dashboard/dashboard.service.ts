@@ -40,7 +40,9 @@ export const getPeriodRange = (
   const prevEnd = new Date(now);
 
   switch (period) {
-    case 'today': {
+    case 'today':
+    case 'day':
+    case 'daily': {
       start = new Date(now);
       start.setHours(0, 0, 0, 0);
       prevEnd.setHours(0, 0, 0, 0);
@@ -48,7 +50,9 @@ export const getPeriodRange = (
       prevStart.setDate(prevStart.getDate() - 1);
       return { start, end, prevStart, prevEnd };
     }
-    case '7d': {
+    case '7d':
+    case 'week':
+    case 'weekly': {
       start = new Date(now);
       start.setDate(start.getDate() - 7);
       prevEnd.setDate(prevEnd.getDate() - 7);
@@ -56,7 +60,8 @@ export const getPeriodRange = (
       prevStart.setDate(prevStart.getDate() - 7);
       return { start, end, prevStart, prevEnd };
     }
-    case '90d': {
+    case '90d':
+    case 'quarter': {
       start = new Date(now);
       start.setDate(start.getDate() - 90);
       prevEnd.setDate(prevEnd.getDate() - 90);
@@ -64,7 +69,11 @@ export const getPeriodRange = (
       prevStart.setDate(prevStart.getDate() - 90);
       return { start, end, prevStart, prevEnd };
     }
-    case '1y': {
+    case '1y':
+    case 'year':
+    case 'yearly':
+    case 'ytd':
+    case 'all': {
       start = new Date(now);
       start.setFullYear(start.getFullYear() - 1);
       prevEnd.setFullYear(prevEnd.getFullYear() - 1);
@@ -72,6 +81,9 @@ export const getPeriodRange = (
       prevStart.setFullYear(prevStart.getFullYear() - 1);
       return { start, end, prevStart, prevEnd };
     }
+    case '30d':
+    case 'month':
+    case 'monthly':
     default: {
       // 30d
       start = new Date(now);

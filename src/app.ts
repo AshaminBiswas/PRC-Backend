@@ -42,6 +42,7 @@ import logisticsRoutes from './modules/logistics/logistics.routes';
 import invoiceRoutes from './modules/invoices/invoices.routes';
 import webhookRoutes from './modules/payments/webhook.routes';
 import b2bPricingRoutes from './modules/b2b-pricing/b2b-pricing.routes';
+import auditRoutes from './modules/audit/audit.routes';
 
 import sseRoutes from './events/sse.routes';
 import { initEventBus } from './events/eventBus';
@@ -310,6 +311,7 @@ app.use('/api/warehouse', allocationRoutes);
 app.use(`${prefix}/logistics`, logisticsRoutes);
 app.use(`${prefix}/invoices`, invoiceRoutes);
 app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
+app.use(`${prefix}/audit`, auditRoutes);
 app.use(`${prefix}/events`, sseRoutes);
 
 app.get(`${prefix}/test-email`, async (req, res) => {

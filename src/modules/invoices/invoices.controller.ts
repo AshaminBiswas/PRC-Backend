@@ -2,10 +2,23 @@ import { Request, Response, NextFunction } from 'express';
 import * as invoicesService from './invoices.service';
 import { sendSuccess, sendPaginated } from '../../utils/response';
 import { generateInvoiceHtml } from './services/pdf.service';
+import { logAdminAction } from '../../utils/auditLogger';
 
 export const createInvoice = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await invoicesService.createInvoice(req.body, req.user);
+    const isPI = String(req.body.type || (data as any).type || data.invoiceType || '').toUpperCase().includes('PROFORMA');
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: isPI ? 'PI_GENERATED' : 'TAX_INVOICE_GENERATED',
+      entity: isPI ? 'PROFORMA_INVOICE' : 'INVOICE',
+      entityId: data.id,
+      entityName: data.invoiceNumber || `Invoice #${data.id}`,
+      details: `Generated ${isPI ? 'Proforma Invoice (PI)' : 'GST Tax Invoice'} ${data.invoiceNumber || ''} for customer ${data.customer?.firstName || ''} ${data.customer?.lastName || ''}. Amount: ₹${data.grandTotal || 0}.`,
+      severity: 'SUCCESS',
+      metadata: { invoiceId: data.id, invoiceNumber: data.invoiceNumber, grandTotal: data.grandTotal, invoiceType: data.invoiceType },
+      req,
+    });
     sendSuccess(res, data, 'Invoice created successfully as DRAFT', 201);
   } catch (error) {
     next(error);
@@ -33,6 +46,17 @@ export const getInvoiceById = async (req: Request, res: Response, next: NextFunc
 export const approveInvoice = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await invoicesService.approveInvoice(req.params.id, req.user);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'INVOICE_APPROVED',
+      entity: 'INVOICE',
+      entityId: data.id,
+      entityName: data.invoiceNumber,
+      details: `Approved GST tax invoice ${data.invoiceNumber}.`,
+      severity: 'SUCCESS',
+      metadata: { invoiceId: data.id, invoiceNumber: data.invoiceNumber },
+      req,
+    });
     sendSuccess(res, data, 'Invoice approved successfully');
   } catch (error) {
     next(error);
@@ -43,6 +67,17 @@ export const cancelInvoice = async (req: Request, res: Response, next: NextFunct
   try {
     const { reason } = req.body;
     const data = await invoicesService.cancelInvoice(req.params.id, reason, req.user);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'INVOICE_CANCELLED',
+      entity: 'INVOICE',
+      entityId: data.id,
+      entityName: data.invoiceNumber,
+      details: `Cancelled invoice ${data.invoiceNumber}. Reason: ${reason || 'Not specified'}.`,
+      severity: 'WARNING',
+      metadata: { invoiceId: data.id, invoiceNumber: data.invoiceNumber, reason },
+      req,
+    });
     sendSuccess(res, data, 'Invoice cancelled successfully');
   } catch (error) {
     next(error);
@@ -52,6 +87,17 @@ export const cancelInvoice = async (req: Request, res: Response, next: NextFunct
 export const signInvoice = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await invoicesService.signInvoice(req.params.id, req.body, req.user);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'INVOICE_DIGITALLY_SIGNED',
+      entity: 'INVOICE',
+      entityId: data.id,
+      entityName: data.invoiceNumber,
+      details: `Digitally signed tax invoice ${data.invoiceNumber}.`,
+      severity: 'SUCCESS',
+      metadata: { invoiceId: data.id, invoiceNumber: data.invoiceNumber },
+      req,
+    });
     sendSuccess(res, data, 'Invoice signed successfully');
   } catch (error) {
     next(error);

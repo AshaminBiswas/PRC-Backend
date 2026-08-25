@@ -7,17 +7,26 @@ const optionalDateString = z
     message: 'Invalid date format',
   });
 
+const allowedPeriods = [
+  'today', 'day', 'daily',
+  '7d', 'week', 'weekly',
+  '30d', 'month', 'monthly',
+  '90d', 'quarter',
+  '1y', 'year', 'yearly', 'ytd',
+  'all', 'custom'
+] as const;
+
 export const DashboardOverviewQuerySchema = z.object({
-  period: z.enum(['today', '7d', '30d', '90d', '1y']).optional().default('30d'),
+  period: z.enum(allowedPeriods).optional().default('30d'),
   startDate: optionalDateString,
   endDate: optionalDateString,
 });
 
 export const SalesChartQuerySchema = z.object({
-  period: z.enum(['today', '7d', '30d', '90d', '1y']).optional().default('30d'),
+  period: z.enum(allowedPeriods).optional().default('30d'),
   startDate: optionalDateString,
   endDate: optionalDateString,
-  groupBy: z.enum(['day', 'week', 'month', 'daily', 'weekly', 'monthly']).default('day'),
+  groupBy: z.enum(['day', 'week', 'month', 'daily', 'weekly', 'monthly', 'year', 'yearly']).default('day'),
 });
 
 export const RecentOrdersQuerySchema = z.object({

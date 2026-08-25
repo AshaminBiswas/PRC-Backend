@@ -23,9 +23,23 @@ export const getCustomer360 = async (req: Request, res: Response, next: NextFunc
   } catch (error) { next(error); }
 };
 
+import { logAdminAction } from '../../utils/auditLogger';
+
 export const createUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await usersService.createUser(req.body);
+    const isStaff = Boolean(req.body.roleId);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: isStaff ? 'ADMIN_CREATED' : 'CUSTOMER_CREATED',
+      entity: isStaff ? 'ADMIN' : 'CUSTOMER',
+      entityId: data.id,
+      entityName: `${data.firstName} ${data.lastName} (${data.email})`,
+      details: `Created new ${isStaff ? 'administrator/staff' : 'customer'} account '${data.firstName} ${data.lastName}' (${data.email}).`,
+      severity: isStaff ? 'CRITICAL' : 'SUCCESS',
+      metadata: { email: data.email, companyName: data.companyName, roleId: req.body.roleId },
+      req,
+    });
     sendSuccess(res, data, 'User created successfully', 201);
   } catch (error) { next(error); }
 };
@@ -33,13 +47,36 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
 export const updateUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await usersService.updateUser(req.params.id, req.body);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'USER_UPDATED',
+      entity: 'CUSTOMER',
+      entityId: data.id,
+      entityName: `${data.firstName} ${data.lastName} (${data.email})`,
+      details: `Updated user account details for '${data.firstName} ${data.lastName}' (${data.email}). Status: ${data.status}.`,
+      severity: 'INFO',
+      metadata: req.body,
+      req,
+    });
     sendSuccess(res, data, 'User updated successfully');
   } catch (error) { next(error); }
 };
 
 export const deleteUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const targetUser = await usersService.getUserById(req.params.id).catch(() => null);
     await usersService.deleteUser(req.params.id);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'USER_DELETED',
+      entity: 'CUSTOMER',
+      entityId: req.params.id,
+      entityName: targetUser ? `${targetUser.firstName} ${targetUser.lastName} (${targetUser.email})` : req.params.id,
+      details: `Permanently deleted user account ${targetUser ? `'${targetUser.firstName} ${targetUser.lastName}' (${targetUser.email})` : req.params.id}.`,
+      severity: 'CRITICAL',
+      metadata: { deletedUserId: req.params.id, email: targetUser?.email },
+      req,
+    });
     sendMessage(res, 'User deleted successfully');
   } catch (error) { next(error); }
 };
@@ -96,6 +133,16 @@ export const getUserRoles = async (req: Request, res: Response, next: NextFuncti
 export const updateUserRoles = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await usersService.updateUserRoles(req.params.id, req.body.roleIds);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'USER_ROLES_REASSIGNED',
+      entity: 'ROLE',
+      entityId: req.params.id,
+      details: `Reassigned roles/permissions for user #${req.params.id}.`,
+      severity: 'CRITICAL',
+      metadata: { targetUserId: req.params.id, roleIds: req.body.roleIds },
+      req,
+    });
     sendMessage(res, 'User roles updated successfully');
   } catch (error) { next(error); }
 };

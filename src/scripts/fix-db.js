@@ -795,6 +795,35 @@ const STATEMENTS = [
       ALTER TABLE "coupons" ADD COLUMN "applicable_category_ids" TEXT[] DEFAULT ARRAY[]::TEXT[];
     END IF;
   END $$`,
+
+  // ─── Production Admin Audit Logs Table ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='admin_audit_logs') THEN
+      CREATE TABLE "admin_audit_logs" (
+        "id"           TEXT NOT NULL,
+        "user_id"      TEXT NOT NULL,
+        "admin_email"  TEXT NOT NULL,
+        "admin_name"   TEXT,
+        "admin_role"   TEXT,
+        "action"       TEXT NOT NULL,
+        "entity"       TEXT NOT NULL,
+        "entity_id"    TEXT,
+        "entity_name"  TEXT,
+        "details"      TEXT,
+        "severity"     TEXT NOT NULL DEFAULT 'INFO',
+        "metadata"     JSONB,
+        "ip_address"   TEXT,
+        "user_agent"   TEXT,
+        "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "admin_audit_logs_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX "admin_audit_logs_user_id_idx" ON "admin_audit_logs"("user_id", "created_at" DESC);
+      CREATE INDEX "admin_audit_logs_action_idx" ON "admin_audit_logs"("action");
+      CREATE INDEX "admin_audit_logs_entity_idx" ON "admin_audit_logs"("entity");
+      CREATE INDEX "admin_audit_logs_severity_idx" ON "admin_audit_logs"("severity");
+      CREATE INDEX "admin_audit_logs_created_at_idx" ON "admin_audit_logs"("created_at" DESC);
+    END IF;
+  END $$`,
 ];
 
 async function run() {
