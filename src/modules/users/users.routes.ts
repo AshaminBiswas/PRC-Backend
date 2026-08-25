@@ -42,6 +42,8 @@ router.patch('/avatar', validate(UpdateAvatarSchema), controller.updateAvatar);
 router.get('/', authorize('users.read'), validate(ListUsersQuerySchema, 'query'), controller.listUsers);
 router.post('/', authorize('users.create'), validate(CreateUserSchema), controller.createUser);
 router.get('/:id', authorize('users.read'), validate(UuidParamSchema, 'params'), controller.getUserById);
+router.get('/:id/360', authorize('users.read'), validate(UuidParamSchema, 'params'), controller.getCustomer360);
+router.get('/:id/customer-360', authorize('users.read'), validate(UuidParamSchema, 'params'), controller.getCustomer360);
 router.patch('/:id', authorize('users.update'), validate(UuidParamSchema, 'params'), validate(UpdateUserSchema), controller.updateUser);
 router.delete('/:id', authorize('users.delete'), validate(UuidParamSchema, 'params'), controller.deleteUser);
 router.get('/:id/roles', authorize('users.read'), validate(UuidParamSchema, 'params'), controller.getUserRoles);

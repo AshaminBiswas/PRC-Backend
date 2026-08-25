@@ -42,6 +42,7 @@ export const listUsers = async (query: ListUsersQuery) => {
       { firstName: { contains: query.search, mode: 'insensitive' } },
       { lastName: { contains: query.search, mode: 'insensitive' } },
       { email: { contains: query.search, mode: 'insensitive' } },
+      { phone: { contains: query.search, mode: 'insensitive' } },
       { companyName: { contains: query.search, mode: 'insensitive' } },
       { gstin: { contains: query.search, mode: 'insensitive' } },
     ];
@@ -167,6 +168,310 @@ export const getUserById = async (id: string) => {
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
+  };
+};
+
+// ─── Get Customer 360 Full Profile & Dossier ─────────────────────────────────
+
+export const getCustomer360 = async (id: string) => {
+  const user = await prisma.user.findUnique({
+    where: { id, deletedAt: null },
+    include: {
+      userRoles: {
+        include: {
+          role: true,
+        },
+      },
+      addresses: {
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+      },
+      orders: {
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, sku: true, images: true, thumbnail: true },
+              },
+            },
+          },
+          payments: true,
+        },
+      },
+      quotes: {
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, sku: true },
+              },
+            },
+          },
+        },
+      },
+      b2bCustomerPrices: {
+        include: {
+          product: {
+            select: { id: true, name: true, sku: true, price: true, thumbnail: true, images: true },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      },
+      activityLogs: {
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      },
+      passwordResets: {
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      },
+    },
+  });
+
+  if (!user) throw new AppError('NOT_FOUND', 'Customer account not found', 404);
+
+  // Fetch GST Invoices by customer's userId or order IDs
+  const orderIds = user.orders.map((o) => o.id);
+  const [invoices, gstInvoices, savedAddresses] = await Promise.all([
+    prisma.invoice.findMany({
+      where: {
+        OR: [
+          { customerId: user.id },
+          ...(orderIds.length > 0 ? [{ orderId: { in: orderIds } }] : []),
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    }).catch(() => []),
+    prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "gst_invoices" WHERE "customer_id" = $1 OR "customer_email" = $2 OR ("customer_gstin" IS NOT NULL AND "customer_gstin" != '' AND "customer_gstin" = $3) ORDER BY "created_at" DESC LIMIT 50`,
+      user.id,
+      user.email,
+      user.gstin || 'NONE'
+    ).catch(() => []),
+    prisma.savedAddress.findMany({
+      where: { customerId: user.id },
+      orderBy: { createdAt: 'desc' },
+    }).catch(() => []),
+  ]);
+
+  // Compute seniority / customer age
+  const now = new Date();
+  const created = new Date(user.createdAt);
+  const diffMs = Math.max(0, now.getTime() - created.getTime());
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  const years = Math.floor(diffDays / 365);
+  const remainingDays = diffDays % 365;
+  const months = Math.floor(remainingDays / 30);
+  const days = remainingDays % 30;
+
+  let longevityLabel = '';
+  if (years > 0) {
+    longevityLabel = `${years} Year${years > 1 ? 's' : ''}${months > 0 ? `, ${months} Month${months > 1 ? 's' : ''}` : ''}`;
+  } else if (months > 0) {
+    longevityLabel = `${months} Month${months > 1 ? 's' : ''}${days > 0 ? `, ${days} Day${days > 1 ? 's' : ''}` : ''}`;
+  } else if (diffDays > 0) {
+    longevityLabel = `${diffDays} Day${diffDays > 1 ? 's' : ''}`;
+  } else {
+    longevityLabel = 'Joined Today';
+  }
+
+  // Summary KPIs
+  const totalOrdersCount = user.orders.length;
+  const totalSpend = user.orders
+    .filter((o) => o.status !== 'CANCELLED' && o.status !== 'RETURNED')
+    .reduce((acc, curr) => acc + Number(curr.grandTotal || 0), 0);
+  const totalQuotesCount = user.quotes.length;
+  const activeQuotesCount = user.quotes.filter((q) => q.status === 'PENDING' || q.status === 'UNDER_REVIEW').length;
+  const customPricesCount = user.b2bCustomerPrices.length;
+
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      phone: user.phone,
+      companyName: user.companyName,
+      gstin: user.gstin,
+      b2bAdvancePercentage: user.b2bAdvancePercentage ? Number(user.b2bAdvancePercentage) : null,
+      avatar: user.avatar,
+      status: user.status,
+      isVerified: user.isVerified,
+      mustChangePassword: user.mustChangePassword,
+      twoFactorEnabled: user.twoFactorEnabled,
+      role: user.userRoles[0]?.role || null,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      lastLoginAt: user.lastLoginAt,
+      seniority: {
+        totalDays: diffDays,
+        years,
+        months,
+        days,
+        label: longevityLabel,
+      },
+    },
+    addresses: [
+      ...user.addresses.map((a) => ({
+        id: a.id,
+        type: a.type,
+        label: a.label || 'Standard',
+        addressLine1: a.addressLine1,
+        addressLine2: a.addressLine2,
+        city: a.city,
+        state: a.state,
+        postalCode: a.postalCode,
+        country: a.country || 'India',
+        phone: a.phone || user.phone,
+        email: a.email || user.email,
+        altPhone: a.altPhone,
+        hasWhatsapp: a.hasWhatsapp,
+        latitude: a.latitude,
+        longitude: a.longitude,
+        isDefault: a.isDefault,
+        createdAt: a.createdAt,
+      })),
+      ...savedAddresses.map((sa) => ({
+        id: sa.id,
+        type: 'SHIPPING' as const,
+        label: sa.label || 'Saved Address',
+        addressLine1: sa.addressLine1,
+        addressLine2: sa.addressLine2,
+        city: sa.city,
+        state: sa.state,
+        postalCode: sa.postalCode,
+        country: sa.country || 'India',
+        phone: sa.phone || user.phone,
+        email: sa.email || user.email,
+        altPhone: null,
+        hasWhatsapp: false,
+        latitude: null,
+        longitude: null,
+        isDefault: sa.isDefaultDelivery,
+        createdAt: sa.createdAt,
+      })),
+    ],
+    orders: user.orders.map((o) => ({
+      id: o.id,
+      orderNumber: o.orderNumber,
+      totalAmount: Number(o.grandTotal),
+      subtotal: Number(o.subtotal),
+      taxTotal: Number(o.taxTotal),
+      shippingTotal: Number(o.shippingTotal),
+      discountTotal: Number(o.discountTotal),
+      orderStatus: o.status,
+      paymentStatus: o.paymentStatus,
+      paymentMethod: o.paymentMethod,
+      isB2B: Boolean(user.companyName || user.gstin),
+      companyName: user.companyName,
+      gstin: user.gstin,
+      createdAt: o.createdAt,
+      itemsCount: o.items?.length || 0,
+      items: o.items.map((it) => ({
+        id: it.id,
+        productId: it.productId,
+        productName: it.productName || it.product?.name,
+        sku: it.sku || it.product?.sku,
+        price: Number(it.price),
+        quantity: it.quantity,
+        total: Number(it.total),
+        thumbnail: it.product?.thumbnail || it.product?.images?.[0] || null,
+      })),
+    })),
+    quotes: user.quotes.map((q) => ({
+      id: q.id,
+      quoteNumber: q.quoteNumber,
+      referenceNo: q.referenceNo || q.quoteNumber,
+      projectName: q.projectName,
+      status: q.status,
+      grandTotal: Number(q.grandTotal || 0),
+      itemsCount: q.items?.length || 0,
+      validUntil: q.validUntil,
+      digitalSignature: q.digitalSignature,
+      signedBy: q.signedBy,
+      signedAt: q.signedAt,
+      createdAt: q.createdAt,
+      items: q.items.map((qi: any) => ({
+        id: qi.id,
+        productName: qi.productNameSnapshot || qi.product?.name || 'Custom Hardware Line Item',
+        sku: qi.product?.sku || 'SKU-CUSTOM',
+        quantity: qi.quantity,
+        unitPrice: Number(qi.offeredPrice || qi.rate || 0),
+        totalPrice: Number(qi.total || qi.amount || 0),
+      })),
+    })),
+    invoices: [
+      ...gstInvoices.map((gi: any) => ({
+        id: gi.id,
+        invoiceNumber: gi.invoice_number,
+        invoiceDate: gi.invoice_date || gi.created_at,
+        taxableAmount: Number(gi.taxable_amount || 0),
+        cgstAmount: Number(gi.cgst_amount || 0),
+        sgstAmount: Number(gi.sgst_amount || 0),
+        igstAmount: Number(gi.igst_amount || 0),
+        grandTotal: Number(gi.grand_total || 0),
+        status: gi.status,
+        type: 'GST_TAX_INVOICE',
+        irn: gi.irn,
+        pdfUrl: gi.pdf_url,
+        createdAt: gi.created_at,
+      })),
+      ...invoices.map((inv: any) => ({
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        invoiceDate: inv.createdAt,
+        taxableAmount: Number(inv.subtotal || 0),
+        cgstAmount: Number(inv.cgst || 0),
+        sgstAmount: Number(inv.sgst || 0),
+        igstAmount: Number(inv.igst || 0),
+        grandTotal: Number(inv.total || 0),
+        status: inv.status || 'ISSUED',
+        type: 'INVOICE',
+        createdAt: inv.createdAt,
+      })),
+    ],
+    b2bPrices: user.b2bCustomerPrices.map((bp) => ({
+      id: bp.id,
+      productId: bp.productId,
+      productName: bp.product?.name,
+      sku: bp.product?.sku,
+      standardPrice: Number(bp.product?.price || 0),
+      customPrice: Number(bp.price),
+      minQuantity: bp.minQuantity,
+      discountPercentage:
+        Number(bp.product?.price || 0) > 0
+          ? Math.round(((Number(bp.product?.price) - Number(bp.price)) / Number(bp.product?.price)) * 100)
+          : 0,
+      notes: bp.notes,
+      updatedAt: bp.updatedAt,
+    })),
+    activityLogs: user.activityLogs.map((al) => ({
+      id: al.id,
+      action: al.action,
+      description: al.description,
+      ipAddress: al.ipAddress,
+      userAgent: al.userAgent,
+      createdAt: al.createdAt,
+    })),
+    passwordResets: user.passwordResets.map((pr) => ({
+      id: pr.id,
+      usedAt: pr.usedAt,
+      createdAt: pr.createdAt,
+    })),
+    summary: {
+      totalOrdersCount,
+      totalSpend,
+      totalQuotesCount,
+      activeQuotesCount,
+      invoicesCount: gstInvoices.length + invoices.length,
+      customPricesCount,
+      addressesCount: user.addresses.length + savedAddresses.length,
+    },
   };
 };
 

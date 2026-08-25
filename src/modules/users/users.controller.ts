@@ -16,6 +16,13 @@ export const getUserById = async (req: Request, res: Response, next: NextFunctio
   } catch (error) { next(error); }
 };
 
+export const getCustomer360 = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await usersService.getCustomer360(req.params.id);
+    sendSuccess(res, data);
+  } catch (error) { next(error); }
+};
+
 export const createUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await usersService.createUser(req.body);
