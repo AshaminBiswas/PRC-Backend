@@ -24,6 +24,22 @@ const couponSelect = {
   updatedAt: true,
 } as const;
 
+let couponColumnsEnsured = false;
+export const ensureCouponColumns = async () => {
+  if (couponColumnsEnsured) return;
+  try {
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "coupons" ADD COLUMN IF NOT EXISTS "applicable_product_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`
+    );
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE "coupons" ADD COLUMN IF NOT EXISTS "applicable_category_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`
+    );
+    couponColumnsEnsured = true;
+  } catch (e) {
+    // Non-fatal if already patched or read-only
+  }
+};
+
 const formatCoupon = <T extends {
   id: string;
   discountValue: Prisma.Decimal;
@@ -91,16 +107,37 @@ export const listCoupons = async (query: {
   const orderByField = query.sortBy || 'createdAt';
   const orderDirection = query.sortOrder || 'desc';
 
-  const [coupons, totalItems] = await prisma.$transaction([
-    prisma.coupon.findMany({
-      where,
-      select: couponSelect,
-      orderBy: { [orderByField]: orderDirection },
-      skip,
-      take: limit,
-    }),
-    prisma.coupon.count({ where }),
-  ]);
+  let coupons: any[];
+  let totalItems: number;
+
+  try {
+    [coupons, totalItems] = await prisma.$transaction([
+      prisma.coupon.findMany({
+        where,
+        select: couponSelect,
+        orderBy: { [orderByField]: orderDirection },
+        skip,
+        take: limit,
+      }),
+      prisma.coupon.count({ where }),
+    ]);
+  } catch (err: any) {
+    if (err?.code === 'P2022' || String(err?.message).includes('applicable_product_ids')) {
+      await ensureCouponColumns();
+      [coupons, totalItems] = await prisma.$transaction([
+        prisma.coupon.findMany({
+          where,
+          select: couponSelect,
+          orderBy: { [orderByField]: orderDirection },
+          skip,
+          take: limit,
+        }),
+        prisma.coupon.count({ where }),
+      ]);
+    } else {
+      throw err;
+    }
+  }
 
   return {
     data: coupons.map(formatCoupon),
@@ -234,13 +271,27 @@ export const createCoupon = async (input: CreateCouponInput) => {
 
 export const getCouponByCodeOrId = async (identifier: string) => {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+  const where = isUuid
+    ? { OR: [{ id: identifier }, { code: identifier.toUpperCase().trim() }] }
+    : { code: identifier.toUpperCase().trim() };
 
-  const coupon = await prisma.coupon.findFirst({
-    where: isUuid
-      ? { OR: [{ id: identifier }, { code: identifier.toUpperCase().trim() }] }
-      : { code: identifier.toUpperCase().trim() },
-    select: couponSelect,
-  });
+  let coupon: any;
+  try {
+    coupon = await prisma.coupon.findFirst({
+      where,
+      select: couponSelect,
+    });
+  } catch (err: any) {
+    if (err?.code === 'P2022' || String(err?.message).includes('applicable_product_ids')) {
+      await ensureCouponColumns();
+      coupon = await prisma.coupon.findFirst({
+        where,
+        select: couponSelect,
+      });
+    } else {
+      throw err;
+    }
+  }
 
   if (!coupon) {
     throw new AppError('NOT_FOUND', 'Coupon not found', 404);
@@ -443,16 +494,33 @@ export const validateCoupon = async (
 export const getPublicCoupons = async () => {
   try {
     const now = new Date();
-    const coupons = await prisma.coupon.findMany({
-      where: {
-        isActive: true,
-        OR: [{ startDate: null }, { startDate: { lte: now } }],
-        AND: [{ OR: [{ endDate: null }, { endDate: { gte: now } }] }],
-      },
-      select: couponSelect,
-      orderBy: { createdAt: 'desc' },
-    });
-    return coupons.map(formatCoupon);
+    try {
+      const coupons = await prisma.coupon.findMany({
+        where: {
+          isActive: true,
+          OR: [{ startDate: null }, { startDate: { lte: now } }],
+          AND: [{ OR: [{ endDate: null }, { endDate: { gte: now } }] }],
+        },
+        select: couponSelect,
+        orderBy: { createdAt: 'desc' },
+      });
+      return coupons.map(formatCoupon);
+    } catch (dbErr: any) {
+      if (dbErr?.code === 'P2022' || String(dbErr?.message).includes('applicable_product_ids')) {
+        await ensureCouponColumns();
+        const coupons = await prisma.coupon.findMany({
+          where: {
+            isActive: true,
+            OR: [{ startDate: null }, { startDate: { lte: now } }],
+            AND: [{ OR: [{ endDate: null }, { endDate: { gte: now } }] }],
+          },
+          select: couponSelect,
+          orderBy: { createdAt: 'desc' },
+        });
+        return coupons.map(formatCoupon);
+      }
+      throw dbErr;
+    }
   } catch (err) {
     console.warn('[Coupons Service] Failed to load public coupons:', err);
     return [];

@@ -29,6 +29,10 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 
 const STATEMENTS = [
+  // ─── Coupons table missing columns ────────────────────────────────────────
+  `ALTER TABLE "coupons" ADD COLUMN IF NOT EXISTS "applicable_product_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
+  `ALTER TABLE "coupons" ADD COLUMN IF NOT EXISTS "applicable_category_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
+
   // ─── Add 2FA columns to users table ───────────────────────────────────────
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_enabled"      BOOLEAN   NOT NULL DEFAULT false`,
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_secret"       TEXT`,
