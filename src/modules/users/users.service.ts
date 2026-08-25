@@ -389,21 +389,95 @@ export const deleteUser = async (id: string) => {
 
 // ─── Update Profile ───────────────────────────────────────────────────────────
 
-
 export const updateProfile = async (userId: string, input: UpdateProfileInput) => {
-  const user = await prisma.user.update({
-    where: { id: userId },
-    data: input,
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      phone: true,
-      companyName: true,
-      gstin: true,
-    },
+  const existingUser = await prisma.user.findUnique({
+    where: { id: userId, deletedAt: null },
+    include: { userRoles: { include: { role: true } } },
   });
-  return user;
+  if (!existingUser) throw new AppError('NOT_FOUND', 'User not found', 404);
+
+  const existingRoles = existingUser.userRoles.map((ur) => ur.role.slug);
+  const isCurrentlyB2B =
+    existingRoles.includes('b2b-customer') ||
+    existingRoles.includes('b2b_customer') ||
+    Boolean(existingUser.companyName && existingUser.gstin);
+
+  // Prevent B2B customer from downgrading to B2C
+  if (isCurrentlyB2B) {
+    if (
+      (input.companyName !== undefined && !input.companyName?.trim()) ||
+      (input.gstin !== undefined && !input.gstin?.trim())
+    ) {
+      throw new AppError(
+        'DOWNGRADE_NOT_ALLOWED',
+        'B2B Business accounts cannot be downgraded to B2C Retail accounts. Please contact support if you need assistance.',
+        400
+      );
+    }
+  }
+
+  // Check if upgrading from B2C to B2B
+  const isUpgradingToB2B =
+    !isCurrentlyB2B &&
+    Boolean(input.companyName?.trim() && input.gstin?.trim());
+
+  let b2bRoleId: string | undefined;
+  if (isUpgradingToB2B) {
+    let b2bRole = await prisma.role.findFirst({
+      where: { OR: [{ slug: 'b2b-customer' }, { slug: 'b2b_customer' }] },
+    });
+    if (!b2bRole) {
+      b2bRole = await prisma.role.create({
+        data: {
+          name: 'B2B Customer',
+          slug: 'b2b-customer',
+          description: 'Business-to-business customer with custom pricing & quote access',
+          isSystem: true,
+        },
+      });
+    }
+    b2bRoleId = b2bRole.id;
+  }
+
+  const updatedUser = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.update({
+      where: { id: userId },
+      data: {
+        ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
+        ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+        ...(input.companyName !== undefined ? { companyName: input.companyName?.trim() || null } : {}),
+        ...(input.gstin !== undefined ? { gstin: input.gstin?.trim()?.toUpperCase() || null } : {}),
+      },
+      include: {
+        userRoles: { include: { role: true } },
+      },
+    });
+
+    if (isUpgradingToB2B && b2bRoleId) {
+      await tx.userRole.deleteMany({ where: { userId } });
+      await tx.userRole.create({ data: { userId, roleId: b2bRoleId } });
+    }
+
+    return u;
+  });
+
+  const primaryRole = isUpgradingToB2B
+    ? 'b2b-customer'
+    : (updatedUser.userRoles[0]?.role?.slug ?? 'customer');
+
+  return {
+    id: updatedUser.id,
+    email: updatedUser.email,
+    firstName: updatedUser.firstName,
+    lastName: updatedUser.lastName,
+    phone: updatedUser.phone,
+    companyName: updatedUser.companyName,
+    gstin: updatedUser.gstin,
+    role: primaryRole,
+    avatar: updatedUser.avatar,
+    isVerified: updatedUser.isVerified,
+  };
 };
 
 // ─── Update Avatar ────────────────────────────────────────────────────────────

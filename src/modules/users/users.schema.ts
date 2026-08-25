@@ -40,8 +40,8 @@ export const UpdateProfileSchema = z.object({
   firstName: z.string().min(1).max(50).optional(),
   lastName: z.string().min(1).max(50).optional(),
   phone: z.string().optional(),
-  companyName: z.string().optional(),
-  gstin: z.string().length(15).optional(),
+  companyName: z.string().optional().nullable().or(z.literal('')),
+  gstin: z.string().max(15).optional().nullable().or(z.literal('')),
 });
 
 export const UpdateAvatarSchema = z.object({
