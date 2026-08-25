@@ -21,6 +21,11 @@ import {
   sendPasswordChangedEmail,
   sendWelcomeEmail,
 } from '../../utils/email.utils';
+import {
+  validateGstin,
+  validatePhoneNumber,
+  validateEmailDeliverability,
+} from '../../utils/validation.utils';
 import type {
   RegisterInput,
   LoginInput,
@@ -52,6 +57,34 @@ export const getPrimaryRoleSlug = (userRoles: Array<{ role: { slug: string } }>)
   userRoles[0]?.role.slug ?? 'customer';
 
 export const register = async (input: RegisterInput) => {
+  // 1. Email deliverability & disposable blocker
+  const emailCheck = await validateEmailDeliverability(input.email);
+  if (!emailCheck.isValid) {
+    throw new AppError('INVALID_EMAIL', emailCheck.error!, 400);
+  }
+
+  // 2. Phone number validation
+  const phoneCheck = validatePhoneNumber(input.phone);
+  if (!phoneCheck.isValid) {
+    throw new AppError('INVALID_PHONE', phoneCheck.error!, 400);
+  }
+
+  const isB2B = input.accountType === 'B2B' || input.accountType === 'B2B_CUSTOMER' || !!(input.companyName && input.gstin);
+
+  // 3. GSTIN validation for B2B registrations
+  if (isB2B) {
+    if (!input.companyName?.trim()) {
+      throw new AppError('COMPANY_REQUIRED', 'Company / Firm Name is required for B2B accounts', 400);
+    }
+    if (!input.gstin?.trim()) {
+      throw new AppError('GSTIN_REQUIRED', 'GSTIN is required for B2B accounts', 400);
+    }
+    const gstCheck = validateGstin(input.gstin);
+    if (!gstCheck.isValid) {
+      throw new AppError('INVALID_GSTIN', gstCheck.error!, 400);
+    }
+  }
+
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
     if (existing.deletedAt === null) {
@@ -69,8 +102,6 @@ export const register = async (input: RegisterInput) => {
   }
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
-
-  const isB2B = input.accountType === 'B2B' || input.accountType === 'B2B_CUSTOMER' || !!(input.companyName && input.gstin);
   const targetSlug = input.roleSlug ?? (isB2B ? 'b2b-customer' : 'customer');
 
   let assignedRole = await prisma.role.findFirst({
@@ -102,13 +133,13 @@ export const register = async (input: RegisterInput) => {
 
   const user = await prisma.user.create({
     data: {
-      email: input.email,
+      email: input.email.trim().toLowerCase(),
       passwordHash,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      phone: input.phone,
-      companyName: input.companyName || null,
-      gstin: input.gstin || null,
+      firstName: input.firstName.trim(),
+      lastName: input.lastName.trim(),
+      phone: phoneCheck.normalized || input.phone.trim(),
+      companyName: input.companyName?.trim() || null,
+      gstin: input.gstin?.trim()?.toUpperCase() || null,
       twoFactorEnabled: false,
       twoFactorBackupCodes: [],
       userRoles: { create: { roleId: assignedRole.id } },

@@ -3,6 +3,7 @@ import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 import { buildPagination, getPaginationParams } from '../../utils/response';
 import { sendB2BCustomerWelcomeEmail } from '../../utils/email.utils';
+import { validateGstin, validatePhoneNumber } from '../../utils/validation.utils';
 import type {
   ListUsersQuery,
   CreateUserInput,
@@ -396,6 +397,16 @@ export const updateProfile = async (userId: string, input: UpdateProfileInput) =
   });
   if (!existingUser) throw new AppError('NOT_FOUND', 'User not found', 404);
 
+  // 1. Phone number validation
+  let normalizedPhone: string | undefined;
+  if (input.phone) {
+    const phoneCheck = validatePhoneNumber(input.phone);
+    if (!phoneCheck.isValid) {
+      throw new AppError('INVALID_PHONE', phoneCheck.error!, 400);
+    }
+    normalizedPhone = phoneCheck.normalized;
+  }
+
   const existingRoles = existingUser.userRoles.map((ur) => ur.role.slug);
   const isCurrentlyB2B =
     existingRoles.includes('b2b-customer') ||
@@ -414,6 +425,12 @@ export const updateProfile = async (userId: string, input: UpdateProfileInput) =
         400
       );
     }
+    if (input.gstin) {
+      const gstCheck = validateGstin(input.gstin);
+      if (!gstCheck.isValid) {
+        throw new AppError('INVALID_GSTIN', gstCheck.error!, 400);
+      }
+    }
   }
 
   // Check if upgrading from B2C to B2B
@@ -423,6 +440,11 @@ export const updateProfile = async (userId: string, input: UpdateProfileInput) =
 
   let b2bRoleId: string | undefined;
   if (isUpgradingToB2B) {
+    const gstCheck = validateGstin(input.gstin!);
+    if (!gstCheck.isValid) {
+      throw new AppError('INVALID_GSTIN', gstCheck.error!, 400);
+    }
+
     let b2bRole = await prisma.role.findFirst({
       where: { OR: [{ slug: 'b2b-customer' }, { slug: 'b2b_customer' }] },
     });
@@ -443,9 +465,9 @@ export const updateProfile = async (userId: string, input: UpdateProfileInput) =
     const u = await tx.user.update({
       where: { id: userId },
       data: {
-        ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
-        ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
-        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+        ...(input.firstName !== undefined ? { firstName: input.firstName.trim() } : {}),
+        ...(input.lastName !== undefined ? { lastName: input.lastName.trim() } : {}),
+        ...(normalizedPhone !== undefined ? { phone: normalizedPhone } : {}),
         ...(input.companyName !== undefined ? { companyName: input.companyName?.trim() || null } : {}),
         ...(input.gstin !== undefined ? { gstin: input.gstin?.trim()?.toUpperCase() || null } : {}),
       },
