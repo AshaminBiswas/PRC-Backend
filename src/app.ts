@@ -64,6 +64,10 @@ app.use(
     threshold: 1024, // Don't compress responses smaller than 1KB
     filter: (req, res) => {
       if (req.headers['x-no-compression']) return false;
+      // Do not compress Server-Sent Events (SSE) streaming responses to prevent proxy buffering
+      if (req.headers.accept === 'text/event-stream' || req.path?.includes('/events/stream')) {
+        return false;
+      }
       return compression.filter(req, res);
     },
   })
@@ -161,8 +165,8 @@ app.use(
         return callback(null, true);
       }
 
-      // Allow localhost with any port in development
-      if (env.isDev && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalizedOrigin)) {
+      // Allow localhost with any port (e.g. 5173, 5174, 5175, 3000) in all environments for local frontend/admin testing
+      if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalizedOrigin)) {
         return callback(null, true);
       }
 

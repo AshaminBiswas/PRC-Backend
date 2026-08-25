@@ -23,6 +23,7 @@ const userListSelect = {
   phone: true,
   companyName: true,
   gstin: true,
+  b2bAdvancePercentage: true,
   status: true,
   mustChangePassword: true,
   lastLoginAt: true,
@@ -50,6 +51,16 @@ export const listUsers = async (query: ListUsersQuery) => {
   if (query.status) where.status = query.status;
   if (query.role) {
     where.userRoles = { some: { role: { slug: query.role } } };
+  } else if (query.type === 'b2b' || query.isB2B) {
+    where.AND = [
+      {
+        OR: [
+          { companyName: { not: null } },
+          { gstin: { not: null } },
+          { userRoles: { some: { role: { slug: { in: ['b2b', 'b2b-customer', 'wholesale', 'enterprise'] } } } } },
+        ],
+      },
+    ];
   } else if (query.type === 'customer' || query.excludeStaff) {
     where.userRoles = {
       none: {
@@ -115,6 +126,7 @@ export const listUsers = async (query: ListUsersQuery) => {
     phone: u.phone,
     companyName: u.companyName,
     gstin: u.gstin,
+    b2bAdvancePercentage: u.b2bAdvancePercentage ? Number(u.b2bAdvancePercentage) : 70.00,
     role: u.userRoles[0]?.role ?? null,
     status: u.status,
     lastLoginAt: u.lastLoginAt,
@@ -153,6 +165,7 @@ export const getUserById = async (id: string) => {
     phone: user.phone,
     companyName: user.companyName,
     gstin: user.gstin,
+    b2bAdvancePercentage: user.b2bAdvancePercentage ? Number(user.b2bAdvancePercentage) : 70.00,
     avatar: user.avatar,
     role: role
       ? {
@@ -553,6 +566,7 @@ export const updateUser = async (id: string, input: UpdateUserInput) => {
         phone: input.phone,
         companyName: input.companyName !== undefined ? (input.companyName || null) : undefined,
         gstin: input.gstin !== undefined ? (input.gstin || null) : undefined,
+        b2bAdvancePercentage: input.b2bAdvancePercentage !== undefined ? input.b2bAdvancePercentage : undefined,
         status: input.status,
       },
     });
@@ -576,6 +590,7 @@ export const updateUser = async (id: string, input: UpdateUserInput) => {
     email: updated!.email,
     firstName: updated!.firstName,
     lastName: updated!.lastName,
+    b2bAdvancePercentage: updated!.b2bAdvancePercentage ? Number(updated!.b2bAdvancePercentage) : 70.00,
     status: updated!.status,
   };
 };

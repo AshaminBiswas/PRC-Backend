@@ -58,7 +58,8 @@ router.get(
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // Disable Nginx proxy buffering
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable Nginx / Render proxy buffering
+    res.setHeader('Content-Encoding', 'none'); // Prevent compression buffering
     res.flushHeaders();
 
     const clientId = `${decoded.userId}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;

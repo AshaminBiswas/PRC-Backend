@@ -118,7 +118,7 @@ class SseService {
   }
 
   /**
-   * Periodic 25-second heartbeat ping to prevent timeouts and stale proxies
+   * Periodic 12-second heartbeat ping to prevent timeouts and stale QUIC/HTTP3 proxies
    */
   private startHeartbeat(): void {
     if (this.heartbeatTimer) return;
@@ -127,7 +127,8 @@ class SseService {
       const timestamp = new Date().toISOString();
       this.clients.forEach((client) => {
         try {
-          client.res.write(`: heartbeat ${timestamp}\n\n`);
+          client.res.write(`: keep-alive ${timestamp}\n\n`);
+          client.res.write(`event: ping\ndata: {"time":"${timestamp}"}\n\n`);
           if (typeof (client.res as any).flush === 'function') {
             (client.res as any).flush();
           }
@@ -135,7 +136,7 @@ class SseService {
           this.removeClient(client.id);
         }
       });
-    }, 25000);
+    }, 12000);
   }
 }
 

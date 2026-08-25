@@ -33,10 +33,11 @@ const STATEMENTS = [
   `ALTER TABLE "coupons" ADD COLUMN IF NOT EXISTS "applicable_product_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
   `ALTER TABLE "coupons" ADD COLUMN IF NOT EXISTS "applicable_category_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
 
-  // ─── Add 2FA columns to users table ───────────────────────────────────────
+  // ─── Add 2FA columns and B2B advance payment to users table ───────────────
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_enabled"      BOOLEAN   NOT NULL DEFAULT false`,
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_secret"       TEXT`,
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_backup_codes" TEXT[]    NOT NULL DEFAULT ARRAY[]::TEXT[]`,
+  `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "b2b_advance_percentage"  DECIMAL(5,2) DEFAULT 70.00`,
   // Ensure the default is always present on the column (idempotent — safe to run multiple times)
   `ALTER TABLE "users" ALTER COLUMN "two_factor_backup_codes" SET DEFAULT ARRAY[]::TEXT[]`,
   `UPDATE "users" SET "two_factor_backup_codes" = ARRAY[]::TEXT[] WHERE "two_factor_backup_codes" IS NULL`,
