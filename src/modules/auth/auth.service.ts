@@ -201,7 +201,18 @@ export const verifyOtp = async (input: VerifyOtpInput) => {
     return {
       verified: true, autoLogin: true, accessToken, refreshToken,
       expiresIn: 3600, tokenType: 'Bearer',
-      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: roleSlug, avatar: user.avatar, isVerified: true },
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        companyName: user.companyName,
+        gstin: user.gstin,
+        role: roleSlug,
+        avatar: user.avatar,
+        isVerified: true,
+      },
     };
   }
 
@@ -235,6 +246,7 @@ export const login = async (input: LoginInput) => {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      phone: user.phone,
       companyName: user.companyName,
       gstin: user.gstin,
       role: roleSlug,
@@ -283,6 +295,9 @@ export const adminLogin = async (input: AdminLoginInput) => {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      phone: user.phone,
+      companyName: user.companyName,
+      gstin: user.gstin,
       role: roleSlug,
       permissions,
       avatar: user.avatar,
