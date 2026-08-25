@@ -519,18 +519,33 @@ const STATEMENTS = [
         "id"           TEXT NOT NULL,
         "userId"       TEXT NOT NULL,
         "type"         "AddressType" NOT NULL DEFAULT 'SHIPPING',
+        "label"        TEXT DEFAULT 'Home',
         "addressLine1" TEXT NOT NULL,
         "addressLine2" TEXT,
         "city"         TEXT NOT NULL,
         "state"        TEXT NOT NULL,
         "postalCode"   TEXT NOT NULL,
         "country"      TEXT NOT NULL DEFAULT 'India',
+        "phone"        TEXT,
+        "email"        TEXT,
+        "alt_phone"    TEXT,
+        "has_whatsapp" BOOLEAN NOT NULL DEFAULT false,
+        "latitude"     DOUBLE PRECISION,
+        "longitude"    DOUBLE PRECISION,
         "isDefault"    BOOLEAN NOT NULL DEFAULT false,
         "createdAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "addresses_pkey" PRIMARY KEY ("id")
       );
       CREATE INDEX IF NOT EXISTS "addresses_userId_idx" ON "addresses"("userId");
+    ELSE
+      ALTER TABLE "addresses" ADD COLUMN IF NOT EXISTS "label" TEXT DEFAULT 'Home';
+      ALTER TABLE "addresses" ADD COLUMN IF NOT EXISTS "phone" TEXT;
+      ALTER TABLE "addresses" ADD COLUMN IF NOT EXISTS "email" TEXT;
+      ALTER TABLE "addresses" ADD COLUMN IF NOT EXISTS "alt_phone" TEXT;
+      ALTER TABLE "addresses" ADD COLUMN IF NOT EXISTS "has_whatsapp" BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE "addresses" ADD COLUMN IF NOT EXISTS "latitude" DOUBLE PRECISION;
+      ALTER TABLE "addresses" ADD COLUMN IF NOT EXISTS "longitude" DOUBLE PRECISION;
     END IF;
   END $$`,
 

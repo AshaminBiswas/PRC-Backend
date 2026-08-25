@@ -72,6 +72,12 @@ export const CreateAddressSchema = z
     postalCode: z.string().optional(),
     pincode: z.string().optional(),
     country: z.string().default('India').optional(),
+    phone: z.string().optional().nullable(),
+    email: z.string().email().optional().nullable().or(z.literal('')),
+    altPhone: z.string().optional().nullable(),
+    hasWhatsapp: z.boolean().default(false).optional(),
+    latitude: z.number().optional().nullable(),
+    longitude: z.number().optional().nullable(),
     isDefault: z.boolean().default(false).optional(),
   })
   .refine((data) => data.addressLine1 || data.line1, {
@@ -95,6 +101,12 @@ export const UpdateAddressSchema = z.object({
   postalCode: z.string().optional(),
   pincode: z.string().optional(),
   country: z.string().optional(),
+  phone: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable().or(z.literal('')),
+  altPhone: z.string().optional().nullable(),
+  hasWhatsapp: z.boolean().optional(),
+  latitude: z.number().optional().nullable(),
+  longitude: z.number().optional().nullable(),
   isDefault: z.boolean().optional(),
 });
 

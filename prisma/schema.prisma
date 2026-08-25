@@ -352,12 +352,19 @@ model Address {
   id           String      @id @default(uuid())
   userId       String
   type         AddressType @default(SHIPPING)
+  label        String?     @default("Home")
   addressLine1 String
   addressLine2 String?
   city         String
   state        String
   postalCode   String
   country      String      @default("India")
+  phone        String?
+  email        String?
+  altPhone     String?     @map("alt_phone")
+  hasWhatsapp  Boolean     @default(false) @map("has_whatsapp")
+  latitude     Float?
+  longitude    Float?
   isDefault    Boolean     @default(false)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
