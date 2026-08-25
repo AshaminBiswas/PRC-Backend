@@ -450,19 +450,38 @@ export const sendVerificationEmail = async (to: string, firstName: string, token
 // ─── Password Reset Email ─────────────────────────────────────────────────────
 
 export const sendPasswordResetEmail = async (to: string, firstName: string, token: string): Promise<void> => {
+  const isOtp = /^\d{6}$/.test(token);
   const link = `${env.frontend.url}/reset-password?token=${token}`;
-  await enqueueEmail({
+  const subject = isOtp
+    ? `${token} is your PRC Hardware password reset code`
+    : 'Reset your PRC Hardware password';
+
+  const plainText = isOtp
+    ? `Hello ${firstName || 'User'},\n\nYour PRC Hardware password reset verification code is: ${token}\n\nThis verification code expires in 15 minutes. Never share this code with anyone.\n\n— PRC Hardware Security Team`
+    : `Hello ${firstName || 'User'},\n\nWe received a request to reset your password. Reset link: ${link}\n\nThis link expires in 1 hour.\n\n— PRC Hardware Security Team`;
+
+  await sendMail({
     to,
-    subject: 'Reset your PRC Hardware password',
+    subject,
+    text: plainText,
     html: baseTemplate(`
-      <div class="eyebrow">Account security</div>
+      <div class="eyebrow">Account Security</div>
       <h2>Reset your password</h2>
-      <p>Hello ${firstName},</p>
-      <p>We received a request to reset your PRC Hardware password. Use the button below to choose a new password.</p>
-      <div class="btn-wrap">
-        <a href="${link}" class="btn">Reset password</a>
-      </div>
-      <p class="muted">This link expires in 1 hour. If you did not request this change, you can safely ignore this email.</p>
+      <p>Hello ${firstName || 'Valued Customer'},</p>
+      <p>We received a request to reset your PRC Hardware account password.</p>
+      ${
+        isOtp
+          ? `<p>Enter the 6-digit password reset verification code below to set a new password:</p>
+             <div class="otp">${token}</div>
+             <p><strong>This code expires in 15 minutes.</strong> Never share this code with anyone.</p>`
+          : `<p>Use the button below to choose a new password:</p>
+             <div class="btn-wrap">
+               <a href="${link}" class="btn">Reset password</a>
+             </div>
+             <p class="muted">This link expires in 1 hour.</p>`
+      }
+      <div class="divider"></div>
+      <p class="muted">If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
     `),
   });
 };

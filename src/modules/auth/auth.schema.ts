@@ -44,13 +44,33 @@ export const LogoutSchema = z.object({
   refreshToken: z.string().optional(),
 });
 
-export const ForgotPasswordSchema = z.object({
-  email: z.string().email('Invalid email format'),
+export const ForgotPasswordSchema = z
+  .object({
+    email: z.string().optional(),
+    gstin: z.string().optional(),
+    identifier: z.string().optional(),
+  })
+  .refine((data) => Boolean(data.identifier?.trim() || data.email?.trim() || data.gstin?.trim()), {
+    message: 'Please provide either a registered Email Address or GSTIN Number',
+  });
+
+export const VerifyResetOtpSchema = z.object({
+  identifier: z.string().min(1, 'Email or GSTIN is required'),
+  otp: z
+    .string()
+    .length(6, 'OTP must be exactly 6 digits')
+    .regex(/^\d{6}$/, 'OTP must contain only digits'),
 });
 
 export const ResetPasswordSchema = z
   .object({
-    token: z.string().min(1, 'Reset token is required'),
+    token: z.string().optional(),
+    identifier: z.string().optional(),
+    otp: z
+      .string()
+      .length(6, 'OTP must be exactly 6 digits')
+      .regex(/^\d{6}$/, 'OTP must contain only digits')
+      .optional(),
     password: z.string().min(8, 'Password must be at least 8 characters'),
     confirmPassword: z.string().optional(),
   })
@@ -61,6 +81,9 @@ export const ResetPasswordSchema = z
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match',
     path: ['confirmPassword'],
+  })
+  .refine((data) => Boolean(data.token?.trim() || (data.identifier?.trim() && data.otp?.trim())), {
+    message: 'Either reset token or identifier and OTP must be provided',
   });
 
 export const ChangePasswordSchema = z

@@ -68,10 +68,23 @@ export const register = async (input: RegisterInput) => {
   if (!phoneCheck.isValid) {
     throw new AppError('INVALID_PHONE', phoneCheck.error!, 400);
   }
+  const normalizedPhone = phoneCheck.normalized || input.phone.trim();
+
+  // 3. Phone Number Multi-Account Limit (Max 3 accounts per phone number)
+  const phoneAccountCount = await prisma.user.count({
+    where: { phone: normalizedPhone, deletedAt: null },
+  });
+  if (phoneAccountCount >= 3) {
+    throw new AppError(
+      'PHONE_LIMIT_EXCEEDED',
+      'This phone number is already linked to the maximum allowed limit of 3 accounts. Please use a different phone number.',
+      400
+    );
+  }
 
   const isB2B = input.accountType === 'B2B' || input.accountType === 'B2B_CUSTOMER' || !!(input.companyName && input.gstin);
 
-  // 3. GSTIN validation for B2B registrations
+  // 4. GSTIN validation & duplicate check for B2B registrations
   if (isB2B) {
     if (!input.companyName?.trim()) {
       throw new AppError('COMPANY_REQUIRED', 'Company / Firm Name is required for B2B accounts', 400);
@@ -83,12 +96,44 @@ export const register = async (input: RegisterInput) => {
     if (!gstCheck.isValid) {
       throw new AppError('INVALID_GSTIN', gstCheck.error!, 400);
     }
+
+    // Check duplicate GSTIN
+    const existingGst = await prisma.user.findFirst({
+      where: { gstin: input.gstin.trim().toUpperCase(), deletedAt: null },
+    });
+    if (existingGst) {
+      throw new AppError(
+        'GSTIN_ALREADY_EXISTS',
+        `An account with GSTIN ${input.gstin.trim().toUpperCase()} already exists. Please log in or reset your password.`,
+        409
+      );
+    }
+
+    // Check duplicate Company Name (case-insensitive)
+    const existingCompany = await prisma.user.findFirst({
+      where: {
+        companyName: { equals: input.companyName.trim(), mode: 'insensitive' },
+        deletedAt: null,
+      },
+    });
+    if (existingCompany) {
+      throw new AppError(
+        'COMPANY_ALREADY_EXISTS',
+        `An account with Company Name "${input.companyName.trim()}" already exists. Please log in or reset your password.`,
+        409
+      );
+    }
   }
 
-  const existing = await prisma.user.findUnique({ where: { email: input.email } });
+  // 5. Check duplicate Email
+  const existing = await prisma.user.findUnique({ where: { email: input.email.trim().toLowerCase() } });
   if (existing) {
     if (existing.deletedAt === null) {
-      throw new AppError('EMAIL_TAKEN', 'An account with this email already exists', 409);
+      throw new AppError(
+        'ACCOUNT_ALREADY_EXISTS',
+        'An account with this email address already exists. Please log in or reset your password.',
+        409
+      );
     }
     // User was soft-deleted: purge or anonymize old soft-deleted user to free the unique email constraint
     try {
@@ -381,34 +426,187 @@ export const refreshTokens = async (token: string) => {
   return { accessToken, refreshToken: newRefresh, expiresIn: 3600 };
 };
 
-export const forgotPassword = async (email: string) => {
-  const user = await prisma.user.findUnique({ where: { email, deletedAt: null } });
-  if (!user) return;
+export const forgotPassword = async (rawIdentifier: string) => {
+  const identifier = rawIdentifier.trim();
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: identifier.toLowerCase() },
+        { gstin: identifier.toUpperCase() },
+      ],
+      deletedAt: null,
+    },
+  });
 
-  await prisma.passwordReset.updateMany({ where: { userId: user.id, usedAt: null }, data: { usedAt: new Date() } });
+  if (!user) {
+    throw new AppError(
+      'NOT_FOUND',
+      'No registered account found matching this Email or GSTIN number.',
+      404
+    );
+  }
 
-  const token = generateSecureToken();
-  await prisma.passwordReset.create({ data: { token, userId: user.id, expiresAt: getPasswordResetExpiry() } });
+  // Invalidate any existing unused password reset records
+  await prisma.passwordReset.updateMany({
+    where: { userId: user.id, usedAt: null },
+    data: { usedAt: new Date() },
+  });
+
+  // Generate 6-digit numeric OTP
+  const otp = generateOtp();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes TTL
+
+  // Store in Redis with reset prefix and in DB
+  await storeOtpInRedis(`reset:${user.email}`, otp, 900);
+  await prisma.passwordReset.create({
+    data: { token: otp, userId: user.id, expiresAt },
+  });
 
   try {
-    await sendPasswordResetEmail(user.email, user.firstName, token);
+    await sendPasswordResetEmail(user.email, user.firstName, otp);
   } catch (err: any) {
-    console.error('[ForgotPassword] Failed to send reset email:', err?.message || err);
+    logger.error('[ForgotPassword] Failed to send reset email:', err?.message || err);
   }
+
+  // Mask email e.g. "ra***l@example.com"
+  const [userPart, domainPart] = user.email.split('@');
+  const maskedUser =
+    userPart.length > 2
+      ? `${userPart[0]}***${userPart[userPart.length - 1]}`
+      : `${userPart[0]}***`;
+  const maskedEmail = `${maskedUser}@${domainPart}`;
+
+  return {
+    success: true,
+    message: `A 6-digit password reset OTP has been sent to your registered email (${maskedEmail}).`,
+    maskedEmail,
+    email: user.email,
+  };
+};
+
+export const verifyResetOtp = async (rawIdentifier: string, otp: string) => {
+  const identifier = rawIdentifier.trim();
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: identifier.toLowerCase() },
+        { gstin: identifier.toUpperCase() },
+      ],
+      deletedAt: null,
+    },
+  });
+
+  if (!user) {
+    throw new AppError('NOT_FOUND', 'No registered account found matching this Email or GSTIN.', 404);
+  }
+
+  const redisResult = await verifyOtpFromRedis(`reset:${user.email}`, otp);
+  if (!redisResult.valid && redisResult.message.includes('attempts')) {
+    throw new AppError('TOO_MANY_ATTEMPTS', redisResult.message, 429);
+  }
+
+  const record = await prisma.passwordReset.findFirst({
+    where: {
+      userId: user.id,
+      token: otp,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!record && !redisResult.valid) {
+    throw new AppError('INVALID_OTP', 'Invalid or expired 6-digit OTP code.', 400);
+  }
+
+  // Generate secure single-use reset token
+  const resetToken = generateSecureToken();
+  await prisma.passwordReset.create({
+    data: {
+      token: resetToken,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    },
+  });
+
+  if (record) {
+    await prisma.passwordReset.update({ where: { id: record.id }, data: { usedAt: new Date() } });
+  }
+
+  return {
+    valid: true,
+    resetToken,
+    email: user.email,
+    message: 'OTP verified successfully. Please enter your new password.',
+  };
 };
 
 export const resetPassword = async (input: ResetPasswordInput) => {
-  const record = await prisma.passwordReset.findUnique({ where: { token: input.token } });
-  if (!record || record.usedAt || record.expiresAt < new Date())
-    throw new AppError('INVALID_TOKEN', 'Invalid or expired reset token', 400);
+  let userId: string | null = null;
+  let resetRecordId: string | null = null;
+
+  if (input.token) {
+    const record = await prisma.passwordReset.findUnique({ where: { token: input.token } });
+    if (!record || record.usedAt || record.expiresAt < new Date()) {
+      throw new AppError('INVALID_TOKEN', 'Invalid or expired password reset token.', 400);
+    }
+    userId = record.userId;
+    resetRecordId = record.id;
+  } else if (input.identifier && input.otp) {
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: input.identifier.trim().toLowerCase() },
+          { gstin: input.identifier.trim().toUpperCase() },
+        ],
+        deletedAt: null,
+      },
+    });
+    if (!user) {
+      throw new AppError('NOT_FOUND', 'User not found.', 404);
+    }
+    const record = await prisma.passwordReset.findFirst({
+      where: {
+        userId: user.id,
+        token: input.otp.trim(),
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!record) {
+      throw new AppError('INVALID_OTP', 'Invalid or expired 6-digit OTP code.', 400);
+    }
+    userId = user.id;
+    resetRecordId = record.id;
+  } else {
+    throw new AppError('BAD_REQUEST', 'Missing reset token or OTP credentials.', 400);
+  }
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
 
   await prisma.$transaction([
-    prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
-    prisma.passwordReset.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
-    prisma.refreshToken.updateMany({ where: { userId: record.userId }, data: { revokedAt: new Date() } }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, mustChangePassword: false },
+    }),
+    ...(resetRecordId
+      ? [prisma.passwordReset.update({ where: { id: resetRecordId }, data: { usedAt: new Date() } })]
+      : []),
+    prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
   ]);
+
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (user) {
+    sendPasswordChangedEmail(user.email, user.firstName).catch((err) =>
+      logger.error('[ResetPassword] Failed to send password changed email:', err?.message || err)
+    );
+  }
+
+  return { success: true, message: 'Password reset successfully. You can now log in with your new password.' };
 };
 
 export const changePassword = async (userId: string, input: ChangePasswordInput) => {

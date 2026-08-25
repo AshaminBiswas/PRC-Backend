@@ -10,6 +10,7 @@ import {
   RefreshTokenSchema,
   LogoutSchema,
   ForgotPasswordSchema,
+  VerifyResetOtpSchema,
   ResetPasswordSchema,
   ChangePasswordSchema,
   VerifyEmailSchema,
@@ -25,6 +26,7 @@ router.post('/login', authLimiter, validate(LoginSchema), controller.login);
 router.post('/admin/login', authLimiter, validate(AdminLoginSchema), controller.adminLogin);
 router.post('/refresh-token', authLimiter, validate(RefreshTokenSchema), controller.refreshToken);
 router.post('/forgot-password', emailLimiter, validate(ForgotPasswordSchema), controller.forgotPassword);
+router.post('/verify-reset-otp', authLimiter, validate(VerifyResetOtpSchema), controller.verifyResetOtp);
 router.post('/reset-password', authLimiter, validate(ResetPasswordSchema), controller.resetPassword);
 router.post('/verify-email', authLimiter, validate(VerifyEmailSchema), controller.verifyEmail);
 router.post('/verify-otp', authLimiter, validate(VerifyOtpSchema), controller.verifyOtp);

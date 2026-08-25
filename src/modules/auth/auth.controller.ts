@@ -58,15 +58,24 @@ export const refreshToken = async (req: Request, res: Response, next: NextFuncti
 
 export const forgotPassword = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await authService.forgotPassword(req.body.email);
-    sendMessage(res, 'Password reset instructions sent to your email');
+    const identifier = req.body.identifier || req.body.email || req.body.gstin;
+    const result = await authService.forgotPassword(identifier);
+    sendSuccess(res, result, result?.message || 'Password reset OTP sent to your registered email');
+  } catch (error) { next(error); }
+};
+
+export const verifyResetOtp = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { identifier, otp } = req.body;
+    const result = await authService.verifyResetOtp(identifier, otp);
+    sendSuccess(res, result, result.message);
   } catch (error) { next(error); }
 };
 
 export const resetPassword = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await authService.resetPassword(req.body);
-    sendMessage(res, 'Password reset successful');
+    const result = await authService.resetPassword(req.body);
+    sendSuccess(res, result, result.message);
   } catch (error) { next(error); }
 };
 
