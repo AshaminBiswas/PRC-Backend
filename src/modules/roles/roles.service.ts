@@ -1,7 +1,12 @@
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 import { generateSlug } from '../../utils/slug.utils';
-import type { CreateRoleInput, UpdateRoleInput } from './roles.schema';
+import type {
+  CreateRoleInput,
+  UpdateRoleInput,
+  CreatePermissionInput,
+  UpdatePermissionInput,
+} from './roles.schema';
 
 // ─── List Roles ───────────────────────────────────────────────────────────────
 
@@ -192,3 +197,92 @@ export const listPermissions = async () => {
     })),
   }));
 };
+
+// ─── Create Custom Permission ────────────────────────────────────────────────
+
+export const createPermission = async (input: CreatePermissionInput) => {
+  const cleanName = input.name.trim();
+  const cleanModule = input.module.toLowerCase().trim().replace(/[^a-z0-9_-]/g, '_');
+  
+  // Format slug: e.g. "inventory.transfer_stock"
+  const rawSlug = input.slug?.trim() || `${cleanModule}.${generateSlug(cleanName).replace(/-/g, '_')}`;
+  const cleanSlug = rawSlug.toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
+
+  const existing = await prisma.permission.findUnique({ where: { slug: cleanSlug } });
+  if (existing) {
+    throw new AppError('CONFLICT', `A permission with key '${cleanSlug}' already exists`, 409);
+  }
+
+  const permission = await prisma.permission.create({
+    data: {
+      name: cleanName,
+      slug: cleanSlug,
+      module: input.module.trim(),
+      description: input.description?.trim() || null,
+    },
+  });
+
+  return {
+    id: permission.id,
+    name: permission.name,
+    slug: permission.slug,
+    module: permission.module,
+    description: permission.description,
+    createdAt: permission.createdAt,
+  };
+};
+
+// ─── Update Custom Permission ────────────────────────────────────────────────
+
+export const updatePermission = async (id: string, input: UpdatePermissionInput) => {
+  const perm = await prisma.permission.findUnique({ where: { id } });
+  if (!perm) throw new AppError('NOT_FOUND', 'Permission not found', 404);
+
+  const updateData: { name?: string; slug?: string; module?: string; description?: string | null } = {};
+
+  if (input.name) updateData.name = input.name.trim();
+  if (input.module) updateData.module = input.module.trim();
+  if (input.description !== undefined) updateData.description = input.description ? input.description.trim() : null;
+
+  if (input.slug) {
+    const cleanSlug = input.slug.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
+    if (cleanSlug !== perm.slug) {
+      const existing = await prisma.permission.findUnique({ where: { slug: cleanSlug } });
+      if (existing && existing.id !== id) {
+        throw new AppError('CONFLICT', `A permission with key '${cleanSlug}' already exists`, 409);
+      }
+      updateData.slug = cleanSlug;
+    }
+  }
+
+  const updated = await prisma.permission.update({
+    where: { id },
+    data: updateData,
+  });
+
+  return {
+    id: updated.id,
+    name: updated.name,
+    slug: updated.slug,
+    module: updated.module,
+    description: updated.description,
+  };
+};
+
+// ─── Delete Custom Permission ────────────────────────────────────────────────
+
+export const deletePermission = async (id: string) => {
+  const perm = await prisma.permission.findUnique({
+    where: { id },
+    include: { _count: { select: { rolePermissions: true } } },
+  });
+  if (!perm) throw new AppError('NOT_FOUND', 'Permission not found', 404);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.rolePermission.deleteMany({ where: { permissionId: id } });
+    await tx.permission.delete({ where: { id } });
+  });
+
+  return { success: true, message: `Permission '${perm.name}' (${perm.slug}) deleted permanently.` };
+};
+

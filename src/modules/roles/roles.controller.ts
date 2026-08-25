@@ -93,3 +93,57 @@ export const listPermissions = async (req: Request, res: Response, next: NextFun
     sendSuccess(res, data);
   } catch (error) { next(error); }
 };
+
+export const createPermission = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await rolesService.createPermission(req.body);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'PERMISSION_CREATED',
+      entity: 'PERMISSION',
+      entityId: data.id,
+      entityName: data.name,
+      details: `Created new system permission '${data.name}' (${data.slug}) under module '${data.module}'.`,
+      severity: 'CRITICAL',
+      metadata: data,
+      req,
+    });
+    sendSuccess(res, data, 'Permission created successfully', 201);
+  } catch (error) { next(error); }
+};
+
+export const updatePermission = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await rolesService.updatePermission(req.params.id, req.body);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'PERMISSION_UPDATED',
+      entity: 'PERMISSION',
+      entityId: req.params.id,
+      entityName: data.name,
+      details: `Updated permission #${req.params.id} '${data.name}' (${data.slug}).`,
+      severity: 'WARNING',
+      metadata: req.body,
+      req,
+    });
+    sendSuccess(res, data, 'Permission updated successfully');
+  } catch (error) { next(error); }
+};
+
+export const deletePermission = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await rolesService.deletePermission(req.params.id);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'PERMISSION_DELETED',
+      entity: 'PERMISSION',
+      entityId: req.params.id,
+      details: `Permanently deleted permission #${req.params.id}.`,
+      severity: 'CRITICAL',
+      metadata: { permissionId: req.params.id },
+      req,
+    });
+    sendMessage(res, result.message || 'Permission deleted successfully');
+  } catch (error) { next(error); }
+};
+

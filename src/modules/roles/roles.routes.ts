@@ -7,6 +7,8 @@ import {
   CreateRoleSchema,
   UpdateRoleSchema,
   UpdateRolePermissionsSchema,
+  CreatePermissionSchema,
+  UpdatePermissionSchema,
   UuidParamSchema,
 } from './roles.schema';
 
@@ -15,10 +17,13 @@ const router = Router();
 router.use(authenticate);
 router.use(adminLimiter);
 
-// Permissions listing (separate endpoint)
+// ─── Permissions Endpoints ──────────────────────────────────────────────────
 router.get('/permissions', authorize('roles.read'), controller.listPermissions);
+router.post('/permissions', authorize('roles.create'), validate(CreatePermissionSchema), controller.createPermission);
+router.patch('/permissions/:id', authorize('roles.update'), validate(UuidParamSchema, 'params'), validate(UpdatePermissionSchema), controller.updatePermission);
+router.delete('/permissions/:id', authorize('roles.delete'), validate(UuidParamSchema, 'params'), controller.deletePermission);
 
-// Role CRUD
+// ─── Role CRUD ──────────────────────────────────────────────────────────────
 router.get('/', authorize('roles.read'), controller.listRoles);
 router.post('/', authorize('roles.create'), validate(CreateRoleSchema), controller.createRole);
 router.get('/:id', authorize('roles.read'), validate(UuidParamSchema, 'params'), controller.getRoleById);
@@ -27,3 +32,4 @@ router.delete('/:id', authorize('roles.delete'), validate(UuidParamSchema, 'para
 router.patch('/:id/permissions', authorize('roles.update'), validate(UuidParamSchema, 'params'), validate(UpdateRolePermissionsSchema), controller.updateRolePermissions);
 
 export default router;
+
