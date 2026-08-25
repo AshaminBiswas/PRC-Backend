@@ -116,7 +116,7 @@ export const register = async (input: RegisterInput) => {
   });
 
   const otp = generateOtp();
-  logger.info(`[Auth] OTP generated for registration`, { email: user.email, userId: user.id });
+  logger.info(`[Auth] OTP generated for registration`, { email: user.email, userId: user.id, otp });
 
   await prisma.emailVerification.create({
     data: { token: otp, userId: user.id, expiresAt: getOtpExpiry() },
@@ -414,7 +414,7 @@ export const resendVerification = async (email: string) => {
 
   // Overwrite previous OTP in Redis (also resets failed-attempt counter)
   await storeOtpInRedis(user.email, otp, env.auth.otpTtlSeconds);
-  logger.info(`[Auth] New OTP stored for resend`, { email: user.email, ttl: env.auth.otpTtlSeconds });
+  logger.info(`[Auth] New OTP stored for resend`, { email: user.email, ttl: env.auth.otpTtlSeconds, otp });
 
   try {
     await sendOtpEmail(user.email, user.firstName, otp);

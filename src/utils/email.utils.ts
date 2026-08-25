@@ -20,6 +20,8 @@ interface SendMailOptions {
   to: string;
   subject: string;
   html: string;
+  text?: string;
+  replyTo?: string;
   attachments?: EmailAttachment[];
 }
 
@@ -32,11 +34,15 @@ const sendViaResend = async (options: SendMailOptions, apiKey: string): Promise<
     resendClient = new Resend(apiKey);
   }
 
+  const plainText = options.text || options.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
   const payload: any = {
     from: `${env.smtp.fromName} <${env.smtp.fromEmail}>`,
     to: [options.to],
     subject: options.subject,
     html: options.html,
+    text: plainText,
+    ...(options.replyTo && { reply_to: options.replyTo }),
   };
 
   if (options.attachments?.length) {
@@ -58,11 +64,16 @@ const sendViaResend = async (options: SendMailOptions, apiKey: string): Promise<
 // ─── Brevo HTTP API Sender (for xkeysib- API keys) ───────────────────────────
 
 const sendViaBrevoApi = async (options: SendMailOptions, apiKey: string): Promise<void> => {
+  const senderEmail = env.smtp.user?.includes('@') ? env.smtp.user : env.smtp.fromEmail;
+  const plainText = options.text || options.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
   const payload: any = {
-    sender: { name: env.smtp.fromName, email: env.smtp.fromEmail },
+    sender: { name: env.smtp.fromName, email: senderEmail },
     to: [{ email: options.to }],
     subject: options.subject,
     htmlContent: options.html,
+    textContent: plainText,
+    ...(options.replyTo && { replyTo: { email: options.replyTo } }),
   };
 
   if (options.attachments?.length) {
@@ -120,11 +131,25 @@ const getTransporter = (): Transporter => {
 
 const sendViaSmtp = async (options: SendMailOptions): Promise<void> => {
   const transport = getTransporter();
+  const senderEmail =
+    env.smtp.host?.includes('gmail') && env.smtp.user?.includes('@')
+      ? env.smtp.user
+      : env.smtp.fromEmail;
+
+  const plainText = options.text || options.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
   const mailPayload: any = {
-    from: `"${env.smtp.fromName}" <${env.smtp.fromEmail}>`,
+    from: `"${env.smtp.fromName}" <${senderEmail}>`,
     to: options.to,
     subject: options.subject,
+    text: plainText,
     html: options.html,
+    headers: {
+      'X-Priority': '1',
+      'X-MSMail-Priority': 'High',
+      Importance: 'high',
+    },
+    ...(options.replyTo && { replyTo: options.replyTo }),
   };
 
   if (options.attachments?.length) {
@@ -383,20 +408,21 @@ const baseTemplate = (content: string): string => `
 // ─── OTP Email (calls sendMail directly — errors must propagate to caller) ────
 
 export const sendOtpEmail = async (to: string, firstName: string, otp: string): Promise<void> => {
-  // NOTE: intentionally NOT using enqueueEmail — OTP errors must throw so the
-  // caller (auth.service register/resend) can detect delivery failure and tell the user.
+  const plainText = `Hello ${firstName || 'User'},\n\nYour PRC Hardware verification code is: ${otp}\n\nThis verification code expires in 10 minutes. Never share this code with anyone.\n\nIf you did not request this verification code, please ignore this email.\n\n— PRC Hardware Security Team`;
+
   await sendMail({
     to,
-    subject: 'Your PRC Hardware verification code',
+    subject: `${otp} is your PRC Hardware verification code`,
+    text: plainText,
     html: baseTemplate(`
-      <div class="eyebrow">Email verification</div>
+      <div class="eyebrow">Email Verification</div>
       <h2>Verify your email address</h2>
-      <p>Hello ${firstName},</p>
-      <p>Thank you for registering with PRC Hardware. Enter the verification code below to confirm your email address.</p>
+      <p>Hello ${firstName || 'Valued Customer'},</p>
+      <p>Thank you for signing up with PRC Hardware. Enter the verification code below to confirm your account and get started.</p>
       <div class="otp">${otp}</div>
       <p><strong>This code expires in 10 minutes.</strong> Never share this code with anyone.</p>
       <div class="divider"></div>
-      <p class="muted">If you did not request this code, you can safely ignore this email.</p>
+      <p class="muted">If you did not request this verification code, you can safely ignore this email.</p>
     `),
   });
 };
