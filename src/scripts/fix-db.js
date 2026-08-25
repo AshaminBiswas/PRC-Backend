@@ -37,6 +37,9 @@ const STATEMENTS = [
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_enabled"      BOOLEAN   NOT NULL DEFAULT false`,
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_secret"       TEXT`,
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_backup_codes" TEXT[]    NOT NULL DEFAULT ARRAY[]::TEXT[]`,
+  // Ensure the default is always present on the column (idempotent — safe to run multiple times)
+  `ALTER TABLE "users" ALTER COLUMN "two_factor_backup_codes" SET DEFAULT ARRAY[]::TEXT[]`,
+  `UPDATE "users" SET "two_factor_backup_codes" = ARRAY[]::TEXT[] WHERE "two_factor_backup_codes" IS NULL`,
 
   // Create QuoteStatus enum if it doesn't exist
   `DO $$ BEGIN

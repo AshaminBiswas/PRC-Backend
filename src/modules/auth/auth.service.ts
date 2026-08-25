@@ -109,6 +109,8 @@ export const register = async (input: RegisterInput) => {
       phone: input.phone,
       companyName: input.companyName || null,
       gstin: input.gstin || null,
+      twoFactorEnabled: false,
+      twoFactorBackupCodes: [],
       userRoles: { create: { roleId: assignedRole.id } },
     },
   });

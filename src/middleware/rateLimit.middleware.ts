@@ -70,6 +70,14 @@ export const createRateLimiter = (options: RateLimitOptions) => {
       return next();
     }
 
+    // Scale allowance for verified B2B customers and authenticated users
+    const effectiveMax =
+      roleSlug === 'b2b-customer' || roleSlug === 'contractor' || roleSlug === 'architect' || roleSlug === 'dealer'
+        ? Math.max(options.max * 8, 1500)
+        : userId
+        ? Math.max(options.max * 4, 800)
+        : max;
+
     // Key by custom generator, authenticated user ID, or client IP
     const identifier = options.keyGenerator
       ? options.keyGenerator(req)
@@ -85,7 +93,7 @@ export const createRateLimiter = (options: RateLimitOptions) => {
       const currentCountVal = await getCache<any>(key);
       const currentCount = currentCountVal ? parseInt(String(currentCountVal), 10) : 0;
 
-      if (currentCount >= max) {
+      if (currentCount >= effectiveMax) {
         res.setHeader('Retry-After', windowSeconds);
         sendError(
           res,
@@ -99,8 +107,8 @@ export const createRateLimiter = (options: RateLimitOptions) => {
       }
 
       await setCache(key, currentCount + 1, windowSeconds);
-      res.setHeader('X-RateLimit-Limit', max);
-      res.setHeader('X-RateLimit-Remaining', Math.max(0, max - (currentCount + 1)));
+      res.setHeader('X-RateLimit-Limit', effectiveMax);
+      res.setHeader('X-RateLimit-Remaining', Math.max(0, effectiveMax - (currentCount + 1)));
       return next();
     } catch (err) {
       // 2. Fallback to in-memory store if Redis connection is offline
@@ -110,7 +118,7 @@ export const createRateLimiter = (options: RateLimitOptions) => {
         return next();
       }
 
-      if (memEntry.count >= max) {
+      if (memEntry.count >= effectiveMax) {
         res.setHeader('Retry-After', windowSeconds);
         sendError(
           res,
@@ -135,16 +143,16 @@ export const createRateLimiter = (options: RateLimitOptions) => {
 /** 1. Strict Authentication & Credential Protection (Login, Register, OTP, 2FA) */
 export const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 mins
-  max: 15,
-  message: 'Too many authentication attempts. Please try again after 15 minutes.',
+  max: 60,
+  message: 'Too many authentication attempts. Please try again after a few minutes.',
   keyPrefix: 'auth',
 });
 
 /** 2. Email & SMS Flood Protection (Forgot Password, Resend Verification) */
 export const emailLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 mins
-  max: 5,
-  message: 'Too many password reset or verification requests. Please try again after 15 minutes.',
+  max: 20,
+  message: 'Too many password reset or verification requests. Please try again later.',
   keyPrefix: 'email',
 });
 
@@ -152,7 +160,7 @@ export const passwordResetLimiter = emailLimiter;
 
 export const otpLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute
-  max: 3,
+  max: 10,
   message: 'OTP request rate limit exceeded. Please wait 60 seconds.',
   keyPrefix: 'otp',
 });
@@ -160,7 +168,7 @@ export const otpLimiter = createRateLimiter({
 /** 3. Financial & High-Value Order Transactions (Place Order, Razorpay Create Order & Verify) */
 export const checkoutLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 mins
-  max: 30,
+  max: 100,
   message: 'Checkout / payment transaction limit reached. Please wait before retrying.',
   keyPrefix: 'checkout',
 });
@@ -168,7 +176,7 @@ export const checkoutLimiter = createRateLimiter({
 /** 4. Form & Lead Submission Anti-Spam (B2B Quote Request, Revisions, Booking, Enquiries, Reviews) */
 export const formSubmissionLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 mins
-  max: 20,
+  max: 60,
   message: 'Submission limit reached. Please wait a few minutes before submitting again.',
   keyPrefix: 'form-submit',
 });
@@ -176,7 +184,7 @@ export const formSubmissionLimiter = createRateLimiter({
 /** 5. Public Tracking & Token Access (Quotation Track, Token View, Enquiry Track, Appointment Track) */
 export const publicTrackingLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 mins
-  max: 120,
+  max: 300,
   message: 'Tracking request limit exceeded. Please try again in a few minutes.',
   keyPrefix: 'tracking',
 });
@@ -184,7 +192,7 @@ export const publicTrackingLimiter = createRateLimiter({
 /** 6. Media & File Uploads (Avatar, Products, Category images) */
 export const uploadLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 mins
-  max: 30,
+  max: 100,
   message: 'File upload rate limit exceeded. Please try again in a few minutes.',
   keyPrefix: 'upload',
 });
@@ -192,15 +200,15 @@ export const uploadLimiter = createRateLimiter({
 /** 7. Fast Public Search & Suggestions (Catalog & Stock Search) */
 export const searchLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute
-  max: 120,
+  max: 300,
   message: 'Search query rate limit exceeded. Please slow down your requests.',
   keyPrefix: 'search',
 });
 
 /** 8. Real-time SSE Stream Connection Setup */
 export const sseLimiter = createRateLimiter({
-  windowMs: 60 * 1000, // 1 minute window (prevents long 15-min lockouts)
-  max: 60, // 60 reconnect attempts per minute
+  windowMs: 60 * 1000, // 1 minute window (prevents long lockouts)
+  max: 300, // 300 reconnect attempts per minute
   message: 'Too many real-time connection attempts. Please wait 60 seconds.',
   keyPrefix: 'sse',
 });
@@ -208,7 +216,7 @@ export const sseLimiter = createRateLimiter({
 /** 9. Payment Webhooks (High-throughput gateway ingestion) */
 export const webhookLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute
-  max: 1000,
+  max: 2000,
   message: 'Webhook ingestion limit exceeded.',
   keyPrefix: 'webhook',
 });
@@ -216,13 +224,13 @@ export const webhookLimiter = createRateLimiter({
 /** 10. High-Throughput Admin, Inventory, POS & Management Console */
 export const adminLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 mins
-  max: 3000,
+  max: 5000,
   keyPrefix: 'admin',
 });
 
 /** 11. Global General Umbrella (Public Catalog Reads & Generic Fallback) */
 export const generalLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute sliding window
-  max: 300, // 300 req/min per unauthenticated IP
+  max: 1200, // 1200 req/min per client
   keyPrefix: 'general',
 });

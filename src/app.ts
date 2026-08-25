@@ -266,7 +266,13 @@ app.get(`${prefix}/docs`, serveDocsUi);
 app.use(`${prefix}/payments/webhook`, webhookLimiter, webhookRoutes);
 
 // ─── General Rate Limiter (Baseline fallback for all REST API routes) ────────
-app.use(generalLimiter);
+app.use((req, res, next) => {
+  // Skip generalLimiter for SSE stream as it has its own dedicated sseLimiter
+  if (req.path.startsWith(`${prefix}/events/stream`)) {
+    return next();
+  }
+  return generalLimiter(req, res, next);
+});
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 
