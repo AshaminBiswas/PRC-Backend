@@ -59,6 +59,49 @@ export const ActivityQuerySchema = z.object({
   endDate: z.string().optional(),
 });
 
+export const CreateAddressSchema = z
+  .object({
+    label: z.string().optional(),
+    type: z.enum(['BILLING', 'SHIPPING']).default('SHIPPING').optional(),
+    addressLine1: z.string().optional(),
+    line1: z.string().optional(),
+    addressLine2: z.string().optional().nullable(),
+    line2: z.string().optional().nullable(),
+    city: z.string().min(1, 'City is required'),
+    state: z.string().min(1, 'State is required'),
+    postalCode: z.string().optional(),
+    pincode: z.string().optional(),
+    country: z.string().default('India').optional(),
+    isDefault: z.boolean().default(false).optional(),
+  })
+  .refine((data) => data.addressLine1 || data.line1, {
+    message: 'Address line is required',
+    path: ['addressLine1'],
+  })
+  .refine((data) => data.postalCode || data.pincode, {
+    message: 'Postal code / pincode is required',
+    path: ['postalCode'],
+  });
+
+export const UpdateAddressSchema = z.object({
+  label: z.string().optional(),
+  type: z.enum(['BILLING', 'SHIPPING']).optional(),
+  addressLine1: z.string().optional(),
+  line1: z.string().optional(),
+  addressLine2: z.string().optional().nullable(),
+  line2: z.string().optional().nullable(),
+  city: z.string().min(1).optional(),
+  state: z.string().min(1).optional(),
+  postalCode: z.string().optional(),
+  pincode: z.string().optional(),
+  country: z.string().optional(),
+  isDefault: z.boolean().optional(),
+});
+
+export const AddressIdParamSchema = z.object({
+  addressId: z.string().uuid('Invalid address ID'),
+});
+
 export const UuidParamSchema = z.object({
   id: z.string().uuid('Invalid user ID'),
 });
@@ -67,3 +110,6 @@ export type ListUsersQuery = z.infer<typeof ListUsersQuerySchema>;
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;
 export type UpdateUserInput = z.infer<typeof UpdateUserSchema>;
 export type UpdateProfileInput = z.infer<typeof UpdateProfileSchema>;
+export type CreateAddressInput = z.infer<typeof CreateAddressSchema>;
+export type UpdateAddressInput = z.infer<typeof UpdateAddressSchema>;
+

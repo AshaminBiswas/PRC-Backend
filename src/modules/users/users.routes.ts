@@ -12,6 +12,9 @@ import {
   UpdateUserRolesSchema,
   ActivityQuerySchema,
   UuidParamSchema,
+  CreateAddressSchema,
+  UpdateAddressSchema,
+  AddressIdParamSchema,
 } from './users.schema';
 
 const router = Router();
@@ -20,7 +23,14 @@ const router = Router();
 router.use(authenticate);
 router.use(adminLimiter);
 
-// ─── Own profile routes (must come before /:id to avoid conflicts) ────────────
+// ─── Own profile & address routes (must come before /:id to avoid conflicts) ────────────
+router.get('/addresses', controller.getUserAddresses);
+router.post('/addresses', validate(CreateAddressSchema), controller.createAddress);
+router.get('/addresses/:addressId', validate(AddressIdParamSchema, 'params'), controller.getUserAddresses);
+router.patch('/addresses/:addressId', validate(AddressIdParamSchema, 'params'), validate(UpdateAddressSchema), controller.updateAddress);
+router.put('/addresses/:addressId', validate(AddressIdParamSchema, 'params'), validate(UpdateAddressSchema), controller.updateAddress);
+router.delete('/addresses/:addressId', validate(AddressIdParamSchema, 'params'), controller.deleteAddress);
+
 router.get('/activity', validate(ActivityQuerySchema, 'query'), controller.getUserActivity);
 router.get('/orders', controller.getUserOrders);
 router.get('/quotes', controller.getUserQuotes);

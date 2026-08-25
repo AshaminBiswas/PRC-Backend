@@ -488,3 +488,148 @@ export const getUserReviews = async (userId: string, query: { page: number; limi
   const { page, limit } = getPaginationParams(query);
   return { data: [], pagination: buildPagination(page, limit, 0) };
 };
+
+// ─── User Addresses CRUD ──────────────────────────────────────────────────────
+
+export const getUserAddresses = async (userId: string) => {
+  const addresses = await prisma.address.findMany({
+    where: { userId },
+    orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  return addresses.map((addr) => ({
+    id: addr.id,
+    userId: addr.userId,
+    type: addr.type,
+    label: addr.type === 'SHIPPING' ? 'Shipping' : 'Billing',
+    addressLine1: addr.addressLine1,
+    line1: addr.addressLine1,
+    addressLine2: addr.addressLine2,
+    line2: addr.addressLine2,
+    city: addr.city,
+    state: addr.state,
+    postalCode: addr.postalCode,
+    pincode: addr.postalCode,
+    country: addr.country,
+    isDefault: addr.isDefault,
+    createdAt: addr.createdAt,
+    updatedAt: addr.updatedAt,
+  }));
+};
+
+export const createAddress = async (userId: string, input: any) => {
+  const line1 = input.addressLine1 || input.line1;
+  const line2 = input.addressLine2 || input.line2 || null;
+  const pincode = input.postalCode || input.pincode;
+  const type = input.type === 'BILLING' ? 'BILLING' : 'SHIPPING';
+  const isDefault = Boolean(input.isDefault);
+
+  if (isDefault) {
+    await prisma.address.updateMany({
+      where: { userId, type },
+      data: { isDefault: false },
+    });
+  }
+
+  const count = await prisma.address.count({ where: { userId } });
+  const shouldBeDefault = isDefault || count === 0;
+
+  const addr = await prisma.address.create({
+    data: {
+      userId,
+      type,
+      addressLine1: line1,
+      addressLine2: line2,
+      city: input.city,
+      state: input.state,
+      postalCode: pincode,
+      country: input.country || 'India',
+      isDefault: shouldBeDefault,
+    },
+  });
+
+  return {
+    id: addr.id,
+    userId: addr.userId,
+    type: addr.type,
+    label: input.label || (addr.type === 'SHIPPING' ? 'Shipping' : 'Billing'),
+    addressLine1: addr.addressLine1,
+    line1: addr.addressLine1,
+    addressLine2: addr.addressLine2,
+    line2: addr.addressLine2,
+    city: addr.city,
+    state: addr.state,
+    postalCode: addr.postalCode,
+    pincode: addr.postalCode,
+    country: addr.country,
+    isDefault: addr.isDefault,
+    createdAt: addr.createdAt,
+    updatedAt: addr.updatedAt,
+  };
+};
+
+export const updateAddress = async (userId: string, addressId: string, input: any) => {
+  const existing = await prisma.address.findFirst({
+    where: { id: addressId, userId },
+  });
+  if (!existing) {
+    throw new AppError('NOT_FOUND', 'Address not found', 404);
+  }
+
+  const line1 = input.addressLine1 || input.line1;
+  const line2 = input.addressLine2 !== undefined ? input.addressLine2 : input.line2;
+  const pincode = input.postalCode || input.pincode;
+
+  if (input.isDefault) {
+    await prisma.address.updateMany({
+      where: { userId, type: input.type || existing.type },
+      data: { isDefault: false },
+    });
+  }
+
+  const updated = await prisma.address.update({
+    where: { id: addressId },
+    data: {
+      ...(line1 ? { addressLine1: line1 } : {}),
+      ...(line2 !== undefined ? { addressLine2: line2 } : {}),
+      ...(input.city ? { city: input.city } : {}),
+      ...(input.state ? { state: input.state } : {}),
+      ...(pincode ? { postalCode: pincode } : {}),
+      ...(input.country ? { country: input.country } : {}),
+      ...(input.type ? { type: input.type } : {}),
+      ...(input.isDefault !== undefined ? { isDefault: input.isDefault } : {}),
+    },
+  });
+
+  return {
+    id: updated.id,
+    userId: updated.userId,
+    type: updated.type,
+    label: input.label || (updated.type === 'SHIPPING' ? 'Shipping' : 'Billing'),
+    addressLine1: updated.addressLine1,
+    line1: updated.addressLine1,
+    addressLine2: updated.addressLine2,
+    line2: updated.addressLine2,
+    city: updated.city,
+    state: updated.state,
+    postalCode: updated.postalCode,
+    pincode: updated.postalCode,
+    country: updated.country,
+    isDefault: updated.isDefault,
+    createdAt: updated.createdAt,
+    updatedAt: updated.updatedAt,
+  };
+};
+
+export const deleteAddress = async (userId: string, addressId: string) => {
+  const existing = await prisma.address.findFirst({
+    where: { id: addressId, userId },
+  });
+  if (!existing) {
+    throw new AppError('NOT_FOUND', 'Address not found', 404);
+  }
+
+  await prisma.address.delete({ where: { id: addressId } });
+  return { success: true, message: 'Address deleted successfully' };
+};
+

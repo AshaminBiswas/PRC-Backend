@@ -92,3 +92,34 @@ export const updateUserRoles = async (req: Request, res: Response, next: NextFun
     sendMessage(res, 'User roles updated successfully');
   } catch (error) { next(error); }
 };
+
+// ─── User Addresses ───────────────────────────────────────────────────────────
+
+export const getUserAddresses = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await usersService.getUserAddresses(req.user!.id);
+    sendSuccess(res, data);
+  } catch (error) { next(error); }
+};
+
+export const createAddress = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await usersService.createAddress(req.user!.id, req.body);
+    sendSuccess(res, data, 'Address created successfully', 201);
+  } catch (error) { next(error); }
+};
+
+export const updateAddress = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await usersService.updateAddress(req.user!.id, req.params.addressId, req.body);
+    sendSuccess(res, data, 'Address updated successfully');
+  } catch (error) { next(error); }
+};
+
+export const deleteAddress = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await usersService.deleteAddress(req.user!.id, req.params.addressId);
+    sendMessage(res, 'Address deleted successfully');
+  } catch (error) { next(error); }
+};
+

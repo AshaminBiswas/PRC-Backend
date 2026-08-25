@@ -374,6 +374,34 @@ const PO_AUTO_HEAL_STATEMENTS = [
     END IF;
   END $$`,
 
+  // ─── ADDRESSES TABLE & ENUM ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AddressType') THEN
+      CREATE TYPE "AddressType" AS ENUM ('BILLING', 'SHIPPING');
+    END IF;
+  END $$`,
+
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='addresses') THEN
+      CREATE TABLE "addresses" (
+        "id"           TEXT NOT NULL,
+        "userId"       TEXT NOT NULL,
+        "type"         "AddressType" NOT NULL DEFAULT 'SHIPPING',
+        "addressLine1" TEXT NOT NULL,
+        "addressLine2" TEXT,
+        "city"         TEXT NOT NULL,
+        "state"        TEXT NOT NULL,
+        "postalCode"   TEXT NOT NULL,
+        "country"      TEXT NOT NULL DEFAULT 'India',
+        "isDefault"    BOOLEAN NOT NULL DEFAULT false,
+        "createdAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "addresses_pkey" PRIMARY KEY ("id")
+      );
+      CREATE INDEX IF NOT EXISTS "addresses_userId_idx" ON "addresses"("userId");
+    END IF;
+  END $$`,
+
   // ─── SAVED ADDRESSES TABLE ───
   `DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='saved_addresses') THEN
