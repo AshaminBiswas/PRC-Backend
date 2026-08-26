@@ -1097,6 +1097,235 @@ const STATEMENTS = [
     FROM "products" p
     ON CONFLICT ("productId", "branchId") DO NOTHING;
   END $$`,
+  // ─── Inventory tables columns & bidirectional sync triggers ───────────────
+  `ALTER TABLE "inventories" ALTER COLUMN "product_id" DROP NOT NULL`,
+  `ALTER TABLE "inventories" ALTER COLUMN "branch_id" DROP NOT NULL`,
+  `ALTER TABLE "inventories" ALTER COLUMN "reserved_quantity" DROP NOT NULL`,
+  `ALTER TABLE "inventories" ALTER COLUMN "reorder_level" DROP NOT NULL`,
+  `ALTER TABLE "inventories" ALTER COLUMN "updated_at" DROP NOT NULL`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "productId" TEXT`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "branchId" TEXT`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "reservedQuantity" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "reorderLevel" INTEGER NOT NULL DEFAULT 10`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `CREATE OR REPLACE FUNCTION sync_inventories_columns() RETURNS TRIGGER AS $$
+   BEGIN
+     NEW."productId" := COALESCE(NEW."productId", NEW.product_id);
+     NEW."product_id" := COALESCE(NEW.product_id, NEW."productId");
+     NEW."branchId" := COALESCE(NEW."branchId", NEW.branch_id);
+     NEW."branch_id" := COALESCE(NEW.branch_id, NEW."branchId");
+     NEW."reservedQuantity" := COALESCE(NEW."reservedQuantity", NEW.reserved_quantity, 0);
+     NEW."reserved_quantity" := COALESCE(NEW.reserved_quantity, NEW."reservedQuantity", 0);
+     NEW."reorderLevel" := COALESCE(NEW."reorderLevel", NEW.reorder_level, 10);
+     NEW."reorder_level" := COALESCE(NEW.reorder_level, NEW."reorderLevel", 10);
+     NEW."updatedAt" := COALESCE(NEW."updatedAt", NEW.updated_at, NOW());
+     NEW."updated_at" := COALESCE(NEW.updated_at, NEW."updatedAt", NOW());
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_sync_inventories ON "inventories"`,
+  `CREATE TRIGGER trg_sync_inventories BEFORE INSERT OR UPDATE ON "inventories" FOR EACH ROW EXECUTE FUNCTION sync_inventories_columns()`,
+
+  `ALTER TABLE "purchase_items" ALTER COLUMN "purchase_id" DROP NOT NULL`,
+  `ALTER TABLE "purchase_items" ALTER COLUMN "product_id" DROP NOT NULL`,
+  `ALTER TABLE "purchase_items" ALTER COLUMN "unit_purchase_price" DROP NOT NULL`,
+  `ALTER TABLE "purchase_items" ALTER COLUMN "total_price" DROP NOT NULL`,
+  `ALTER TABLE "purchase_items" ADD COLUMN IF NOT EXISTS "purchaseId" TEXT`,
+  `ALTER TABLE "purchase_items" ADD COLUMN IF NOT EXISTS "productId" TEXT`,
+  `ALTER TABLE "purchase_items" ADD COLUMN IF NOT EXISTS "unitPurchasePrice" DECIMAL(12,2)`,
+  `ALTER TABLE "purchase_items" ADD COLUMN IF NOT EXISTS "totalPrice" DECIMAL(12,2)`,
+  `CREATE OR REPLACE FUNCTION sync_purchase_items_columns() RETURNS TRIGGER AS $$
+   BEGIN
+     NEW."purchaseId" := COALESCE(NEW."purchaseId", NEW.purchase_id);
+     NEW."purchase_id" := COALESCE(NEW.purchase_id, NEW."purchaseId");
+     NEW."productId" := COALESCE(NEW."productId", NEW.product_id);
+     NEW."product_id" := COALESCE(NEW.product_id, NEW."productId");
+     NEW."unitPurchasePrice" := COALESCE(NEW."unitPurchasePrice", NEW.unit_purchase_price, 0);
+     NEW."unit_purchase_price" := COALESCE(NEW.unit_purchase_price, NEW."unitPurchasePrice", 0);
+     NEW."totalPrice" := COALESCE(NEW."totalPrice", NEW.total_price, 0);
+     NEW."total_price" := COALESCE(NEW.total_price, NEW."totalPrice", 0);
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_sync_purchase_items ON "purchase_items"`,
+  `CREATE TRIGGER trg_sync_purchase_items BEFORE INSERT OR UPDATE ON "purchase_items" FOR EACH ROW EXECUTE FUNCTION sync_purchase_items_columns()`,
+
+  `ALTER TABLE "purchases" ALTER COLUMN "branch_id" DROP NOT NULL`,
+  `ALTER TABLE "purchases" ALTER COLUMN "supplier_id" DROP NOT NULL`,
+  `ALTER TABLE "purchases" ALTER COLUMN "purchase_date" DROP NOT NULL`,
+  `ALTER TABLE "purchases" ALTER COLUMN "total_amount" DROP NOT NULL`,
+  `ALTER TABLE "purchases" ALTER COLUMN "created_by_id" DROP NOT NULL`,
+  `ALTER TABLE "purchases" ALTER COLUMN "created_at" DROP NOT NULL`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "branchId" TEXT`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "supplierId" TEXT`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "invoiceNumber" TEXT`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "purchaseDate" TIMESTAMP(3)`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "totalAmount" DECIMAL(12,2)`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "createdById" TEXT`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `CREATE OR REPLACE FUNCTION sync_purchases_columns() RETURNS TRIGGER AS $$
+   BEGIN
+     NEW."branchId" := COALESCE(NEW."branchId", NEW.branch_id);
+     NEW."branch_id" := COALESCE(NEW.branch_id, NEW."branchId");
+     NEW."supplierId" := COALESCE(NEW."supplierId", NEW.supplier_id);
+     NEW."supplier_id" := COALESCE(NEW.supplier_id, NEW."supplierId");
+     NEW."invoiceNumber" := COALESCE(NEW."invoiceNumber", NEW.invoice_number);
+     NEW."invoice_number" := COALESCE(NEW.invoice_number, NEW."invoiceNumber");
+     NEW."purchaseDate" := COALESCE(NEW."purchaseDate", NEW.purchase_date, NOW());
+     NEW."purchase_date" := COALESCE(NEW.purchase_date, NEW."purchaseDate", NOW());
+     NEW."totalAmount" := COALESCE(NEW."totalAmount", NEW.total_amount, 0);
+     NEW."total_amount" := COALESCE(NEW.total_amount, NEW."totalAmount", 0);
+     NEW."createdById" := COALESCE(NEW."createdById", NEW.created_by_id, 'system');
+     NEW."created_by_id" := COALESCE(NEW.created_by_id, NEW."createdById", 'system');
+     NEW."createdAt" := COALESCE(NEW."createdAt", NEW.created_at, NOW());
+     NEW."created_at" := COALESCE(NEW.created_at, NEW."createdAt", NOW());
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_sync_purchases ON "purchases"`,
+  `CREATE TRIGGER trg_sync_purchases BEFORE INSERT OR UPDATE ON "purchases" FOR EACH ROW EXECUTE FUNCTION sync_purchases_columns()`,
+
+  `ALTER TABLE "stock_movements" ALTER COLUMN "product_id" DROP NOT NULL`,
+  `ALTER TABLE "stock_movements" ALTER COLUMN "branch_id" DROP NOT NULL`,
+  `ALTER TABLE "stock_movements" ALTER COLUMN "previous_qty" DROP NOT NULL`,
+  `ALTER TABLE "stock_movements" ALTER COLUMN "new_qty" DROP NOT NULL`,
+  `ALTER TABLE "stock_movements" ALTER COLUMN "performed_by_id" DROP NOT NULL`,
+  `ALTER TABLE "stock_movements" ALTER COLUMN "created_at" DROP NOT NULL`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "productId" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "branchId" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "previousQty" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "newQty" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "referenceType" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "referenceId" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "performedById" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `CREATE OR REPLACE FUNCTION sync_stock_movements_columns() RETURNS TRIGGER AS $$
+   BEGIN
+     NEW."productId" := COALESCE(NEW."productId", NEW.product_id);
+     NEW."product_id" := COALESCE(NEW.product_id, NEW."productId");
+     NEW."branchId" := COALESCE(NEW."branchId", NEW.branch_id);
+     NEW."branch_id" := COALESCE(NEW.branch_id, NEW."branchId");
+     NEW."previousQty" := COALESCE(NEW."previousQty", NEW.previous_qty, 0);
+     NEW."previous_qty" := COALESCE(NEW.previous_qty, NEW."previousQty", 0);
+     NEW."newQty" := COALESCE(NEW."newQty", NEW.new_qty, 0);
+     NEW."new_qty" := COALESCE(NEW.new_qty, NEW."newQty", 0);
+     NEW."referenceType" := COALESCE(NEW."referenceType", NEW.reference_type);
+     NEW."reference_type" := COALESCE(NEW.reference_type, NEW."referenceType");
+     NEW."referenceId" := COALESCE(NEW."referenceId", NEW.reference_id);
+     NEW."reference_id" := COALESCE(NEW.reference_id, NEW."referenceId");
+     NEW."performedById" := COALESCE(NEW."performedById", NEW.performed_by_id, 'system');
+     NEW."performed_by_id" := COALESCE(NEW.performed_by_id, NEW."performedById", 'system');
+     NEW."createdAt" := COALESCE(NEW."createdAt", NEW.created_at, NOW());
+     NEW."created_at" := COALESCE(NEW.created_at, NEW."createdAt", NOW());
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_sync_stock_movements ON "stock_movements"`,
+  `CREATE TRIGGER trg_sync_stock_movements BEFORE INSERT OR UPDATE ON "stock_movements" FOR EACH ROW EXECUTE FUNCTION sync_stock_movements_columns()`,
+
+  `ALTER TABLE "stock_transfers" ALTER COLUMN "from_branch_id" DROP NOT NULL`,
+  `ALTER TABLE "stock_transfers" ALTER COLUMN "to_branch_id" DROP NOT NULL`,
+  `ALTER TABLE "stock_transfers" ALTER COLUMN "requested_by_id" DROP NOT NULL`,
+  `ALTER TABLE "stock_transfers" ALTER COLUMN "created_at" DROP NOT NULL`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "fromBranchId" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "toBranchId" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "requestedById" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "approvedById" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "receivedById" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "dispatchedAt" TIMESTAMP(3)`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "receivedAt" TIMESTAMP(3)`,
+  `CREATE OR REPLACE FUNCTION sync_stock_transfers_columns() RETURNS TRIGGER AS $$
+   BEGIN
+     NEW."fromBranchId" := COALESCE(NEW."fromBranchId", NEW.from_branch_id);
+     NEW."from_branch_id" := COALESCE(NEW.from_branch_id, NEW."fromBranchId");
+     NEW."toBranchId" := COALESCE(NEW."toBranchId", NEW.to_branch_id);
+     NEW."to_branch_id" := COALESCE(NEW.to_branch_id, NEW."toBranchId");
+     NEW."requestedById" := COALESCE(NEW."requestedById", NEW.requested_by_id, 'system');
+     NEW."requested_by_id" := COALESCE(NEW.requested_by_id, NEW."requestedById", 'system');
+     NEW."approvedById" := COALESCE(NEW."approvedById", NEW.approved_by_id);
+     NEW."approved_by_id" := COALESCE(NEW.approved_by_id, NEW."approvedById");
+     NEW."receivedById" := COALESCE(NEW."receivedById", NEW.received_by_id);
+     NEW."received_by_id" := COALESCE(NEW.received_by_id, NEW."receivedById");
+     NEW."createdAt" := COALESCE(NEW."createdAt", NEW.created_at, NOW());
+     NEW."created_at" := COALESCE(NEW.created_at, NEW."createdAt", NOW());
+     NEW."dispatchedAt" := COALESCE(NEW."dispatchedAt", NEW.dispatched_at);
+     NEW."dispatched_at" := COALESCE(NEW.dispatched_at, NEW."dispatchedAt");
+     NEW."receivedAt" := COALESCE(NEW."receivedAt", NEW.received_at);
+     NEW."received_at" := COALESCE(NEW.received_at, NEW."receivedAt");
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_sync_stock_transfers ON "stock_transfers"`,
+  `CREATE TRIGGER trg_sync_stock_transfers BEFORE INSERT OR UPDATE ON "stock_transfers" FOR EACH ROW EXECUTE FUNCTION sync_stock_transfers_columns()`,
+
+  `ALTER TABLE "stock_transfer_items" ALTER COLUMN "transfer_id" DROP NOT NULL`,
+  `ALTER TABLE "stock_transfer_items" ALTER COLUMN "product_id" DROP NOT NULL`,
+  `ALTER TABLE "stock_transfer_items" ADD COLUMN IF NOT EXISTS "transferId" TEXT`,
+  `ALTER TABLE "stock_transfer_items" ADD COLUMN IF NOT EXISTS "productId" TEXT`,
+  `CREATE OR REPLACE FUNCTION sync_stock_transfer_items_columns() RETURNS TRIGGER AS $$
+   BEGIN
+     NEW."transferId" := COALESCE(NEW."transferId", NEW.transfer_id);
+     NEW."transfer_id" := COALESCE(NEW.transfer_id, NEW."transferId");
+     NEW."productId" := COALESCE(NEW."productId", NEW.product_id);
+     NEW."product_id" := COALESCE(NEW.product_id, NEW."productId");
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_sync_stock_transfer_items ON "stock_transfer_items"`,
+  `CREATE TRIGGER trg_sync_stock_transfer_items BEFORE INSERT OR UPDATE ON "stock_transfer_items" FOR EACH ROW EXECUTE FUNCTION sync_stock_transfer_items_columns()`,
+
+  `ALTER TABLE "suppliers" ALTER COLUMN "is_active" DROP NOT NULL`,
+  `ALTER TABLE "suppliers" ALTER COLUMN "created_at" DROP NOT NULL`,
+  `ALTER TABLE "suppliers" ALTER COLUMN "updated_at" DROP NOT NULL`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "contactPerson" TEXT`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "gstNumber" TEXT`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)`,
+  `CREATE OR REPLACE FUNCTION sync_suppliers_columns() RETURNS TRIGGER AS $$
+   BEGIN
+     NEW."contactPerson" := COALESCE(NEW."contactPerson", NEW.contact_person);
+     NEW."contact_person" := COALESCE(NEW.contact_person, NEW."contactPerson");
+     NEW."gstNumber" := COALESCE(NEW."gstNumber", NEW.gst_number);
+     NEW."gst_number" := COALESCE(NEW.gst_number, NEW."gstNumber");
+     NEW."isActive" := COALESCE(NEW."isActive", NEW.is_active, true);
+     NEW."is_active" := COALESCE(NEW.is_active, NEW."isActive", true);
+     NEW."createdAt" := COALESCE(NEW."createdAt", NEW.created_at, NOW());
+     NEW."created_at" := COALESCE(NEW.created_at, NEW."createdAt", NOW());
+     NEW."updatedAt" := COALESCE(NEW."updatedAt", NEW.updated_at, NOW());
+     NEW."updated_at" := COALESCE(NEW.updated_at, NEW."updatedAt", NOW());
+     NEW."deletedAt" := COALESCE(NEW."deletedAt", NEW.deleted_at);
+     NEW."deleted_at" := COALESCE(NEW.deleted_at, NEW."deletedAt");
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_sync_suppliers ON "suppliers"`,
+  `CREATE TRIGGER trg_sync_suppliers BEFORE INSERT OR UPDATE ON "suppliers" FOR EACH ROW EXECUTE FUNCTION sync_suppliers_columns()`,
+
+  `ALTER TABLE "branches" ALTER COLUMN "is_active" DROP NOT NULL`,
+  `ALTER TABLE "branches" ALTER COLUMN "created_at" DROP NOT NULL`,
+  `ALTER TABLE "branches" ALTER COLUMN "updated_at" DROP NOT NULL`,
+  `ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)`,
+  `CREATE OR REPLACE FUNCTION sync_branches_columns() RETURNS TRIGGER AS $$
+   BEGIN
+     NEW."isActive" := COALESCE(NEW."isActive", NEW.is_active, true);
+     NEW."is_active" := COALESCE(NEW.is_active, NEW."isActive", true);
+     NEW."createdAt" := COALESCE(NEW."createdAt", NEW.created_at, NOW());
+     NEW."created_at" := COALESCE(NEW.created_at, NEW."createdAt", NOW());
+     NEW."updatedAt" := COALESCE(NEW."updatedAt", NEW.updated_at, NOW());
+     NEW."updated_at" := COALESCE(NEW.updated_at, NEW."updatedAt", NOW());
+     NEW."deletedAt" := COALESCE(NEW."deletedAt", NEW.deleted_at);
+     NEW."deleted_at" := COALESCE(NEW.deleted_at, NEW."deletedAt");
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;`,
+  `DROP TRIGGER IF EXISTS trg_sync_branches ON "branches"`,
+  `CREATE TRIGGER trg_sync_branches BEFORE INSERT OR UPDATE ON "branches" FOR EACH ROW EXECUTE FUNCTION sync_branches_columns()`,
 ];
 
 async function run() {

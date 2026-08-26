@@ -1038,18 +1038,23 @@ export const quickStock = async (input: QuickStockInput, userId: string) => {
           categoryId: validCategoryId,
           stock: 0,
           status: 'ACTIVE',
+          isVisible: true,
         },
       });
     } else {
-      if (input.reorderLevel || validCategoryId) {
-        await tx.product.update({
-          where: { id: product.id },
-          data: {
-            ...(input.reorderLevel ? { reorderLevel: input.reorderLevel } : {}),
-            ...(validCategoryId ? { categoryId: validCategoryId } : {}),
-          },
-        });
-      }
+      const priceVal = input.sellingPrice !== undefined && input.sellingPrice > 0 ? new Prisma.Decimal(input.sellingPrice) : undefined;
+      product = await tx.product.update({
+        where: { id: product.id },
+        data: {
+          name: input.name.trim() || product.name,
+          deletedAt: null,
+          status: 'ACTIVE',
+          isVisible: true,
+          ...(priceVal ? { price: priceVal } : {}),
+          ...(input.reorderLevel ? { reorderLevel: input.reorderLevel } : {}),
+          ...(validCategoryId ? { categoryId: validCategoryId } : {}),
+        },
+      });
     }
 
     // 4. Update or create branch inventory

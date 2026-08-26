@@ -278,7 +278,9 @@ export const getProductById = async (id: string) => {
 
 export const createProduct = async (input: CreateProductInput) => {
   const skuExists = await prisma.product.findUnique({ where: { sku: input.sku } });
-  if (skuExists) throw new AppError('CONFLICT', 'A product with this SKU already exists', 409);
+  if (skuExists && skuExists.deletedAt === null) {
+    throw new AppError('CONFLICT', 'A product with this SKU already exists', 409);
+  }
 
   if (input.categoryId) {
     const category = await prisma.category.findUnique({ where: { id: input.categoryId, deletedAt: null } });
@@ -297,20 +299,43 @@ export const createProduct = async (input: CreateProductInput) => {
     ...rest
   } = input;
 
-  const product = await prisma.product.create({
-    data: {
-      ...rest,
-      slug,
-      dimensions: dimensions ? (dimensions as any) : undefined,
-      attributes: attributes ? (attributes as any) : undefined,
-      specification: (productSpecification || specification) ? ((productSpecification || specification) as any) : undefined,
-      manufacturerInfo: manufacturerInfo ? (manufacturerInfo as any) : undefined,
-      metaTitle: seo?.metaTitle,
-      metaDescription: seo?.metaDescription,
-      metaKeywords: seo?.metaKeywords,
-    },
-    select: productDetailSelect,
-  });
+  let product: any;
+  if (skuExists && skuExists.deletedAt !== null) {
+    product = await prisma.product.update({
+      where: { id: skuExists.id },
+      data: {
+        ...rest,
+        name: input.name,
+        slug,
+        deletedAt: null,
+        status: input.status || 'ACTIVE',
+        isVisible: input.isVisible ?? true,
+        dimensions: dimensions ? (dimensions as any) : undefined,
+        attributes: attributes ? (attributes as any) : undefined,
+        specification: (productSpecification || specification) ? ((productSpecification || specification) as any) : undefined,
+        manufacturerInfo: manufacturerInfo ? (manufacturerInfo as any) : undefined,
+        metaTitle: seo?.metaTitle,
+        metaDescription: seo?.metaDescription,
+        metaKeywords: seo?.metaKeywords,
+      },
+      select: productDetailSelect,
+    });
+  } else {
+    product = await prisma.product.create({
+      data: {
+        ...rest,
+        slug,
+        dimensions: dimensions ? (dimensions as any) : undefined,
+        attributes: attributes ? (attributes as any) : undefined,
+        specification: (productSpecification || specification) ? ((productSpecification || specification) as any) : undefined,
+        manufacturerInfo: manufacturerInfo ? (manufacturerInfo as any) : undefined,
+        metaTitle: seo?.metaTitle,
+        metaDescription: seo?.metaDescription,
+        metaKeywords: seo?.metaKeywords,
+      },
+      select: productDetailSelect,
+    });
+  }
 
   // Automatically initialize branch inventory rows
   try {
