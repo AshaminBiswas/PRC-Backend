@@ -43,6 +43,16 @@ import invoiceRoutes from './modules/invoices/invoices.routes';
 import webhookRoutes from './modules/payments/webhook.routes';
 import b2bPricingRoutes from './modules/b2b-pricing/b2b-pricing.routes';
 import auditRoutes from './modules/audit/audit.routes';
+import {
+  branchesRouter,
+  suppliersRouter,
+  inventoryRouter,
+  purchasesRouter,
+  transfersRouter,
+  stockAdjustmentsRouter,
+  stockMovementsRouter,
+  inventoryReportsRouter,
+} from './modules/inventory/inventory.routes';
 
 import sseRoutes from './events/sse.routes';
 import { initEventBus } from './events/eventBus';
@@ -317,6 +327,16 @@ app.use(`${prefix}/invoices`, invoiceRoutes);
 app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
 app.use(`${prefix}/audit`, auditRoutes);
 app.use(`${prefix}/events`, sseRoutes);
+
+// ─── Multi-Branch Inventory Module Mounts ────────────────────────────────────
+app.use(`${prefix}/branches`, branchesRouter);
+app.use(`${prefix}/suppliers`, suppliersRouter);
+app.use(`${prefix}/inventory`, inventoryRouter);
+app.use(`${prefix}/purchases`, purchasesRouter);
+app.use(`${prefix}/transfers`, transfersRouter);
+app.use(`${prefix}/stock-adjustments`, stockAdjustmentsRouter);
+app.use(`${prefix}/stock-movements`, stockMovementsRouter);
+app.use(`${prefix}/reports`, inventoryReportsRouter);
 
 app.get(`${prefix}/test-email`, async (req, res) => {
   try {

@@ -825,6 +825,187 @@ const STATEMENTS = [
       CREATE INDEX "admin_audit_logs_created_at_idx" ON "admin_audit_logs"("created_at" DESC);
     END IF;
   END $$`,
+
+  // ─── Multi-Branch Inventory Enums & Tables ─────────────────────────────────
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'StockMovementType') THEN
+      CREATE TYPE "StockMovementType" AS ENUM (
+        'PURCHASE_IN', 'TRANSFER_IN', 'TRANSFER_OUT', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'SALE_OUT', 'DAMAGE', 'RETURN_IN'
+      );
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'TransferStatus') THEN
+      CREATE TYPE "TransferStatus" AS ENUM ('PENDING', 'IN_TRANSIT', 'RECEIVED', 'CANCELLED');
+    END IF;
+  END $$`,
+
+  // Branches table
+  `CREATE TABLE IF NOT EXISTS "branches" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "code" TEXT NOT NULL UNIQUE,
+    "address" TEXT,
+    "city" TEXT,
+    "state" TEXT,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deleted_at" TIMESTAMP(3)
+  )`,
+  `CREATE INDEX IF NOT EXISTS "branches_code_idx" ON "branches"("code")`,
+  `CREATE INDEX IF NOT EXISTS "branches_is_active_idx" ON "branches"("is_active")`,
+  `CREATE INDEX IF NOT EXISTS "branches_deleted_at_idx" ON "branches"("deleted_at")`,
+
+  // Suppliers table
+  `CREATE TABLE IF NOT EXISTS "suppliers" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "contact_person" TEXT,
+    "phone" TEXT,
+    "email" TEXT,
+    "address" TEXT,
+    "gst_number" TEXT,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deleted_at" TIMESTAMP(3)
+  )`,
+  `CREATE INDEX IF NOT EXISTS "suppliers_name_idx" ON "suppliers"("name")`,
+  `CREATE INDEX IF NOT EXISTS "suppliers_is_active_idx" ON "suppliers"("is_active")`,
+  `CREATE INDEX IF NOT EXISTS "suppliers_deleted_at_idx" ON "suppliers"("deleted_at")`,
+
+  // Inventories table
+  `CREATE TABLE IF NOT EXISTS "inventories" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "product_id" TEXT NOT NULL,
+    "branch_id" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL DEFAULT 0,
+    "reserved_quantity" INTEGER NOT NULL DEFAULT 0,
+    "reorder_level" INTEGER NOT NULL DEFAULT 10,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "inventories_product_branch_unique" UNIQUE ("product_id", "branch_id")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "inventories_product_id_idx" ON "inventories"("product_id")`,
+  `CREATE INDEX IF NOT EXISTS "inventories_branch_id_idx" ON "inventories"("branch_id")`,
+
+  // Purchases table
+  `CREATE TABLE IF NOT EXISTS "purchases" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "branch_id" TEXT NOT NULL,
+    "supplier_id" TEXT NOT NULL,
+    "invoice_number" TEXT,
+    "purchase_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "total_amount" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "notes" TEXT,
+    "created_by_id" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "purchases_branch_id_idx" ON "purchases"("branch_id")`,
+  `CREATE INDEX IF NOT EXISTS "purchases_supplier_id_idx" ON "purchases"("supplier_id")`,
+  `CREATE INDEX IF NOT EXISTS "purchases_purchase_date_idx" ON "purchases"("purchase_date")`,
+
+  // Purchase Items table
+  `CREATE TABLE IF NOT EXISTS "purchase_items" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "purchase_id" TEXT NOT NULL,
+    "product_id" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    "unit_purchase_price" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "total_price" DECIMAL(12,2) NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS "purchase_items_purchase_id_idx" ON "purchase_items"("purchase_id")`,
+  `CREATE INDEX IF NOT EXISTS "purchase_items_product_id_idx" ON "purchase_items"("product_id")`,
+
+  // Stock Transfers table
+  `CREATE TABLE IF NOT EXISTS "stock_transfers" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "from_branch_id" TEXT NOT NULL,
+    "to_branch_id" TEXT NOT NULL,
+    "status" "TransferStatus" NOT NULL DEFAULT 'PENDING',
+    "requested_by_id" TEXT NOT NULL,
+    "approved_by_id" TEXT,
+    "received_by_id" TEXT,
+    "notes" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "dispatched_at" TIMESTAMP(3),
+    "received_at" TIMESTAMP(3)
+  )`,
+  `CREATE INDEX IF NOT EXISTS "stock_transfers_from_branch_id_idx" ON "stock_transfers"("from_branch_id")`,
+  `CREATE INDEX IF NOT EXISTS "stock_transfers_to_branch_id_idx" ON "stock_transfers"("to_branch_id")`,
+  `CREATE INDEX IF NOT EXISTS "stock_transfers_status_idx" ON "stock_transfers"("status")`,
+
+  // Stock Transfer Items table
+  `CREATE TABLE IF NOT EXISTS "stock_transfer_items" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "transfer_id" TEXT NOT NULL,
+    "product_id" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS "stock_transfer_items_transfer_id_idx" ON "stock_transfer_items"("transfer_id")`,
+  `CREATE INDEX IF NOT EXISTS "stock_transfer_items_product_id_idx" ON "stock_transfer_items"("product_id")`,
+
+  // Stock Movements ledger table
+  `CREATE TABLE IF NOT EXISTS "stock_movements" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "product_id" TEXT NOT NULL,
+    "branch_id" TEXT NOT NULL,
+    "type" "StockMovementType" NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    "previous_qty" INTEGER NOT NULL DEFAULT 0,
+    "new_qty" INTEGER NOT NULL DEFAULT 0,
+    "reference_type" TEXT,
+    "reference_id" TEXT,
+    "notes" TEXT,
+    "performed_by_id" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "stock_movements_product_branch_idx" ON "stock_movements"("product_id", "branch_id")`,
+  `CREATE INDEX IF NOT EXISTS "stock_movements_created_at_idx" ON "stock_movements"("created_at")`,
+  `CREATE INDEX IF NOT EXISTS "stock_movements_ref_idx" ON "stock_movements"("reference_type", "reference_id")`,
+
+  // Seed Default Branches (Delhi HQ & Kolkata)
+  `INSERT INTO "branches" ("id", "name", "code", "address", "city", "state", "is_active", "created_at", "updated_at")
+   VALUES
+     ('b1000000-0000-0000-0000-000000000001', 'Delhi HQ', 'DEL', 'Pacific Hardware HQ, Mayapuri Industrial Area Phase II', 'New Delhi', 'Delhi', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+     ('b2000000-0000-0000-0000-000000000002', 'Kolkata Branch', 'KOL', 'PRC Hardware Depot, Topsia Road', 'Kolkata', 'West Bengal', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+   ON CONFLICT ("code") DO UPDATE SET
+     "name" = EXCLUDED."name",
+     "address" = EXCLUDED."address",
+     "city" = EXCLUDED."city",
+     "state" = EXCLUDED."state",
+     "is_active" = EXCLUDED."is_active"`,
+
+  // Backfill Inventory records for all existing products across Delhi HQ (with current product.stock) and Kolkata (with 0)
+  `DO $$
+  DECLARE
+    del_id TEXT := 'b1000000-0000-0000-0000-000000000001';
+    kol_id TEXT := 'b2000000-0000-0000-0000-000000000002';
+  BEGIN
+    -- Delhi HQ Inventory backfill
+    INSERT INTO "inventories" ("id", "product_id", "branch_id", "quantity", "reserved_quantity", "reorder_level", "updated_at")
+    SELECT
+      md5(random()::text || clock_timestamp()::text)::text,
+      p."id",
+      del_id,
+      COALESCE(p."stock", 0),
+      0,
+      COALESCE(p."reorderLevel", 10),
+      CURRENT_TIMESTAMP
+    FROM "products" p
+    ON CONFLICT ("product_id", "branch_id") DO NOTHING;
+
+    -- Kolkata Inventory backfill
+    INSERT INTO "inventories" ("id", "product_id", "branch_id", "quantity", "reserved_quantity", "reorder_level", "updated_at")
+    SELECT
+      md5(random()::text || clock_timestamp()::text)::text,
+      p."id",
+      kol_id,
+      0,
+      0,
+      COALESCE(p."reorderLevel", 10),
+      CURRENT_TIMESTAMP
+    FROM "products" p
+    ON CONFLICT ("product_id", "branch_id") DO NOTHING;
+  END $$`,
 ];
 
 async function run() {

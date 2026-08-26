@@ -20,6 +20,11 @@ export type AuditEntity =
   | 'SETTINGS'
   | 'SHIPPING'
   | 'COUPON'
+  | 'BRANCH'
+  | 'SUPPLIER'
+  | 'INVENTORY'
+  | 'PURCHASE'
+  | 'STOCK_TRANSFER'
   | 'SYSTEM';
 
 export interface LogAdminActionParams {

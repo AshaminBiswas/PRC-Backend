@@ -452,7 +452,7 @@ model Product {
   updatedAt        DateTime      @updatedAt
   deletedAt        DateTime?
 
-  category          Category?          @relation(fields: [categoryId], references: [id])
+  category          Category?           @relation(fields: [categoryId], references: [id])
   variants          ProductVariant[]
   wishlistItems     WishlistItem[]
   cartItems         CartItem[]
@@ -461,6 +461,10 @@ model Product {
   reviews           Review[]
   invoiceItems      InvoiceItem[]
   b2bCustomerPrices B2BCustomerPrice[]
+  inventories       Inventory[]
+  purchaseItems     PurchaseItem[]
+  stockMovements    StockMovement[]
+  transferItems     StockTransferItem[]
 
   @@index([slug])
   @@index([sku])
@@ -1675,3 +1679,184 @@ model AllocationLog {
   @@index([createdAt])
   @@map("warehouse_allocation_logs")
 }
+
+// ─── Multi-Branch Inventory Management ───────────────────────────────────────
+
+enum StockMovementType {
+  PURCHASE_IN
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  SALE_OUT
+  DAMAGE
+  RETURN_IN
+}
+
+enum TransferStatus {
+  PENDING
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+model Branch {
+  id        String    @id @default(uuid())
+  name      String
+  code      String    @unique
+  address   String?
+  city      String?
+  state     String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  inventories    Inventory[]
+  purchases      Purchase[]
+  transfersFrom  StockTransfer[] @relation("TransferFrom")
+  transfersTo    StockTransfer[] @relation("TransferTo")
+  stockMovements StockMovement[]
+
+  @@index([code])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("branches")
+}
+
+model Supplier {
+  id            String    @id @default(uuid())
+  name          String
+  contactPerson String?
+  phone         String?
+  email         String?
+  address       String?
+  gstNumber     String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  purchases Purchase[]
+
+  @@index([name])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("suppliers")
+}
+
+model Inventory {
+  id               String   @id @default(uuid())
+  productId        String
+  branchId         String
+  quantity         Int      @default(0)
+  reservedQuantity Int      @default(0)
+  reorderLevel     Int      @default(10)
+  updatedAt        DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, branchId])
+  @@index([branchId])
+  @@index([productId])
+  @@map("inventories")
+}
+
+model Purchase {
+  id            String   @id @default(uuid())
+  branchId      String
+  supplierId    String
+  invoiceNumber String?
+  purchaseDate  DateTime
+  totalAmount   Decimal  @db.Decimal(12, 2)
+  notes         String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  branch   Branch         @relation(fields: [branchId], references: [id])
+  supplier Supplier       @relation(fields: [supplierId], references: [id])
+  items    PurchaseItem[]
+
+  @@index([branchId])
+  @@index([supplierId])
+  @@index([purchaseDate])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id                String  @id @default(uuid())
+  purchaseId        String
+  productId         String
+  quantity          Int
+  unitPurchasePrice Decimal @db.Decimal(12, 2)
+  totalPrice        Decimal @db.Decimal(12, 2)
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseId])
+  @@index([productId])
+  @@map("purchase_items")
+}
+
+model StockTransfer {
+  id            String         @id @default(uuid())
+  fromBranchId  String
+  toBranchId    String
+  status        TransferStatus @default(PENDING)
+  requestedById String
+  approvedById  String?
+  receivedById  String?
+  notes         String?
+  createdAt     DateTime       @default(now())
+  dispatchedAt  DateTime?
+  receivedAt    DateTime?
+
+  fromBranch Branch              @relation("TransferFrom", fields: [fromBranchId], references: [id])
+  toBranch   Branch              @relation("TransferTo", fields: [toBranchId], references: [id])
+  items      StockTransferItem[]
+
+  @@index([fromBranchId])
+  @@index([toBranchId])
+  @@index([status])
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id         String @id @default(uuid())
+  transferId String
+  productId  String
+  quantity   Int
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([transferId])
+  @@index([productId])
+  @@map("stock_transfer_items")
+}
+
+model StockMovement {
+  id            String            @id @default(uuid())
+  productId     String
+  branchId      String
+  type          StockMovementType
+  quantity      Int
+  previousQty   Int
+  newQty        Int
+  referenceType String?
+  referenceId   String?
+  notes         String?
+  performedById String
+  createdAt     DateTime          @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([productId, branchId])
+  @@index([createdAt])
+  @@index([referenceType, referenceId])
+  @@map("stock_movements")
+}
+

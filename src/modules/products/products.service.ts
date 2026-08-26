@@ -312,6 +312,28 @@ export const createProduct = async (input: CreateProductInput) => {
     select: productDetailSelect,
   });
 
+  // Automatically initialize branch inventory rows
+  try {
+    const branches = await prisma.branch.findMany({
+      where: { deletedAt: null, isActive: true },
+      select: { id: true, code: true },
+    });
+    if (branches.length > 0) {
+      await prisma.inventory.createMany({
+        data: branches.map((b) => ({
+          productId: product.id,
+          branchId: b.id,
+          quantity: b.code === 'DEL' ? (input.stock || 0) : 0,
+          reservedQuantity: 0,
+          reorderLevel: input.reorderLevel || 10,
+        })),
+        skipDuplicates: true,
+      });
+    }
+  } catch (err: any) {
+    console.warn('[ProductsService] Non-fatal branch inventory init notice:', err?.message || err);
+  }
+
   return formatProduct(product);
 };
 
