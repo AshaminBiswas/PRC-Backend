@@ -528,3 +528,149 @@ export const recordSale = async (req: Request, res: Response, next: NextFunction
   }
 };
 
+// ─── 10. Product Traceability & Inventory Dossier Controllers ────────────────
+
+export const getProductDossier = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { productId } = req.params;
+    const data = await inventoryService.getProductTraceabilityDossier(productId);
+    sendSuccess(res, data, 'Product traceability dossier retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const exportProductDossierExcel = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { productId } = req.params;
+    const dossier = await inventoryService.getProductTraceabilityDossier(productId);
+    const buffer = await exportService.generateProductDossierExcel(dossier);
+    const safeSku = String(dossier.product?.sku || 'SKU').replace(/[\/\\]/g, '-');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=Dossier-${safeSku}-${Date.now()}.xlsx`);
+    res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const exportProductDossierPdf = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { productId } = req.params;
+    const dossier = await inventoryService.getProductTraceabilityDossier(productId);
+    const buffer = await exportService.generateProductDossierPdf(dossier);
+    const safeSku = String(dossier.product?.sku || 'SKU').replace(/[\/\\]/g, '-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Dossier-${safeSku}-${Date.now()}.pdf`);
+    res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── 11. Additional CRUD Handlers for Full Sub-Module Operations ──────────────
+
+export const deleteBranch = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await inventoryService.deleteBranch(req.params.id);
+    clearResponseCache('cache:*branches*');
+    clearResponseCache('cache:*inventory*');
+    sendSuccess(res, data, 'Branch facility deleted / deactivated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updatePurchase = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await inventoryService.updatePurchase(req.params.id, req.body);
+    clearResponseCache('cache:*purchases*');
+    sendSuccess(res, data, 'Purchase record updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deletePurchase = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const rollbackStock = req.query.rollbackStock !== 'false';
+    const userId = req.user?.id || 'system';
+    const data = await inventoryService.deletePurchase(req.params.id, rollbackStock, userId);
+    clearResponseCache('cache:*purchases*');
+    clearResponseCache('cache:*inventory*');
+    clearResponseCache('cache:*products*');
+    sendSuccess(res, data, 'Purchase record voided / deleted successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateStockTransfer = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await inventoryService.updateStockTransfer(req.params.id, req.body);
+    clearResponseCache('cache:*transfers*');
+    sendSuccess(res, data, 'Stock transfer updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteStockTransfer = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await inventoryService.deleteStockTransfer(req.params.id);
+    clearResponseCache('cache:*transfers*');
+    clearResponseCache('cache:*inventory*');
+    sendSuccess(res, data, 'Stock transfer deleted successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateInventoryItem = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id || 'system';
+    const data = await inventoryService.updateInventoryItem(req.params.id, req.body, userId);
+    clearResponseCache('cache:*inventory*');
+    clearResponseCache('cache:*products*');
+    sendSuccess(res, data, 'Inventory record updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteInventoryItem = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id || 'system';
+    const data = await inventoryService.deleteInventoryItem(req.params.id, userId);
+    clearResponseCache('cache:*inventory*');
+    clearResponseCache('cache:*products*');
+    sendSuccess(res, data, 'Inventory record de-allocated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateStockMovement = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await inventoryService.updateStockMovement(req.params.id, req.body);
+    clearResponseCache('cache:*movements*');
+    sendSuccess(res, data, 'Stock movement audit note updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const reverseStockMovement = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id || 'system';
+    const { reason } = req.body || {};
+    const data = await inventoryService.reverseStockMovement(req.params.id, userId, reason);
+    clearResponseCache('cache:*movements*');
+    clearResponseCache('cache:*inventory*');
+    clearResponseCache('cache:*products*');
+    sendSuccess(res, data, 'Stock movement reversed successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};
+

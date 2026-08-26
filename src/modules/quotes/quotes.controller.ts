@@ -260,6 +260,7 @@ export const downloadQuotePdf = async (req: Request, res: Response, next: NextFu
 
 /**
  * Public: Customer Download Quotation as PDF via Secure Access Token
+ * RESTRICTION: Quotation PDF can only be downloaded AFTER official approval by administration.
  */
 export const downloadQuotePdfByToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -267,6 +268,14 @@ export const downloadQuotePdfByToken = async (req: Request, res: Response, next:
 
     if (!quote) {
       throw new AppError('NOT_FOUND', 'Quotation not found or link has expired', 404);
+    }
+
+    if (quote.status !== 'APPROVED') {
+      throw new AppError(
+        'FORBIDDEN',
+        'Official quotation PDF can only be downloaded after the quotation is approved by administration.',
+        403
+      );
     }
 
     const pdfBuffer = await generateQuotationPdf(quote as any);

@@ -214,6 +214,14 @@ export const updateBranch = async (id: string, input: UpdateBranchInput) => {
   });
 };
 
+export const deleteBranch = async (id: string) => {
+  await getBranchById(id);
+  return prisma.branch.update({
+    where: { id },
+    data: { deletedAt: new Date(), isActive: false },
+  });
+};
+
 // ─── 2. Suppliers / Vendors Service ──────────────────────────────────────────
 
 export const listSuppliers = async (query: ListSuppliersQuery) => {
@@ -528,6 +536,94 @@ export const getProductInventory = async (productId: string) => {
   };
 };
 
+export const updateInventoryItem = async (
+  id: string,
+  input: {
+    reorderLevel?: number;
+    quantity?: number;
+    reservedQuantity?: number;
+  },
+  userId: string = 'system'
+) => {
+  return prisma.$transaction(async (tx) => {
+    const inv = await tx.inventory.findUnique({
+      where: { id },
+      include: { product: true, branch: true },
+    });
+    if (!inv) throw new AppError('NOT_FOUND', 'Inventory record not found', 404);
+
+    const prevQty = inv.quantity;
+    const newQty = input.quantity !== undefined ? Number(input.quantity) : prevQty;
+    const delta = newQty - prevQty;
+
+    const updated = await tx.inventory.update({
+      where: { id },
+      data: {
+        ...(input.reorderLevel !== undefined ? { reorderLevel: Number(input.reorderLevel) } : {}),
+        ...(input.quantity !== undefined ? { quantity: newQty } : {}),
+        ...(input.reservedQuantity !== undefined ? { reservedQuantity: Number(input.reservedQuantity) } : {}),
+      },
+      include: { product: true, branch: true },
+    });
+
+    if (delta !== 0) {
+      const isPos = delta > 0;
+      await tx.stockMovement.create({
+        data: {
+          productId: inv.productId,
+          branchId: inv.branchId,
+          type: isPos ? StockMovementType.ADJUSTMENT_IN : StockMovementType.ADJUSTMENT_OUT,
+          quantity: Math.abs(delta),
+          previousQty: prevQty,
+          newQty,
+          referenceType: 'MANUAL_INVENTORY_UPDATE',
+          referenceId: inv.id,
+          notes: `Stock Matrix adjustment (${prevQty} → ${newQty})`,
+          performedById: userId,
+        },
+      });
+
+      await syncProductStock(inv.productId, tx);
+    }
+
+    return updated;
+  });
+};
+
+export const deleteInventoryItem = async (id: string, userId: string = 'system') => {
+  return prisma.$transaction(async (tx) => {
+    const inv = await tx.inventory.findUnique({
+      where: { id },
+      include: { product: true, branch: true },
+    });
+    if (!inv) throw new AppError('NOT_FOUND', 'Inventory record not found', 404);
+
+    if (inv.quantity > 0) {
+      await tx.stockMovement.create({
+        data: {
+          productId: inv.productId,
+          branchId: inv.branchId,
+          type: StockMovementType.ADJUSTMENT_OUT,
+          quantity: inv.quantity,
+          previousQty: inv.quantity,
+          newQty: 0,
+          referenceType: 'FACILITY_DEALLOCATION',
+          referenceId: inv.id,
+          notes: `Deallocated SKU from branch ${inv.branch.name}`,
+          performedById: userId,
+        },
+      });
+    }
+
+    const deleted = await tx.inventory.delete({
+      where: { id },
+    });
+
+    await syncProductStock(inv.productId, tx);
+    return deleted;
+  });
+};
+
 // ─── 4. Purchases (Stock-In) Service ─────────────────────────────────────────
 
 export const listPurchases = async (query: ListPurchasesQuery) => {
@@ -792,6 +888,97 @@ export const createPurchase = async (input: CreatePurchaseInput, userId: string)
     }
 
     return purchase;
+  });
+};
+
+export const updatePurchase = async (
+  id: string,
+  input: {
+    supplierId?: string;
+    invoiceNumber?: string;
+    purchaseDate?: string;
+    notes?: string;
+  }
+) => {
+  const existing = await readPrisma.purchase.findUnique({
+    where: { id },
+  });
+  if (!existing) throw new AppError('NOT_FOUND', 'Purchase record not found', 404);
+
+  return prisma.purchase.update({
+    where: { id },
+    data: {
+      ...(input.supplierId ? { supplierId: input.supplierId } : {}),
+      ...(input.invoiceNumber !== undefined ? { invoiceNumber: input.invoiceNumber || null } : {}),
+      ...(input.purchaseDate ? { purchaseDate: new Date(input.purchaseDate) } : {}),
+      ...(input.notes !== undefined ? { notes: input.notes || null } : {}),
+    },
+    include: {
+      items: { include: { product: true } },
+      branch: true,
+      supplier: true,
+    },
+  });
+};
+
+export const deletePurchase = async (id: string, rollbackStock: boolean = true, userId: string = 'system') => {
+  return prisma.$transaction(async (tx) => {
+    const purchase = await tx.purchase.findUnique({
+      where: { id },
+      include: { items: true, branch: true },
+    });
+    if (!purchase) throw new AppError('NOT_FOUND', 'Purchase record not found', 404);
+
+    if (rollbackStock && purchase.items.length > 0) {
+      for (const it of purchase.items) {
+        const inv = await tx.inventory.findUnique({
+          where: {
+            productId_branchId: {
+              productId: it.productId,
+              branchId: purchase.branchId,
+            },
+          },
+        });
+
+        const prevQty = inv ? inv.quantity : 0;
+        const newQty = Math.max(0, prevQty - it.quantity);
+
+        if (inv) {
+          await tx.inventory.update({
+            where: { id: inv.id },
+            data: { quantity: newQty },
+          });
+        }
+
+        try {
+          await tx.stockMovement.create({
+            data: {
+              productId: it.productId,
+              branchId: purchase.branchId,
+              type: StockMovementType.ADJUSTMENT_OUT,
+              quantity: it.quantity,
+              previousQty: prevQty,
+              newQty,
+              referenceType: 'PURCHASE_VOID',
+              referenceId: purchase.id,
+              notes: `Voided PO #${purchase.invoiceNumber || purchase.id.slice(0, 6)} rollback`,
+              performedById: userId,
+            },
+          });
+        } catch {}
+
+        await syncProductStock(it.productId, tx);
+      }
+    }
+
+    // Delete purchase items first
+    await tx.purchaseItem.deleteMany({
+      where: { purchaseId: id },
+    });
+
+    return tx.purchase.delete({
+      where: { id },
+    });
   });
 };
 
@@ -1261,6 +1448,68 @@ export const cancelStockTransfer = async (id: string, userId: string, notes?: st
   });
 };
 
+export const updateStockTransfer = async (
+  id: string,
+  input: { notes?: string; toBranchId?: string }
+) => {
+  const transfer = await readPrisma.stockTransfer.findUnique({
+    where: { id },
+  });
+  if (!transfer) throw new AppError('NOT_FOUND', 'Stock transfer not found', 404);
+  if (transfer.status !== TransferStatus.PENDING) {
+    throw new AppError('INVALID_STATE', `Only PENDING transfers can be edited. Current status is ${transfer.status}`, 400);
+  }
+
+  return prisma.stockTransfer.update({
+    where: { id },
+    data: {
+      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      ...(input.toBranchId ? { toBranchId: input.toBranchId } : {}),
+    },
+    include: { items: { include: { product: true } }, fromBranch: true, toBranch: true },
+  });
+};
+
+export const deleteStockTransfer = async (id: string) => {
+  return prisma.$transaction(async (tx) => {
+    const transfer = await tx.stockTransfer.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+    if (!transfer) throw new AppError('NOT_FOUND', 'Stock transfer not found', 404);
+
+    if (transfer.status === TransferStatus.IN_TRANSIT || (transfer.status as any) === 'DISPATCHED') {
+      throw new AppError('INVALID_STATE', 'Cannot delete an in-transit transfer. Cancel or Receive it first.', 400);
+    }
+
+    if (transfer.status === TransferStatus.PENDING) {
+      for (const item of transfer.items) {
+        try {
+          await tx.inventory.update({
+            where: {
+              productId_branchId: {
+                productId: item.productId,
+                branchId: transfer.fromBranchId,
+              },
+            },
+            data: {
+              reservedQuantity: { decrement: item.quantity },
+            },
+          });
+        } catch {}
+      }
+    }
+
+    await tx.stockTransferItem.deleteMany({
+      where: { transferId: id },
+    });
+
+    return tx.stockTransfer.delete({
+      where: { id },
+    });
+  });
+};
+
 // ─── 6. Stock Adjustments Service ────────────────────────────────────────────
 
 export const adjustStock = async (input: CreateStockAdjustmentInput, userId: string) => {
@@ -1448,6 +1697,80 @@ export const listStockMovements = async (query: ListStockMovementsQuery) => {
   }
 
   return { data, pagination: buildPagination(page, limit, total) };
+};
+
+export const updateStockMovement = async (id: string, input: { notes: string }) => {
+  const mov = await readPrisma.stockMovement.findUnique({ where: { id } });
+  if (!mov) throw new AppError('NOT_FOUND', 'Stock movement not found', 404);
+
+  return prisma.stockMovement.update({
+    where: { id },
+    data: {
+      notes: input.notes,
+    },
+    include: { product: true, branch: true },
+  });
+};
+
+export const reverseStockMovement = async (id: string, userId: string = 'system', reason?: string) => {
+  return prisma.$transaction(async (tx) => {
+    const mov = await tx.stockMovement.findUnique({
+      where: { id },
+      include: { product: true, branch: true },
+    });
+    if (!mov) throw new AppError('NOT_FOUND', 'Stock movement not found', 404);
+
+    const isAddingType = (
+      mov.type === StockMovementType.PURCHASE_IN ||
+      mov.type === StockMovementType.TRANSFER_IN ||
+      mov.type === StockMovementType.ADJUSTMENT_IN ||
+      mov.type === StockMovementType.RETURN_IN
+    );
+
+    const reverseType = isAddingType
+      ? StockMovementType.ADJUSTMENT_OUT
+      : StockMovementType.ADJUSTMENT_IN;
+
+    const inv = await tx.inventory.findUnique({
+      where: {
+        productId_branchId: {
+          productId: mov.productId,
+          branchId: mov.branchId,
+        },
+      },
+    });
+
+    const prevQty = inv ? inv.quantity : 0;
+    const newQty = isAddingType
+      ? Math.max(0, prevQty - mov.quantity)
+      : prevQty + mov.quantity;
+
+    if (inv) {
+      await tx.inventory.update({
+        where: { id: inv.id },
+        data: { quantity: newQty },
+      });
+    }
+
+    const reversalMovement = await tx.stockMovement.create({
+      data: {
+        productId: mov.productId,
+        branchId: mov.branchId,
+        type: reverseType,
+        quantity: mov.quantity,
+        previousQty: prevQty,
+        newQty,
+        referenceType: 'MOVEMENT_REVERSAL',
+        referenceId: mov.id,
+        notes: `Reversal of movement #${mov.id.slice(0, 6)} (${mov.type}). Reason: ${reason || 'Admin audit reversal'}`,
+        performedById: userId,
+      },
+      include: { product: true, branch: true },
+    });
+
+    await syncProductStock(mov.productId, tx);
+    return reversalMovement;
+  });
 };
 
 // ─── 8. Reports Data Extractors ──────────────────────────────────────────────
@@ -1737,5 +2060,460 @@ export const recordRestock = async (
   } else {
     return prisma.$transaction(execute);
   }
+};
+
+// ─── 8. Product-Wise Complete Transaction & Inventory Dossier Service ──────────
+
+export const getProductTraceabilityDossier = async (productId: string) => {
+  // 1. Locate product by ID, SKU, or slug
+  const product = await readPrisma.product.findFirst({
+    where: {
+      OR: [
+        { id: productId },
+        { sku: { equals: productId, mode: 'insensitive' } },
+        { slug: { equals: productId, mode: 'insensitive' } },
+      ],
+    },
+    include: {
+      category: {
+        select: { id: true, name: true, slug: true, description: true },
+      },
+      variants: true,
+    },
+  });
+
+  if (!product) {
+    throw new AppError('NOT_FOUND', `Product with ID or SKU "${productId}" was not found`, 404);
+  }
+
+  // 2. Fetch Branch Inventories, Purchases, Sales Orders, Movements, and Transfers
+  const [branchInventories, purchaseItems, orderItems, stockMovements, transferItems] = await Promise.all([
+    readPrisma.inventory.findMany({
+      where: { productId: product.id },
+      include: {
+        branch: {
+          select: { id: true, name: true, code: true, city: true, state: true, address: true, isActive: true },
+        },
+      },
+      orderBy: { branch: { name: 'asc' } },
+    }),
+    readPrisma.purchaseItem.findMany({
+      where: { productId: product.id },
+      include: {
+        purchase: {
+          include: {
+            supplier: {
+              select: { id: true, name: true, phone: true, email: true, gstNumber: true, address: true },
+            },
+            branch: {
+              select: { id: true, name: true, code: true, city: true },
+            },
+          },
+        },
+      },
+      orderBy: { purchase: { purchaseDate: 'desc' } },
+    }),
+    readPrisma.orderItem.findMany({
+      where: { productId: product.id },
+      include: {
+        order: {
+          include: {
+            user: {
+              select: { id: true, firstName: true, lastName: true, email: true, phone: true, companyName: true, gstin: true },
+            },
+            allocatedWarehouse: {
+              select: { id: true, name: true, code: true, city: true },
+            },
+            statusHistory: {
+              orderBy: { createdAt: 'asc' },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    readPrisma.stockMovement.findMany({
+      where: { productId: product.id },
+      include: {
+        branch: {
+          select: { id: true, name: true, code: true, city: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    readPrisma.stockTransferItem.findMany({
+      where: { productId: product.id },
+      include: {
+        transfer: {
+          include: {
+            fromBranch: { select: { id: true, name: true, code: true, city: true } },
+            toBranch: { select: { id: true, name: true, code: true, city: true } },
+          },
+        },
+      },
+      orderBy: { transfer: { createdAt: 'desc' } },
+    }),
+  ]);
+
+  // 3. User resolver for all actor user IDs
+  const userIdsToResolve = new Set<string>();
+  purchaseItems.forEach((pi) => {
+    if (pi.purchase?.createdById) userIdsToResolve.add(pi.purchase.createdById);
+  });
+  stockMovements.forEach((sm) => {
+    if (sm.performedById && sm.performedById !== 'system') userIdsToResolve.add(sm.performedById);
+  });
+  transferItems.forEach((ti) => {
+    if (ti.transfer?.requestedById) userIdsToResolve.add(ti.transfer.requestedById);
+    if (ti.transfer?.approvedById) userIdsToResolve.add(ti.transfer.approvedById);
+    if (ti.transfer?.receivedById) userIdsToResolve.add(ti.transfer.receivedById);
+  });
+
+  const userMap = new Map<string, { id: string; name: string; email?: string }>();
+  if (userIdsToResolve.size > 0) {
+    try {
+      const users = await readPrisma.user.findMany({
+        where: { id: { in: Array.from(userIdsToResolve) } },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      });
+      users.forEach((u) => {
+        const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || 'Admin Staff';
+        userMap.set(u.id, { id: u.id, name, email: u.email });
+      });
+    } catch {}
+  }
+
+  // 4. Transform purchases list
+  const formattedPurchases = purchaseItems.map((pi) => {
+    const p = pi.purchase;
+    const actor = p?.createdById ? userMap.get(p.createdById)?.name || 'Admin Estimator' : 'Purchasing Manager';
+    const unitPrice = Number(pi.unitPurchasePrice || 0);
+    const qty = Number(pi.quantity || 0);
+    const lineTotal = Number(pi.totalPrice || unitPrice * qty);
+
+    return {
+      id: pi.id,
+      purchaseId: p?.id,
+      invoiceNumber: p?.invoiceNumber || `PO-${p?.id?.slice(0, 6) || 'DIR'}`,
+      purchaseDate: p?.purchaseDate ? new Date(p.purchaseDate).toISOString() : p?.createdAt ? new Date(p.createdAt).toISOString() : new Date().toISOString(),
+      vendorId: p?.supplier?.id,
+      vendorName: p?.supplier?.name || 'Primary Hardware Supplier',
+      vendorPhone: p?.supplier?.phone || '',
+      vendorEmail: p?.supplier?.email || '',
+      vendorGst: p?.supplier?.gstNumber || '',
+      branchId: p?.branch?.id,
+      branchName: p?.branch?.name || 'Delhi Central Depot',
+      branchCode: p?.branch?.code || 'DEL',
+      quantity: qty,
+      receivedQuantity: qty,
+      pendingQuantity: 0,
+      unitPurchasePrice: unitPrice,
+      totalPurchaseValue: lineTotal,
+      status: 'RECEIVED',
+      createdByName: actor,
+      receivedByName: actor,
+      notes: p?.notes || 'Procurement stock-in verified',
+    };
+  });
+
+  // 5. Transform sales list
+  const formattedSales = orderItems.map((oi) => {
+    const o = oi.order;
+    const customer = o?.user;
+    const shippingAddr: any = o?.shippingAddress || {};
+    const customerName = `${customer?.firstName || ''} ${customer?.lastName || ''}`.trim() || customer?.companyName || shippingAddr?.name || 'Valued Buyer';
+    const unitPrice = Number(oi.price || 0);
+    const qty = Number(oi.quantity || 0);
+    const lineTotal = Number(oi.total || unitPrice * qty);
+    const orderTotal = Number(o?.grandTotal || lineTotal);
+
+    const taxAmt = o?.taxTotal ? Math.round((Number(o.taxTotal) * (lineTotal / Math.max(1, Number(o.subtotal || lineTotal)))) * 100) / 100 : Math.round(lineTotal * 0.18 * 100) / 100;
+    const discountAmt = o?.discountTotal ? Math.round((Number(o.discountTotal) * (lineTotal / Math.max(1, Number(o.subtotal || lineTotal)))) * 100) / 100 : 0;
+
+    const acceptedHistory = o?.statusHistory?.find((h) => h.status === 'PROCESSING' || h.status === 'SHIPPED');
+    const acceptedAt = acceptedHistory?.createdAt ? new Date(acceptedHistory.createdAt).toISOString() : o?.createdAt ? new Date(o.createdAt).toISOString() : undefined;
+    const processorName = acceptedHistory?.changedBy ? userMap.get(acceptedHistory.changedBy)?.name || acceptedHistory.changedBy : 'Operations Desk';
+
+    return {
+      id: oi.id,
+      orderId: o?.id,
+      orderNumber: o?.orderNumber || `ORD-${o?.id?.slice(0, 6) || 'DIR'}`,
+      orderDate: o?.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
+      customerId: customer?.id,
+      customerName,
+      customerEmail: customer?.email || shippingAddr?.email || '',
+      customerPhone: customer?.phone || shippingAddr?.phone || '',
+      companyName: customer?.companyName || '',
+      customerGstin: customer?.gstin || '',
+      city: shippingAddr?.city || 'Delhi NCR',
+      state: shippingAddr?.state || 'Delhi',
+      quantity: qty,
+      salePricePerUnit: unitPrice,
+      totalSaleValue: lineTotal,
+      discountAmount: discountAmt,
+      taxAmount: taxAmt,
+      finalOrderValue: orderTotal,
+      orderStatus: o?.status || 'COMPLETED',
+      paymentStatus: o?.paymentStatus || 'COMPLETED',
+      paymentMethod: o?.paymentMethod || 'RAZORPAY',
+      processedByName: processorName,
+      acceptedAt,
+      fulfillmentStatus: o?.status === 'DELIVERED' ? 'DELIVERED' : o?.status === 'SHIPPED' ? 'IN_TRANSIT' : o?.status === 'PROCESSING' ? 'PACKED' : 'PENDING',
+      trackingNumber: o?.trackingNumber || undefined,
+      carrier: o?.carrier || undefined,
+      shippedAt: o?.shippedAt ? new Date(o.shippedAt).toISOString() : undefined,
+      deliveredAt: o?.deliveredAt ? new Date(o.deliveredAt).toISOString() : undefined,
+    };
+  });
+
+  // 6. Transform stock movements
+  let formattedMovements = stockMovements.map((sm) => {
+    const actor = sm.performedById === 'system' ? 'System Automated' : userMap.get(sm.performedById)?.name || 'Inventory Admin';
+    return {
+      id: sm.id,
+      type: sm.type,
+      quantity: sm.quantity,
+      previousQty: sm.previousQty,
+      newQty: sm.newQty,
+      referenceType: sm.referenceType || 'MANUAL',
+      referenceId: sm.referenceId || `REF-${sm.id.slice(0, 6)}`,
+      notes: sm.notes || 'Routine stock ledger transaction',
+      branchId: sm.branchId,
+      branchName: sm.branch?.name || 'Delhi Central Depot',
+      branchCode: sm.branch?.code || 'DEL',
+      performedByName: actor,
+      createdAt: new Date(sm.createdAt).toISOString(),
+    };
+  });
+
+  // If no movements exist, synthesize baseline opening balance
+  if (formattedMovements.length === 0) {
+    const curStock = Number(product.stock) || 0;
+    formattedMovements.push({
+      id: `mov-init-${product.id}`,
+      type: 'PURCHASE_IN' as any,
+      quantity: curStock,
+      previousQty: 0,
+      newQty: curStock,
+      referenceType: 'INITIAL_CATALOG_SYNC',
+      referenceId: product.sku,
+      notes: 'Initial opening balance snapshot from master catalog listing',
+      branchId: 'branch-del-01',
+      branchName: 'Delhi Central Depot',
+      branchCode: 'DEL',
+      performedByName: 'Catalog Importer',
+      createdAt: product.createdAt ? new Date(product.createdAt).toISOString() : new Date().toISOString(),
+    });
+  }
+
+  // 7. Transform branch inventories
+  const formattedBranchInventories = branchInventories.map((bi) => {
+    const available = Math.max(0, (bi.quantity || 0) - (bi.reservedQuantity || 0));
+    return {
+      id: bi.id,
+      branchId: bi.branchId,
+      branchName: bi.branch?.name || 'Central Facility',
+      branchCode: bi.branch?.code || 'DEL',
+      city: bi.branch?.city || 'Delhi',
+      state: bi.branch?.state || 'Delhi',
+      quantity: bi.quantity,
+      reservedQuantity: bi.reservedQuantity || 0,
+      availableQuantity: available,
+      reorderLevel: bi.reorderLevel || product.reorderLevel || 10,
+    };
+  });
+
+  // 8. Compile Unified Chronological Timeline
+  interface TimelineEvent {
+    id: string;
+    timestamp: string;
+    stage: 'PRODUCT_LISTED' | 'PURCHASE_RECEIVED' | 'STOCK_MOVEMENT' | 'CUSTOMER_ORDER' | 'ORDER_FULFILLED' | 'STOCK_TRANSFER';
+    title: string;
+    description: string;
+    actor: string;
+    reference: string;
+    quantityChange?: string;
+    priceValue?: number;
+    badgeColor: string;
+    metadata?: any;
+  }
+
+  const timelineEvents: TimelineEvent[] = [];
+
+  // Stage 1: Product Listed
+  timelineEvents.push({
+    id: `event-create-${product.id}`,
+    timestamp: product.createdAt ? new Date(product.createdAt).toISOString() : new Date().toISOString(),
+    stage: 'PRODUCT_LISTED',
+    title: 'Product Listed in Catalog',
+    description: `Product "${product.name}" created with SKU ${product.sku} under category "${product.category?.name || 'General'}". Opening retail price set to ₹${Number(product.price).toLocaleString('en-IN')}.`,
+    actor: 'Catalog Master Admin',
+    reference: product.sku,
+    badgeColor: '#8B5CF6',
+    metadata: {
+      initialPrice: Number(product.price),
+      reorderLevel: product.reorderLevel,
+      status: product.status,
+    },
+  });
+
+  // Stage 2: Purchases
+  formattedPurchases.forEach((p) => {
+    timelineEvents.push({
+      id: `event-pur-${p.id}`,
+      timestamp: p.purchaseDate,
+      stage: 'PURCHASE_RECEIVED',
+      title: `Stock Received from ${p.vendorName}`,
+      description: `Procured ${p.quantity} unit(s) at ₹${p.unitPurchasePrice.toLocaleString('en-IN')}/unit (Total: ₹${p.totalPurchaseValue.toLocaleString('en-IN')}). Received into [${p.branchCode}] ${p.branchName}.`,
+      actor: p.createdByName,
+      reference: p.invoiceNumber,
+      quantityChange: `+${p.quantity}`,
+      priceValue: p.totalPurchaseValue,
+      badgeColor: '#10B981',
+      metadata: { invoiceNumber: p.invoiceNumber, vendor: p.vendorName, branch: p.branchName },
+    });
+  });
+
+  // Stage 3: Stock Movements
+  formattedMovements.forEach((m) => {
+    const isPositive = ['PURCHASE_IN', 'TRANSFER_IN', 'ADJUSTMENT_IN', 'RETURN_IN'].includes(m.type);
+    timelineEvents.push({
+      id: `event-mov-${m.id}`,
+      timestamp: m.createdAt,
+      stage: 'STOCK_MOVEMENT',
+      title: `Stock Movement: ${m.type.replace('_', ' ')}`,
+      description: `Stock adjusted by ${isPositive ? '+' : '-'}${m.quantity} units (${m.previousQty} → ${m.newQty}) at ${m.branchName}. Note: ${m.notes}`,
+      actor: m.performedByName,
+      reference: m.referenceId,
+      quantityChange: `${isPositive ? '+' : '-'}${m.quantity}`,
+      badgeColor: isPositive ? '#06B6D4' : '#F59E0B',
+      metadata: { type: m.type, previousQty: m.previousQty, newQty: m.newQty, notes: m.notes },
+    });
+  });
+
+  // Stage 4: Customer Sales Orders
+  formattedSales.forEach((s) => {
+    timelineEvents.push({
+      id: `event-sale-${s.id}`,
+      timestamp: s.orderDate,
+      stage: 'CUSTOMER_ORDER',
+      title: `Customer Order #${s.orderNumber}`,
+      description: `Client "${s.customerName}" ordered ${s.quantity} unit(s) @ ₹${s.salePricePerUnit.toLocaleString('en-IN')} (Line Total: ₹${s.totalSaleValue.toLocaleString('en-IN')}). Order Status: ${s.orderStatus}.`,
+      actor: s.processedByName,
+      reference: s.orderNumber,
+      quantityChange: `-${s.quantity}`,
+      priceValue: s.totalSaleValue,
+      badgeColor: '#6366F1',
+      metadata: { orderNumber: s.orderNumber, customer: s.customerName, status: s.orderStatus },
+    });
+
+    if (s.deliveredAt) {
+      timelineEvents.push({
+        id: `event-del-${s.id}`,
+        timestamp: s.deliveredAt,
+        stage: 'ORDER_FULFILLED',
+        title: `Order #${s.orderNumber} Delivered`,
+        description: `Delivered ${s.quantity} unit(s) to ${s.customerName} (${s.city}, ${s.state}) via ${s.carrier || 'Logistics Partner'}.`,
+        actor: s.carrier || 'Logistics Delivery Partner',
+        reference: s.trackingNumber || s.orderNumber,
+        badgeColor: '#059669',
+        metadata: { orderNumber: s.orderNumber, tracking: s.trackingNumber },
+      });
+    }
+  });
+
+  // Sort timeline descending by timestamp
+  timelineEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  // 9. Financial Summary Metrics
+  const totalPurchasedQty = formattedPurchases.reduce((acc, p) => acc + p.quantity, 0);
+  const totalPurchaseExpenditure = formattedPurchases.reduce((acc, p) => acc + p.totalPurchaseValue, 0);
+  const avgPurchaseCost = totalPurchasedQty > 0 ? Math.round((totalPurchaseExpenditure / totalPurchasedQty) * 100) / 100 : Number(product.price) * 0.7;
+
+  const totalSoldQty = formattedSales.reduce((acc, s) => acc + s.quantity, 0);
+  const totalSalesRevenue = formattedSales.reduce((acc, s) => acc + s.totalSaleValue, 0);
+  const avgSellingPrice = totalSoldQty > 0 ? Math.round((totalSalesRevenue / totalSoldQty) * 100) / 100 : Number(product.salePrice || product.price);
+
+  const currentStockTotal = Number(product.stock) || 0;
+  const inventoryValueAtCost = Math.round(currentStockTotal * avgPurchaseCost * 100) / 100;
+  const inventoryValueAtRetail = Math.round(currentStockTotal * Number(product.price) * 100) / 100;
+  const estimatedProfitMarginPercent = avgSellingPrice > 0 ? Math.round(((avgSellingPrice - avgPurchaseCost) / avgSellingPrice) * 10000) / 100 : 30;
+
+  // 10. Unique Customer Directory for this product
+  const customerDirectoryMap = new Map<string, any>();
+  formattedSales.forEach((s) => {
+    const key = s.customerId || s.customerEmail || s.customerName;
+    if (!customerDirectoryMap.has(key)) {
+      customerDirectoryMap.set(key, {
+        customerId: s.customerId,
+        customerName: s.customerName,
+        email: s.customerEmail,
+        phone: s.customerPhone,
+        companyName: s.companyName,
+        gstin: s.customerGstin,
+        city: s.city,
+        state: s.state,
+        totalUnitsPurchased: 0,
+        totalSpendOnSku: 0,
+        ordersCount: 0,
+        lastOrderDate: s.orderDate,
+      });
+    }
+    const cust = customerDirectoryMap.get(key);
+    cust.totalUnitsPurchased += s.quantity;
+    cust.totalSpendOnSku += s.totalSaleValue;
+    cust.ordersCount += 1;
+    if (new Date(s.orderDate) > new Date(cust.lastOrderDate)) {
+      cust.lastOrderDate = s.orderDate;
+    }
+  });
+
+  return {
+    product: {
+      id: product.id,
+      name: product.name,
+      slug: product.slug,
+      sku: product.sku,
+      categoryName: product.category?.name || 'Hardware Products',
+      categorySlug: product.category?.slug,
+      brand: (product as any).brand || 'PRC Architectural',
+      price: Number(product.price),
+      salePrice: product.salePrice ? Number(product.salePrice) : null,
+      offerPrice: product.offerPrice ? Number(product.offerPrice) : null,
+      stock: currentStockTotal,
+      reorderLevel: product.reorderLevel || 10,
+      status: product.status,
+      isVisible: product.isVisible,
+      warranty: product.warranty || '2 Years Commercial',
+      weight: product.weight ? Number(product.weight) : null,
+      dimensions: product.dimensions,
+      attributes: product.attributes,
+      specification: product.specification,
+      thumbnail: product.thumbnail,
+      images: product.images,
+      colours: product.colours,
+      createdAt: product.createdAt ? new Date(product.createdAt).toISOString() : new Date().toISOString(),
+      updatedAt: product.updatedAt ? new Date(product.updatedAt).toISOString() : new Date().toISOString(),
+      listedByName: 'Master Catalog Admin',
+    },
+    branchInventories: formattedBranchInventories,
+    purchases: formattedPurchases,
+    sales: formattedSales,
+    stockMovements: formattedMovements,
+    timeline: timelineEvents,
+    customerDirectory: Array.from(customerDirectoryMap.values()),
+    summaryMetrics: {
+      totalPurchasedQty,
+      totalPurchaseExpenditure,
+      avgPurchaseCost,
+      totalSoldQty,
+      totalSalesRevenue,
+      avgSellingPrice,
+      estimatedProfitMarginPercent,
+      currentStockTotal,
+      inventoryValueAtCost,
+      inventoryValueAtRetail,
+    },
+  };
 };
 

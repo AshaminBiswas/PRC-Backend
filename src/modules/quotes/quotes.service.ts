@@ -12,15 +12,8 @@ import {
 } from './quotation-signature.service';
 import {
   sendQuotationSubmittedEmail,
-  sendQuotationNewSubmissionAdminNotification,
-  sendQuotationUnderReviewEmail,
-  sendQuotationPendingEmail,
   sendQuotationApprovedEmail,
   sendQuotationApprovedEmailWithPdf,
-  sendQuotationRejectedEmail,
-  sendQuotationCustomerResponseNotification,
-  sendQuotationRevisionSubmittedEmail,
-  sendQuotationRevisionAdminNotification,
 } from './quotation-email.service';
 import { generateQuotationPdf } from './quotation-pdf.service';
 import { env } from '../../config/env';
@@ -284,7 +277,7 @@ export const createB2BQuote = async (input: CreateB2BQuoteInput, userId?: string
     newValue: { status: 'PENDING', referenceNo, basicPrice: basicPriceDecimal, grandTotal: grandTotalDecimal },
   });
 
-  // 5. Send Confirmation Email to Customer
+  // 5. Send Confirmation Email to Customer (Email 1 of 2 in lifecycle)
   sendQuotationSubmittedEmail({
     to: input.email,
     customerName: `${input.firstName} ${input.lastName}`,
@@ -294,20 +287,6 @@ export const createB2BQuote = async (input: CreateB2BQuoteInput, userId?: string
     grandTotal: grandTotalDecimal,
     accessToken,
   }).catch((err) => console.warn('[QuotesService] Confirmation email warning:', err));
-
-  // 6. Send Alert Notification to Admin
-  sendQuotationNewSubmissionAdminNotification({
-    to: process.env.ADMIN_NOTIFY_EMAIL || env.smtp.fromEmail || 'admin@pacifichardware.com',
-    customerName: `${input.firstName} ${input.lastName}`,
-    companyName: input.companyName,
-    referenceNo,
-    projectName: input.projectName,
-    grandTotal: grandTotalDecimal,
-    phone: input.phone,
-    email: input.email,
-    gstNo: input.gstNo,
-    itemsCount: itemsToCreate.length,
-  }).catch((err) => console.warn('[QuotesService] Admin alert email warning:', err));
 
   return formatQuote(createdQuote);
 };
@@ -465,17 +444,6 @@ export const respondToQuoteByCustomer = async (
     },
   });
 
-  // Notify admin
-  sendQuotationCustomerResponseNotification({
-    to: '',
-    customerName: `${quote.firstName || ''} ${quote.lastName || ''}`.trim(),
-    companyName: quote.companyName || 'B2B Client',
-    referenceNo: quote.referenceNo || quote.quoteNumber,
-    projectName: quote.projectName || 'Project',
-    customerResponse: response,
-    customerResponseNotes: notes || undefined,
-  });
-
   return formatQuote(updatedQuote);
 };
 
@@ -612,29 +580,6 @@ export const customerEditQuote = async (
       maxWait: 15000,
       timeout: 45000,
     }
-  );
-
-  // 6. Dispatch notifications asynchronously outside transaction
-  const customerName = `${quote.firstName || ''} ${quote.lastName || ''}`.trim() || quote.companyName || 'Valued Client';
-  const emailCtx = {
-    to: quote.email || '',
-    customerName,
-    companyName: quote.companyName || 'B2B Client',
-    referenceNo: quote.referenceNo || quote.quoteNumber,
-    projectName: quote.projectName || 'Hardware Project',
-    proposedAdvancePercent: advancePercentage,
-    previousAdvancePercent: prevAdvance !== null ? prevAdvance : 30,
-    remark: remark.trim(),
-    accessToken: quote.accessToken || undefined,
-  };
-
-  if (quote.email) {
-    sendQuotationRevisionSubmittedEmail(emailCtx).catch((err) =>
-      console.warn('[QuotesService] Revision confirmation email warning:', err)
-    );
-  }
-  sendQuotationRevisionAdminNotification(emailCtx).catch((err) =>
-    console.warn('[QuotesService] Admin revision notification warning:', err)
   );
 
   return formatQuote(updatedQuote);
@@ -881,7 +826,7 @@ export const updateQuoteStatusByAdmin = async (
     accessToken,
   };
 
-  // Dispatch lifecycle notifications
+  // Dispatch lifecycle notifications: Only Email 2 (Approved Quotation with PDF) is sent
   if (targetStatus === QuoteStatus.APPROVED) {
     (async () => {
       try {
@@ -894,12 +839,6 @@ export const updateQuoteStatusByAdmin = async (
         sendQuotationApprovedEmail(emailContext).catch(() => {});
       }
     })();
-  } else if (targetStatus === QuoteStatus.UNDER_REVIEW) {
-    sendQuotationUnderReviewEmail(emailContext);
-  } else if (targetStatus === QuoteStatus.PENDING) {
-    sendQuotationPendingEmail(emailContext);
-  } else if (targetStatus === QuoteStatus.REJECTED) {
-    sendQuotationRejectedEmail(emailContext);
   }
 
   return formatQuote(updatedQuote);

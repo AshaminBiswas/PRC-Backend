@@ -58,6 +58,13 @@ branchesRouter.patch(
   controller.updateBranch
 );
 
+branchesRouter.delete(
+  '/:id',
+  authenticate,
+  authorize('inventory.warehouses.delete', 'branches.delete', 'settings.manage'),
+  controller.deleteBranch
+);
+
 // ─── 2. Suppliers Router ────────────────────────────────────────────────────
 export const suppliersRouter = Router();
 
@@ -118,6 +125,27 @@ inventoryRouter.get(
   controller.getProductInventory
 );
 
+inventoryRouter.get(
+  '/product/:productId/dossier',
+  authenticate,
+  authorize('inventory.stock.read', 'inventory.view', 'products.read'),
+  controller.getProductDossier
+);
+
+inventoryRouter.get(
+  '/product/:productId/dossier/export/excel',
+  authenticate,
+  authorize('inventory.reports.read', 'reports.export', 'inventory.stock.read'),
+  controller.exportProductDossierExcel
+);
+
+inventoryRouter.get(
+  '/product/:productId/dossier/export/pdf',
+  authenticate,
+  authorize('inventory.reports.read', 'reports.export', 'inventory.stock.read'),
+  controller.exportProductDossierPdf
+);
+
 inventoryRouter.post(
   '/sales',
   authenticate,
@@ -132,6 +160,20 @@ inventoryRouter.post(
   authorize('inventory.stock.write', 'inventory.stock.adjust', 'purchases.create', 'products.create'),
   validate(QuickStockSchema),
   controller.quickStock
+);
+
+inventoryRouter.patch(
+  '/:id',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.adjust', 'products.write', 'inventory.warehouses.update'),
+  controller.updateInventoryItem
+);
+
+inventoryRouter.delete(
+  '/:id',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.adjust', 'products.delete', 'inventory.warehouses.delete'),
+  controller.deleteInventoryItem
 );
 
 // ─── 4. Purchases (Stock-In) Router ──────────────────────────────────────────
@@ -158,6 +200,20 @@ purchasesRouter.post(
   authorize('inventory.purchases.create', 'purchases.create'),
   validate(CreatePurchaseSchema),
   controller.createPurchase
+);
+
+purchasesRouter.patch(
+  '/:id',
+  authenticate,
+  authorize('inventory.purchases.update', 'purchases.edit', 'purchases.create'),
+  controller.updatePurchase
+);
+
+purchasesRouter.delete(
+  '/:id',
+  authenticate,
+  authorize('inventory.purchases.delete', 'purchases.delete', 'purchases.create'),
+  controller.deletePurchase
 );
 
 // ─── 5. Stock Transfers Router ──────────────────────────────────────────────
@@ -187,6 +243,13 @@ transfersRouter.post(
 );
 
 transfersRouter.patch(
+  '/:id',
+  authenticate,
+  authorize('inventory.transfers.edit', 'transfers.create'),
+  controller.updateStockTransfer
+);
+
+transfersRouter.patch(
   '/:id/dispatch',
   authenticate,
   authorize('inventory.transfers.approve', 'transfers.approve'),
@@ -210,6 +273,13 @@ transfersRouter.patch(
   controller.cancelStockTransfer
 );
 
+transfersRouter.delete(
+  '/:id',
+  authenticate,
+  authorize('inventory.transfers.delete', 'transfers.cancel', 'transfers.create'),
+  controller.deleteStockTransfer
+);
+
 // ─── 6. Stock Adjustments Router ────────────────────────────────────────────
 export const stockAdjustmentsRouter = Router();
 
@@ -230,6 +300,20 @@ stockMovementsRouter.get(
   authorize('inventory.stock.read', 'inventory.audit.read', 'audit.view'),
   validate(ListStockMovementsQuerySchema, 'query'),
   controller.listStockMovements
+);
+
+stockMovementsRouter.patch(
+  '/:id',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.audit.manage', 'inventory.adjust'),
+  controller.updateStockMovement
+);
+
+stockMovementsRouter.post(
+  '/:id/reverse',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.stock.adjust', 'inventory.adjust'),
+  controller.reverseStockMovement
 );
 
 // ─── 8. Reports Router ──────────────────────────────────────────────────────
