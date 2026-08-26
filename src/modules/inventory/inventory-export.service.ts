@@ -27,12 +27,12 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
   workbook.creator = 'PRC Hardware Inventory System';
   workbook.created = new Date();
 
-  const worksheet = workbook.addWorksheet('Current Stock', {
+  const worksheet = workbook.addWorksheet('Current Stock Matrix', {
     views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }],
   });
 
   // Title Header
-  worksheet.mergeCells('A1:G1');
+  worksheet.mergeCells('A1:K1');
   const titleCell = worksheet.getCell('A1');
   titleCell.value = `PACIFIC HARDWARE — MULTI-BRANCH STOCK REPORT (${branchName.toUpperCase()})`;
   titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -41,9 +41,9 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
   worksheet.getRow(1).height = 32;
 
   // Metadata Sub-row
-  worksheet.mergeCells('A2:G2');
+  worksheet.mergeCells('A2:K2');
   const metaCell = worksheet.getCell('A2');
-  metaCell.value = `Generated On: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} | Total SKUs: ${data.length}`;
+  metaCell.value = `Generated On: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} | Total Listed SKUs: ${data.length}`;
   metaCell.font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF64748B' } };
   metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
   worksheet.getRow(2).height = 18;
@@ -56,13 +56,17 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
   headerRow.values = [
     'SKU',
     'Product Name',
-    'Branch',
+    'Category',
+    'Facility / Branch',
+    'On-Hand Stock',
     'Available Qty',
     'Reserved Qty',
     'Reorder Level',
+    'Unit Price (₹)',
+    'Stock Value (₹)',
     'Stock Status',
   ];
-  headerRow.height = 24;
+  headerRow.height = 25;
   headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
   headerRow.eachCell((cell) => {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
@@ -77,19 +81,29 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
 
   // Table Rows
   data.forEach((row, index) => {
-    const availableQty = Math.max(0, (row.quantity || 0) - (row.reservedQuantity || 0));
-    const stockInfo = getStockStatus(availableQty, row.reorderLevel || row.product?.reorderLevel || 10);
+    const onHand = Number(row.quantity ?? row.stock ?? 0);
+    const reserved = Number(row.reservedQuantity ?? 0);
+    const availableQty = Math.max(0, onHand - reserved);
+    const reorder = Number(row.reorderLevel ?? row.product?.reorderLevel ?? 10);
+    const stockInfo = getStockStatus(availableQty, reorder);
+    const unitPrice = Number(row.product?.price ?? row.price ?? 0);
+    const stockValue = onHand * unitPrice;
+
     const r = worksheet.addRow([
       row.product?.sku || row.sku || 'N/A',
-      row.product?.name || row.productName || 'N/A',
-      row.branch?.name || row.branchName || 'N/A',
-      row.quantity,
-      row.reservedQuantity || 0,
-      row.reorderLevel || 10,
+      row.product?.name || row.productName || row.name || 'N/A',
+      row.product?.category?.name || (typeof row.category === 'string' ? row.category : row.category?.name) || 'General',
+      row.branch?.name || row.branchName || 'Central Depot',
+      onHand,
+      availableQty,
+      reserved,
+      reorder,
+      unitPrice,
+      stockValue,
       stockInfo.label.toUpperCase(),
     ]);
 
-    r.height = 20;
+    r.height = 21;
     r.font = { name: 'Arial', size: 9.5 };
 
     const bgColor = index % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF';
@@ -101,14 +115,17 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
         right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
       };
 
-      if (colNumber === 1 || colNumber === 3) {
+      if (colNumber === 1 || colNumber === 3 || colNumber === 4) {
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
       } else if (colNumber === 2) {
         cell.alignment = { horizontal: 'left', vertical: 'middle' };
-      } else if (colNumber >= 4 && colNumber <= 6) {
+      } else if (colNumber >= 5 && colNumber <= 8) {
         cell.alignment = { horizontal: 'right', vertical: 'middle' };
         cell.numFmt = '#,##0';
-      } else if (colNumber === 7) {
+      } else if (colNumber === 9 || colNumber === 10) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.numFmt = '₹#,##0.00';
+      } else if (colNumber === 11) {
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
         if (stockInfo.isOutOfStock) {
           cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FFDC2626' } };
@@ -125,11 +142,15 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
   worksheet.columns = [
     { width: 16 }, // SKU
     { width: 38 }, // Product Name
-    { width: 20 }, // Branch
-    { width: 15 }, // Available Qty
-    { width: 15 }, // Reserved Qty
-    { width: 15 }, // Reorder Level
-    { width: 18 }, // Status
+    { width: 22 }, // Category
+    { width: 22 }, // Branch
+    { width: 14 }, // On-Hand Stock
+    { width: 14 }, // Available Qty
+    { width: 14 }, // Reserved Qty
+    { width: 14 }, // Reorder Level
+    { width: 16 }, // Unit Price (₹)
+    { width: 18 }, // Stock Value (₹)
+    { width: 18 }, // Stock Status
   ];
 
   const buffer = await workbook.xlsx.writeBuffer();

@@ -317,18 +317,21 @@ export const listInventory = async (query: ListInventoryQuery) => {
   const where: Prisma.InventoryWhereInput = {
     ...(query.branchId && query.branchId !== 'ALL' && query.branchId !== 'PRC_STOCK' ? { branchId: query.branchId } : {}),
     ...(query.productId ? { productId: query.productId } : {}),
-    product: {
-      deletedAt: null,
-      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { name: { contains: query.search, mode: 'insensitive' } },
-              { sku: { contains: query.search, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
-    },
+    ...(query.categoryId || query.search
+      ? {
+          product: {
+            ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+            ...(query.search
+              ? {
+                  OR: [
+                    { name: { contains: query.search, mode: 'insensitive' } },
+                    { sku: { contains: query.search, mode: 'insensitive' } },
+                  ],
+                }
+              : {}),
+          },
+        }
+      : {}),
   };
 
   let rawInventory: any[] = [];
@@ -372,7 +375,6 @@ export const listInventory = async (query: ListInventoryQuery) => {
   if (rawInventory.length === 0) {
     try {
       const prodWhere: Prisma.ProductWhereInput = {
-        deletedAt: null,
         ...(query.categoryId ? { categoryId: query.categoryId } : {}),
         ...(query.search
           ? {
@@ -444,7 +446,7 @@ export const listInventory = async (query: ListInventoryQuery) => {
 
 export const getProductInventory = async (productId: string) => {
   const product = await readPrisma.product.findUnique({
-    where: { id: productId, deletedAt: null },
+    where: { id: productId },
     select: {
       id: true,
       name: true,
@@ -1541,7 +1543,7 @@ export const adjustStock = async (input: CreateStockAdjustmentInput, userId: str
       });
     }
 
-    const product = await tx.product.findUnique({ where: { id: input.productId, deletedAt: null } });
+    const product = await tx.product.findUnique({ where: { id: input.productId } });
     if (!product) throw new AppError('NOT_FOUND', 'Product not found', 404);
 
     let inv = await tx.inventory.findUnique({
@@ -1782,21 +1784,55 @@ export const reverseStockMovement = async (id: string, userId: string = 'system'
 
 export const getStockReportData = async (branchId?: string, lowStockOnly?: boolean) => {
   const where: Prisma.InventoryWhereInput = {
-    ...(branchId ? { branchId } : {}),
-    product: { deletedAt: null },
+    ...(branchId && branchId !== 'ALL' && branchId !== 'PRC_STOCK' ? { branchId } : {}),
   };
 
-  const items = await readPrisma.inventory.findMany({
+  let items = await readPrisma.inventory.findMany({
     where,
     orderBy: [{ branch: { code: 'asc' } }, { product: { name: 'asc' } }],
     include: {
-      product: { select: { name: true, sku: true, price: true, reorderLevel: true } },
-      branch: { select: { name: true, code: true, city: true } },
+      product: {
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          price: true,
+          reorderLevel: true,
+          category: { select: { id: true, name: true } },
+        },
+      },
+      branch: { select: { id: true, name: true, code: true, city: true } },
     },
   });
 
+  if (items.length === 0) {
+    const products = await readPrisma.product.findMany({
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        sku: true,
+        price: true,
+        stock: true,
+        reorderLevel: true,
+        category: { select: { id: true, name: true } },
+      },
+    });
+    const defaultBranch = { id: 'branch-del-01', name: 'Delhi Central Depot', code: 'DEL', city: 'New Delhi' };
+    items = products.map((p) => ({
+      id: `inv-${p.id}`,
+      productId: p.id,
+      branchId: defaultBranch.id,
+      quantity: p.stock || 0,
+      reservedQuantity: 0,
+      reorderLevel: p.reorderLevel || 10,
+      product: p,
+      branch: defaultBranch,
+    })) as any;
+  }
+
   if (lowStockOnly) {
-    return items.filter((i) => i.quantity <= (i.reorderLevel || i.product.reorderLevel || 10));
+    return items.filter((i) => (i.quantity || 0) <= (i.reorderLevel || i.product?.reorderLevel || 10));
   }
   return items;
 };

@@ -133,6 +133,20 @@ inventoryRouter.get(
 );
 
 inventoryRouter.get(
+  '/export/excel',
+  authenticate,
+  authorize('inventory.reports.read', 'reports.export', 'inventory.stock.read', 'inventory.view'),
+  controller.exportStockReport
+);
+
+inventoryRouter.get(
+  '/export/pdf',
+  authenticate,
+  authorize('inventory.reports.read', 'reports.export', 'inventory.stock.read', 'inventory.view'),
+  controller.exportStockReport
+);
+
+inventoryRouter.get(
   '/product/:productId/dossier/export/excel',
   authenticate,
   authorize('inventory.reports.read', 'reports.export', 'inventory.stock.read'),
@@ -178,6 +192,13 @@ inventoryRouter.delete(
 
 // ─── 4. Purchases (Stock-In) Router ──────────────────────────────────────────
 export const purchasesRouter = Router();
+
+purchasesRouter.get(
+  '/export/excel',
+  authenticate,
+  authorize('inventory.purchases.read', 'purchases.view', 'reports.export'),
+  controller.exportPurchasesReport
+);
 
 purchasesRouter.get(
   '/',
@@ -293,6 +314,13 @@ stockAdjustmentsRouter.post(
 
 // ─── 7. Stock Movements Ledger Router ───────────────────────────────────────
 export const stockMovementsRouter = Router();
+
+stockMovementsRouter.get(
+  '/export/excel',
+  authenticate,
+  authorize('inventory.stock.read', 'inventory.audit.read', 'reports.export'),
+  controller.exportMovementsReport
+);
 
 stockMovementsRouter.get(
   '/',

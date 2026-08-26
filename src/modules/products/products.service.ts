@@ -287,7 +287,21 @@ export const createProduct = async (input: CreateProductInput) => {
     if (!category) throw new AppError('NOT_FOUND', 'Category not found', 404);
   }
 
-  const slug = await generateUniqueSlug(input.name, 'product');
+  let slug: string;
+  if (input.slug && input.slug.trim()) {
+    const rawSlug = input.slug.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const existingWithSlug = await prisma.product.findFirst({
+      where: { slug: rawSlug, deletedAt: null },
+      select: { id: true },
+    });
+    if (existingWithSlug && (!skuExists || skuExists.id !== existingWithSlug.id)) {
+      slug = `${rawSlug}-${Date.now().toString().slice(-4)}`;
+    } else {
+      slug = rawSlug;
+    }
+  } else {
+    slug = await generateUniqueSlug(input.name, 'product');
+  }
 
   const {
     dimensions,
@@ -296,8 +310,15 @@ export const createProduct = async (input: CreateProductInput) => {
     productSpecification,
     manufacturerInfo,
     seo,
+    metaTitle,
+    metaDescription,
+    metaKeywords,
     ...rest
   } = input;
+
+  const finalMetaTitle = metaTitle || seo?.metaTitle || undefined;
+  const finalMetaDescription = metaDescription || seo?.metaDescription || undefined;
+  const finalMetaKeywords = metaKeywords || seo?.metaKeywords || undefined;
 
   let product: any;
   if (skuExists && skuExists.deletedAt !== null) {
@@ -310,13 +331,17 @@ export const createProduct = async (input: CreateProductInput) => {
         deletedAt: null,
         status: input.status || 'ACTIVE',
         isVisible: input.isVisible ?? true,
+        isFeatured: input.isFeatured ?? false,
+        isBestseller: input.isBestseller ?? false,
+        isInOffer: input.isInOffer ?? false,
+        isNewArrival: input.isNewArrival ?? false,
         dimensions: dimensions ? (dimensions as any) : undefined,
         attributes: attributes ? (attributes as any) : undefined,
         specification: (productSpecification || specification) ? ((productSpecification || specification) as any) : undefined,
         manufacturerInfo: manufacturerInfo ? (manufacturerInfo as any) : undefined,
-        metaTitle: seo?.metaTitle,
-        metaDescription: seo?.metaDescription,
-        metaKeywords: seo?.metaKeywords,
+        metaTitle: finalMetaTitle,
+        metaDescription: finalMetaDescription,
+        metaKeywords: finalMetaKeywords,
       },
       select: productDetailSelect,
     });
@@ -325,13 +350,19 @@ export const createProduct = async (input: CreateProductInput) => {
       data: {
         ...rest,
         slug,
+        status: input.status || 'ACTIVE',
+        isVisible: input.isVisible ?? true,
+        isFeatured: input.isFeatured ?? false,
+        isBestseller: input.isBestseller ?? false,
+        isInOffer: input.isInOffer ?? false,
+        isNewArrival: input.isNewArrival ?? false,
         dimensions: dimensions ? (dimensions as any) : undefined,
         attributes: attributes ? (attributes as any) : undefined,
         specification: (productSpecification || specification) ? ((productSpecification || specification) as any) : undefined,
         manufacturerInfo: manufacturerInfo ? (manufacturerInfo as any) : undefined,
-        metaTitle: seo?.metaTitle,
-        metaDescription: seo?.metaDescription,
-        metaKeywords: seo?.metaKeywords,
+        metaTitle: finalMetaTitle,
+        metaDescription: finalMetaDescription,
+        metaKeywords: finalMetaKeywords,
       },
       select: productDetailSelect,
     });
@@ -379,7 +410,16 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
   }
 
   let slug = existing.slug;
-  if (input.name && input.name !== existing.name) {
+  if (input.slug && input.slug.trim()) {
+    const rawSlug = input.slug.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (rawSlug !== existing.slug) {
+      const existingWithSlug = await prisma.product.findFirst({
+        where: { slug: rawSlug, id: { not: id }, deletedAt: null },
+        select: { id: true },
+      });
+      slug = existingWithSlug ? `${rawSlug}-${Date.now().toString().slice(-4)}` : rawSlug;
+    }
+  } else if (input.name && input.name !== existing.name) {
     slug = await generateUniqueSlug(input.name, 'product');
   }
 
@@ -390,9 +430,16 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
     productSpecification,
     manufacturerInfo,
     seo,
+    metaTitle,
+    metaDescription,
+    metaKeywords,
     stock: _ignoredStock, // Stock updates are strictly managed through Multi-Branch Inventory Hub & Stock Ledger
     ...rest
   } = input;
+
+  const finalMetaTitle = metaTitle !== undefined ? metaTitle : seo?.metaTitle;
+  const finalMetaDescription = metaDescription !== undefined ? metaDescription : seo?.metaDescription;
+  const finalMetaKeywords = metaKeywords !== undefined ? metaKeywords : seo?.metaKeywords;
 
   const product = await prisma.product.update({
     where: { id },
@@ -405,11 +452,9 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
         ? ((productSpecification || specification) as any)
         : undefined,
       manufacturerInfo: manufacturerInfo !== undefined ? (manufacturerInfo as any) : undefined,
-      ...(seo ? {
-        metaTitle: seo.metaTitle,
-        metaDescription: seo.metaDescription,
-        metaKeywords: seo.metaKeywords,
-      } : {}),
+      ...(finalMetaTitle !== undefined ? { metaTitle: finalMetaTitle } : {}),
+      ...(finalMetaDescription !== undefined ? { metaDescription: finalMetaDescription } : {}),
+      ...(finalMetaKeywords !== undefined ? { metaKeywords: finalMetaKeywords } : {}),
     },
     select: productDetailSelect,
   });

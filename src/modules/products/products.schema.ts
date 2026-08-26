@@ -19,6 +19,7 @@ export const ListProductsQuerySchema = z.object({
 
 export const CreateProductSchema = z.object({
   name: z.string().min(1, 'Product name is required').max(200),
+  slug: z.string().optional(),
   description: z.string().optional(),
   shortDesc: z.string().optional(),
   sku: z.string().min(1, 'SKU is required'),
@@ -30,12 +31,12 @@ export const CreateProductSchema = z.object({
   categoryId: z.string().uuid().optional(),
   stock: z.number().int().min(0).optional(),
   reorderLevel: z.number().int().min(0).optional(),
-  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT']).optional(),
-  isVisible: z.boolean().optional(),
-  isFeatured: z.boolean().optional(),
-  isBestseller: z.boolean().optional(),
-  isInOffer: z.boolean().optional(),
-  isNewArrival: z.boolean().optional(),
+  status: z.enum(['ACTIVE', 'INACTIVE', 'DRAFT']).optional().default('ACTIVE'),
+  isVisible: z.boolean().optional().default(true),
+  isFeatured: z.boolean().optional().default(false),
+  isBestseller: z.boolean().optional().default(false),
+  isInOffer: z.boolean().optional().default(false),
+  isNewArrival: z.boolean().optional().default(false),
   compatibleFor: z.array(z.string()).optional(),
   warranty: z.string().optional(),
   weight: z.number().min(0).optional(),
@@ -53,6 +54,9 @@ export const CreateProductSchema = z.object({
   manufacturerInfo: z.record(z.unknown()).optional(),
   colours: z.array(z.string()).optional().default([]),
   tags: z.array(z.string()).optional().default([]),
+  metaTitle: z.string().optional(),
+  metaDescription: z.string().optional(),
+  metaKeywords: z.string().optional(),
   seo: z
     .object({
       metaTitle: z.string().optional(),
