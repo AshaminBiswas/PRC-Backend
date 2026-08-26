@@ -24,6 +24,14 @@ export const getProductById = async (req: Request, res: Response, next: NextFunc
   } catch (error) { next(error); }
 };
 
+export const getFrequentlyPairedProducts = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const identifier = req.params.id || req.params.idOrSlug || req.params.slug;
+    const data = await productsService.getFrequentlyPairedProducts(identifier);
+    sendSuccess(res, data, 'Frequently paired products retrieved successfully');
+  } catch (error) { next(error); }
+};
+
 export const getProductsByCategory = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const identifier = req.params.categoryId || req.params.slug || req.params.categoryIdentifier;

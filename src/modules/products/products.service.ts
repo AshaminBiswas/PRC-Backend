@@ -33,6 +33,9 @@ export const productListSelect = {
   reviewCount: true,
   colours: true,
   tags: true,
+  materialId: true,
+  material: { select: { id: true, name: true, slug: true, shortName: true, gradeBadge: true } },
+  frequentlyPairedIds: true,
   createdAt: true,
   updatedAt: true,
   category: { select: { id: true, name: true, slug: true } },
@@ -51,6 +54,9 @@ export const productDetailSelect = {
   thumbnail: true,
   images: true,
   categoryId: true,
+  materialId: true,
+  material: { select: { id: true, name: true, slug: true, shortName: true, gradeBadge: true } },
+  frequentlyPairedIds: true,
   stock: true,
   reorderLevel: true,
   status: true,
@@ -89,6 +95,10 @@ const formatProduct = (p: any) => {
     rating: p.rating ? Number(p.rating) : 0,
     weight: p.weight ? Number(p.weight) : null,
     inStock: (p.stock as number) > 0,
+    materialId: p.materialId ?? null,
+    material: p.material?.name || (typeof p.attributes?.material === 'string' ? p.attributes.material : (p.specification?.material || null)),
+    materialObj: p.material ?? null,
+    frequentlyPairedIds: Array.isArray(p.frequentlyPairedIds) ? p.frequentlyPairedIds : [],
     productSpecification: p.specification ?? null,
     seo: {
       metaTitle: p.metaTitle ?? null,
@@ -127,6 +137,20 @@ export const listProducts = async (query: {
     ];
   }
   if (query.categoryId) where.categoryId = query.categoryId;
+  if ((query as any).materialId) where.materialId = (query as any).materialId;
+  if ((query as any).material) {
+    const matVal = String((query as any).material).trim();
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      {
+        OR: [
+          { materialId: matVal },
+          { material: { slug: matVal.toLowerCase() } },
+          { material: { name: { contains: matVal, mode: 'insensitive' } } },
+        ],
+      },
+    ];
+  }
   if (query.status) where.status = query.status as 'ACTIVE' | 'INACTIVE' | 'DRAFT';
   if (query.inStock) where.stock = { gt: 0 };
   if (query.isFeatured !== undefined) where.isFeatured = query.isFeatured;
@@ -258,7 +282,26 @@ export const getProductBySlug = async (slug: string) => {
 
   if (!product) throw new AppError('NOT_FOUND', 'Product not found', 404);
 
-  return formatProduct(product);
+  let frequentlyPairedProducts: any[] = [];
+  if (product.frequentlyPairedIds && product.frequentlyPairedIds.length > 0) {
+    const rawPaired = await readPrisma.product.findMany({
+      where: {
+        id: { in: product.frequentlyPairedIds },
+        deletedAt: null,
+      },
+      select: productListSelect,
+    });
+    const map = new Map(rawPaired.map((p) => [p.id, p]));
+    frequentlyPairedProducts = product.frequentlyPairedIds
+      .map((pid) => map.get(pid))
+      .filter(Boolean)
+      .map(formatProduct);
+  }
+
+  return {
+    ...formatProduct(product),
+    frequentlyPairedProducts,
+  };
 };
 
 // ─── Get Product By ID ────────────────────────────────────────────────────────
@@ -271,7 +314,56 @@ export const getProductById = async (id: string) => {
 
   if (!product) throw new AppError('NOT_FOUND', 'Product not found', 404);
 
-  return formatProduct(product);
+  let frequentlyPairedProducts: any[] = [];
+  if (product.frequentlyPairedIds && product.frequentlyPairedIds.length > 0) {
+    const rawPaired = await readPrisma.product.findMany({
+      where: {
+        id: { in: product.frequentlyPairedIds },
+        deletedAt: null,
+      },
+      select: productListSelect,
+    });
+    const map = new Map(rawPaired.map((p) => [p.id, p]));
+    frequentlyPairedProducts = product.frequentlyPairedIds
+      .map((pid) => map.get(pid))
+      .filter(Boolean)
+      .map(formatProduct);
+  }
+
+  return {
+    ...formatProduct(product),
+    frequentlyPairedProducts,
+  };
+};
+
+// ─── Get Frequently Paired Products ───────────────────────────────────────────
+
+export const getFrequentlyPairedProducts = async (idOrSlug: string) => {
+  const product = await readPrisma.product.findFirst({
+    where: {
+      OR: [{ id: idOrSlug }, { slug: idOrSlug.toLowerCase().trim() }],
+      deletedAt: null,
+    },
+    select: { id: true, frequentlyPairedIds: true },
+  });
+
+  if (!product || !product.frequentlyPairedIds || product.frequentlyPairedIds.length === 0) {
+    return [];
+  }
+
+  const rawPaired = await readPrisma.product.findMany({
+    where: {
+      id: { in: product.frequentlyPairedIds },
+      deletedAt: null,
+    },
+    select: productListSelect,
+  });
+
+  const map = new Map(rawPaired.map((p) => [p.id, p]));
+  return product.frequentlyPairedIds
+    .map((pid) => map.get(pid))
+    .filter(Boolean)
+    .map(formatProduct);
 };
 
 // ─── Create Product ───────────────────────────────────────────────────────────
@@ -313,9 +405,11 @@ export const createProduct = async (input: CreateProductInput) => {
     metaTitle,
     metaDescription,
     metaKeywords,
+    pairedProductIds,
     ...rest
   } = input;
 
+  const finalPairedIds = input.frequentlyPairedIds || pairedProductIds || [];
   const finalMetaTitle = metaTitle || seo?.metaTitle || undefined;
   const finalMetaDescription = metaDescription || seo?.metaDescription || undefined;
   const finalMetaKeywords = metaKeywords || seo?.metaKeywords || undefined;
@@ -326,6 +420,8 @@ export const createProduct = async (input: CreateProductInput) => {
       where: { id: skuExists.id },
       data: {
         ...rest,
+        frequentlyPairedIds: finalPairedIds,
+        materialId: input.materialId || null,
         name: input.name,
         slug,
         deletedAt: null,
@@ -349,6 +445,8 @@ export const createProduct = async (input: CreateProductInput) => {
     product = await prisma.product.create({
       data: {
         ...rest,
+        frequentlyPairedIds: finalPairedIds,
+        materialId: input.materialId || null,
         slug,
         status: input.status || 'ACTIVE',
         isVisible: input.isVisible ?? true,
@@ -433,9 +531,16 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
     metaTitle,
     metaDescription,
     metaKeywords,
+    pairedProductIds,
     stock: _ignoredStock, // Stock updates are strictly managed through Multi-Branch Inventory Hub & Stock Ledger
     ...rest
   } = input;
+
+  const finalPairedIds = input.frequentlyPairedIds !== undefined
+    ? input.frequentlyPairedIds
+    : pairedProductIds !== undefined
+    ? pairedProductIds
+    : undefined;
 
   const finalMetaTitle = metaTitle !== undefined ? metaTitle : seo?.metaTitle;
   const finalMetaDescription = metaDescription !== undefined ? metaDescription : seo?.metaDescription;
@@ -446,6 +551,8 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
     data: {
       ...rest,
       slug,
+      ...(input.materialId !== undefined ? { materialId: input.materialId || null } : {}),
+      ...(finalPairedIds !== undefined ? { frequentlyPairedIds: finalPairedIds } : {}),
       dimensions: dimensions !== undefined ? (dimensions as any) : undefined,
       attributes: attributes !== undefined ? (attributes as any) : undefined,
       specification: (productSpecification !== undefined || specification !== undefined)

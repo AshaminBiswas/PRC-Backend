@@ -411,6 +411,30 @@ model Category {
   @@map("categories")
 }
 
+// ─── Material ─────────────────────────────────────────────────────────────────
+
+model Material {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  shortName   String?
+  gradeBadge  String?
+  description String?
+  tagline     String?
+  specs       String[]  @default([])
+  isActive    Boolean   @default(true)
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  products    Product[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@map("materials")
+}
+
 // ─── Product ──────────────────────────────────────────────────────────────────
 
 model Product {
@@ -426,6 +450,7 @@ model Product {
   thumbnail        String?
   images           String[]      @default([])
   categoryId       String?
+  materialId       String?
   stock            Int           @default(0)
   reorderLevel     Int           @default(10)
   status           ProductStatus @default(DRAFT)
@@ -435,6 +460,7 @@ model Product {
   isInOffer        Boolean       @default(false)
   isNewArrival     Boolean       @default(false)
   compatibleFor    String[]      @default([])
+  frequentlyPairedIds String[]   @default([]) @map("frequently_paired_ids")
   warranty         String?       @default("2 years")
   rating           Decimal       @default(0) @db.Decimal(3, 2)
   reviewCount      Int           @default(0)
@@ -453,6 +479,7 @@ model Product {
   deletedAt        DateTime?
 
   category          Category?           @relation(fields: [categoryId], references: [id])
+  material          Material?           @relation(fields: [materialId], references: [id])
   variants          ProductVariant[]
   wishlistItems     WishlistItem[]
   cartItems         CartItem[]
@@ -469,6 +496,7 @@ model Product {
   @@index([slug])
   @@index([sku])
   @@index([categoryId])
+  @@index([materialId])
   @@index([status])
   @@index([deletedAt])
   @@index([status, isVisible, isInOffer])

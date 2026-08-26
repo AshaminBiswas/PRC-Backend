@@ -18,6 +18,7 @@ router.get('/', cacheResponse(45), validate(ListProductsQuerySchema, 'query'), c
 router.get('/category/slug/:slug', cacheResponse(60), validate(ListProductsQuerySchema, 'query'), controller.getProductsByCategory);
 router.get('/category/:categoryId', cacheResponse(60), validate(ListProductsQuerySchema, 'query'), controller.getProductsByCategory);
 router.get('/slug/:slug', cacheResponse(120), validate(SlugParamSchema, 'params'), controller.getProductBySlug);
+router.get('/:id/paired', cacheResponse(60), controller.getFrequentlyPairedProducts);
 router.get('/:id', cacheResponse(120), validate(UuidParamSchema, 'params'), controller.getProductById);
 
 // Admin protected routes

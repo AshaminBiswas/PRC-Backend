@@ -409,8 +409,41 @@ export const logout = async (refreshToken?: string) => {
 
 export const refreshTokens = async (token: string) => {
   const stored = await prisma.refreshToken.findUnique({ where: { token } });
-  if (!stored || stored.revokedAt || stored.expiresAt < new Date())
+  if (!stored) {
     throw new AppError('INVALID_TOKEN', 'Invalid or expired refresh token', 401);
+  }
+
+  // Grace period for concurrent requests: if token was revoked within the last 30s, reuse the latest active token
+  if (stored.revokedAt) {
+    const gracePeriodMs = 30 * 1000;
+    const timeSinceRevocation = Date.now() - new Date(stored.revokedAt).getTime();
+    if (timeSinceRevocation <= gracePeriodMs) {
+      const latestToken = await prisma.refreshToken.findFirst({
+        where: {
+          userId: stored.userId,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const user = await prisma.user.findUnique({
+        where: { id: stored.userId, deletedAt: null },
+        include: { userRoles: { include: { role: true } } },
+      });
+
+      if (user && user.status === 'ACTIVE' && latestToken) {
+        const roleSlug = getPrimaryRoleSlug(user.userRoles);
+        const { accessToken } = await buildTokenPair(user.id, user.email, roleSlug);
+        return { accessToken, refreshToken: latestToken.token, expiresIn: 3600 };
+      }
+    }
+    throw new AppError('INVALID_TOKEN', 'Invalid or expired refresh token', 401);
+  }
+
+  if (stored.expiresAt < new Date()) {
+    throw new AppError('INVALID_TOKEN', 'Invalid or expired refresh token', 401);
+  }
 
   const user = await prisma.user.findUnique({
     where: { id: stored.userId, deletedAt: null },

@@ -1326,6 +1326,58 @@ const STATEMENTS = [
    $$ LANGUAGE plpgsql;`,
   `DROP TRIGGER IF EXISTS trg_sync_branches ON "branches"`,
   `CREATE TRIGGER trg_sync_branches BEFORE INSERT OR UPDATE ON "branches" FOR EACH ROW EXECUTE FUNCTION sync_branches_columns()`,
+
+  // ─── Materials Master Table & Product Material/Pairing Columns ────────────
+  `CREATE TABLE IF NOT EXISTS "materials" (
+    "id" TEXT PRIMARY KEY,
+    "name" TEXT UNIQUE NOT NULL,
+    "slug" TEXT UNIQUE NOT NULL,
+    "shortName" TEXT,
+    "short_name" TEXT,
+    "gradeBadge" TEXT,
+    "grade_badge" TEXT,
+    "description" TEXT,
+    "tagline" TEXT,
+    "specs" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "position" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deletedAt" TIMESTAMP(3),
+    "deleted_at" TIMESTAMP(3)
+  )`,
+  `CREATE INDEX IF NOT EXISTS "materials_slug_idx" ON "materials"("slug")`,
+  `CREATE INDEX IF NOT EXISTS "materials_isActive_idx" ON "materials"("isActive")`,
+  `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "material_id" TEXT`,
+  `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "materialId" TEXT`,
+  `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "frequently_paired_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
+  `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "frequentlyPairedIds" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
+  `CREATE INDEX IF NOT EXISTS "products_material_id_idx" ON "products"("material_id")`,
+
+  // Seed default 4 materials if table empty
+  `INSERT INTO "materials" ("id", "name", "slug", "shortName", "short_name", "gradeBadge", "grade_badge", "description", "tagline", "specs", "isActive", "is_active", "position")
+   SELECT 'mat-001', '304 Grade Stainless Steel', '304-grade-stainless-steel', 'SS 304', 'SS 304', 'Architectural Grade', 'Architectural Grade',
+          'Engineered with 18% Chromium and 8% Nickel composition for outstanding tensile strength, oxidation resistance, and hygienic durability in commercial restrooms and luxury interior fittings.',
+          'Architectural Grade Stainless Steel', ARRAY['18/8 Austenitic Stainless Steel', 'High Corrosion Resistance', 'Satin & Brushed Finish Ready', 'IS / ASTM A240 Certified']::TEXT[], true, true, 1
+   WHERE NOT EXISTS (SELECT 1 FROM "materials" WHERE "slug" IN ('304-grade-stainless-steel', '304-grade-steel'))`,
+  `INSERT INTO "materials" ("id", "name", "slug", "shortName", "short_name", "gradeBadge", "grade_badge", "description", "tagline", "specs", "isActive", "is_active", "position")
+   SELECT 'mat-002', '316 Grade Stainless Steel', '316-grade-stainless-steel', 'SS 316', 'SS 316', 'Marine Grade', 'Marine Grade',
+          'Enhanced with 2-3% Molybdenum for supreme chloride and saline pitting immunity. The ultimate specification for coastal infrastructure, swimming pool cubicles, and heavy-traffic industrial environments.',
+          'Marine Grade Corrosion-Proof Steel', ARRAY['2-3% Molybdenum Alloy', 'Marine & Chloride Immune', 'Extreme Tensile Toughness', 'Zero-Rust Lifetime Guarantee']::TEXT[], true, true, 2
+   WHERE NOT EXISTS (SELECT 1 FROM "materials" WHERE "slug" IN ('316-grade-stainless-steel', '316-grade-steel'))`,
+  `INSERT INTO "materials" ("id", "name", "slug", "shortName", "short_name", "gradeBadge", "grade_badge", "description", "tagline", "specs", "isActive", "is_active", "position")
+   SELECT 'mat-003', 'Architectural Aluminium', 'architectural-aluminium', 'Aluminium', 'Aluminium', 'Lightweight High-Strength', 'Lightweight High-Strength',
+          'High-grade 6063-T6 extruded architectural aluminium delivering maximum rigidity with featherweight efficiency. Ideal for smooth-glide sliding door track assemblies and frame channels.',
+          'Precision Extruded Structural Alloys', ARRAY['Grade 6063-T6 Alloy', 'Anodized & Powder-Coated', 'Ultra-Smooth Sliding Glide', '100% Recyclable & Non-Magnetic']::TEXT[], true, true, 3
+   WHERE NOT EXISTS (SELECT 1 FROM "materials" WHERE "slug" IN ('architectural-aluminium', 'aluminium'))`,
+  `INSERT INTO "materials" ("id", "name", "slug", "shortName", "short_name", "gradeBadge", "grade_badge", "description", "tagline", "specs", "isActive", "is_active", "position")
+   SELECT 'mat-004', 'Nylon Polyamide 6', 'nylon-polyamide-6', 'Polyamide 6', 'Polyamide 6', 'High-Impact Polymer', 'High-Impact Polymer',
+          'High-impact engineered thermoplastic polymer designed for self-lubricating, vibration-absorbing, and electrical-insulating applications.',
+          'Engineered High-Durability Polymer', ARRAY['Virgin Polyamide 6 Resin', 'High Impact Shock Absorption', 'Self-Lubricating & Non-Marking', 'Anti-Static & Chemical Safe']::TEXT[], true, true, 4
+   WHERE NOT EXISTS (SELECT 1 FROM "materials" WHERE "slug" = 'nylon-polyamide-6')`,
 ];
 
 async function run() {
