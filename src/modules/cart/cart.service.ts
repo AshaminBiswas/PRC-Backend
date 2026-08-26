@@ -79,11 +79,20 @@ export const getCart = async (userId: string) => {
     });
   }
 
+  const [b2bCustomPrices] = await Promise.all([
+    prisma.b2BCustomerPrice.findMany({
+      where: { userId },
+    }),
+  ]);
+  const b2bMap = new Map(b2bCustomPrices.map((cp) => [cp.productId, Number(cp.price)]));
+
   let subtotal = 0;
   let totalWeight = 0;
 
   const items = cart.items.map((item) => {
-    const prodPrice = item.product.salePrice ? Number(item.product.salePrice) : Number(item.product.price);
+    const standardProdPrice = item.product.salePrice ? Number(item.product.salePrice) : Number(item.product.price);
+    const customB2B = b2bMap.get(item.productId);
+    const prodPrice = (customB2B !== undefined && customB2B > 0) ? customB2B : standardProdPrice;
     let unitPrice = prodPrice;
     let variantData = null;
 

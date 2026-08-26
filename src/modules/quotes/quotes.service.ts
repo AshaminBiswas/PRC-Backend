@@ -192,6 +192,14 @@ export const createB2BQuote = async (input: CreateB2BQuoteInput, userId?: string
 
   const productMap = new Map(existingProducts.map((p) => [p.id, p]));
 
+  let b2bPriceMap = new Map<string, number>();
+  if (userId) {
+    const userB2BPrices = await prisma.b2BCustomerPrice.findMany({
+      where: { userId },
+    });
+    b2bPriceMap = new Map(userB2BPrices.map((cp) => [cp.productId, Number(cp.price)]));
+  }
+
   // 2. Atomically generate Indian FY Reference Number (PRC-QT-2026-27/001)
   const { referenceNo, financialYear, sequenceNo } = await generateNextQuotationReferenceNo();
   const accessToken = crypto.randomBytes(24).toString('hex');
@@ -200,13 +208,16 @@ export const createB2BQuote = async (input: CreateB2BQuoteInput, userId?: string
   let calculatedBasicPrice = 0;
   const itemsToCreate = input.items.map((item, idx) => {
     const product = productMap.get(item.productId);
-    const unitPrice = item.rate !== undefined && item.rate >= 0
-      ? item.rate
-      : product?.salePrice
+    const customB2B = b2bPriceMap.get(item.productId);
+    const standardPrice = product?.salePrice
       ? Number(product.salePrice)
       : product?.price
       ? Number(product.price)
       : 0;
+
+    const unitPrice = item.rate !== undefined && item.rate >= 0
+      ? item.rate
+      : (customB2B !== undefined && customB2B > 0 ? customB2B : standardPrice);
 
     const lineAmount = Math.round(unitPrice * item.quantity * 100) / 100;
     calculatedBasicPrice += lineAmount;

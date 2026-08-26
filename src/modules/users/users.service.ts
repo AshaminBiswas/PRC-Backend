@@ -60,6 +60,26 @@ export const listUsers = async (query: ListUsersQuery) => {
           { userRoles: { some: { role: { slug: { in: ['b2b', 'b2b-customer', 'wholesale', 'enterprise'] } } } } },
         ],
       },
+      {
+        userRoles: {
+          none: {
+            role: {
+              slug: {
+                in: [
+                  'super_admin',
+                  'super-admin',
+                  'admin',
+                  'staff',
+                  'manager',
+                  'accounts',
+                  'inventory_manager',
+                  'inventory-manager',
+                ],
+              },
+            },
+          },
+        },
+      },
     ];
   } else if (query.type === 'customer' || query.excludeStaff) {
     where.userRoles = {

@@ -160,14 +160,21 @@ export const placeOrder = async (userId: string, input: PlaceOrderInput) => {
     billingAddressJson = shippingAddressJson;
   }
 
-  // 4. Calculate Subtotal & Total Weight
+  // 4. Calculate Subtotal & Total Weight (Respecting custom B2B pricing if set, else standard sale/retail price)
   let subtotal = 0;
   let totalWeight = 0;
 
+  const customPrices = await prisma.b2BCustomerPrice.findMany({
+    where: { userId },
+  });
+  const b2bMap = new Map(customPrices.map((cp) => [cp.productId, Number(cp.price)]));
+
   for (const item of cart.items) {
-    const unitPrice = item.variant
+    const customB2B = b2bMap.get(item.productId);
+    const standardUnitPrice = item.variant
       ? (item.variant.salePrice ? Number(item.variant.salePrice) : Number(item.variant.price))
       : (item.product.salePrice ? Number(item.product.salePrice) : Number(item.product.price));
+    const unitPrice = (customB2B !== undefined && customB2B > 0) ? customB2B : standardUnitPrice;
     subtotal += unitPrice * item.quantity;
     totalWeight += (item.product.weight ? Number(item.product.weight) : 0) * item.quantity;
   }
@@ -424,7 +431,9 @@ export const placeOrder = async (userId: string, input: PlaceOrderInput) => {
           data: { stock: { decrement: item.quantity } },
         });
       } else {
-        const unitPrice = dbProduct.salePrice ? Number(dbProduct.salePrice) : Number(dbProduct.price);
+        const customB2B = b2bMap.get(item.productId);
+        const standardUnitPrice = dbProduct.salePrice ? Number(dbProduct.salePrice) : Number(dbProduct.price);
+        const unitPrice = (customB2B !== undefined && customB2B > 0) ? customB2B : standardUnitPrice;
         const totalItemPrice = Number((unitPrice * item.quantity).toFixed(2));
 
         await tx.orderItem.create({
