@@ -365,6 +365,7 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
     productSpecification,
     manufacturerInfo,
     seo,
+    stock: _ignoredStock, // Stock updates are strictly managed through Multi-Branch Inventory Hub & Stock Ledger
     ...rest
   } = input;
 

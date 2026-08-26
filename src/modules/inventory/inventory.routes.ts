@@ -20,6 +20,7 @@ import {
   ListStockMovementsQuerySchema,
   InventoryReportQuerySchema,
   CreateSaleSchema,
+  QuickStockSchema,
 } from './inventory.schema';
 
 // ─── 1. Branches Router ──────────────────────────────────────────────────────
@@ -123,6 +124,14 @@ inventoryRouter.post(
   authorize('inventory.stock.write', 'orders.create', 'sales.create', 'orders.manage'),
   validate(CreateSaleSchema),
   controller.recordSale
+);
+
+inventoryRouter.post(
+  '/quick-stock',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.stock.adjust', 'purchases.create', 'products.create'),
+  validate(QuickStockSchema),
+  controller.quickStock
 );
 
 // ─── 4. Purchases (Stock-In) Router ──────────────────────────────────────────

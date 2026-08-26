@@ -182,6 +182,37 @@ export const getProductInventory = async (req: Request, res: Response, next: Nex
   }
 };
 
+export const quickStock = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id || 'system';
+    const data = await inventoryService.quickStock(req.body, userId);
+
+    clearResponseCache('cache:*inventory*');
+    clearResponseCache('cache:*products*');
+
+    logAdminAction({
+      userId,
+      action: 'STOCK_QUICK_ENTRY',
+      entity: 'INVENTORY',
+      entityId: data.inventory.id,
+      entityName: `${data.product.name} (${data.product.sku})`,
+      details: `Quick registered SKU '${data.product.sku}' with initial +${req.body.quantity} units stock in branch.`,
+      severity: 'SUCCESS',
+      metadata: {
+        sku: data.product.sku,
+        name: data.product.name,
+        branchId: req.body.branchId,
+        quantity: req.body.quantity,
+      },
+      req,
+    });
+
+    sendSuccess(res, data, 'Product SKU & stock entry recorded successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ─── 4. Purchases (Stock-In) Controllers ─────────────────────────────────────
 
 export const listPurchases = async (req: Request, res: Response, next: NextFunction) => {

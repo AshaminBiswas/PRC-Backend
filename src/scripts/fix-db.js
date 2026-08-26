@@ -846,165 +846,256 @@ const STATEMENTS = [
     "address" TEXT,
     "city" TEXT,
     "state" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deletedAt" TIMESTAMP(3),
     "deleted_at" TIMESTAMP(3)
   )`,
+  `ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "branches" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)`,
   `CREATE INDEX IF NOT EXISTS "branches_code_idx" ON "branches"("code")`,
-  `CREATE INDEX IF NOT EXISTS "branches_is_active_idx" ON "branches"("is_active")`,
-  `CREATE INDEX IF NOT EXISTS "branches_deleted_at_idx" ON "branches"("deleted_at")`,
+  `CREATE INDEX IF NOT EXISTS "branches_is_active_idx" ON "branches"("isActive")`,
 
   // Suppliers table
   `CREATE TABLE IF NOT EXISTS "suppliers" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
+    "contactPerson" TEXT,
     "contact_person" TEXT,
     "phone" TEXT,
     "email" TEXT,
     "address" TEXT,
+    "gstNumber" TEXT,
     "gst_number" TEXT,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deletedAt" TIMESTAMP(3),
     "deleted_at" TIMESTAMP(3)
   )`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "contactPerson" TEXT`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "gstNumber" TEXT`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)`,
   `CREATE INDEX IF NOT EXISTS "suppliers_name_idx" ON "suppliers"("name")`,
-  `CREATE INDEX IF NOT EXISTS "suppliers_is_active_idx" ON "suppliers"("is_active")`,
-  `CREATE INDEX IF NOT EXISTS "suppliers_deleted_at_idx" ON "suppliers"("deleted_at")`,
+  `CREATE INDEX IF NOT EXISTS "suppliers_is_active_idx" ON "suppliers"("isActive")`,
 
   // Inventories table
   `CREATE TABLE IF NOT EXISTS "inventories" (
     "id" TEXT NOT NULL PRIMARY KEY,
+    "productId" TEXT NOT NULL,
     "product_id" TEXT NOT NULL,
+    "branchId" TEXT NOT NULL,
     "branch_id" TEXT NOT NULL,
     "quantity" INTEGER NOT NULL DEFAULT 0,
+    "reservedQuantity" INTEGER NOT NULL DEFAULT 0,
     "reserved_quantity" INTEGER NOT NULL DEFAULT 0,
+    "reorderLevel" INTEGER NOT NULL DEFAULT 10,
     "reorder_level" INTEGER NOT NULL DEFAULT 10,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "inventories_product_branch_unique" UNIQUE ("product_id", "branch_id")
+    CONSTRAINT "inventories_productId_branchId_key" UNIQUE ("productId", "branchId")
   )`,
-  `CREATE INDEX IF NOT EXISTS "inventories_product_id_idx" ON "inventories"("product_id")`,
-  `CREATE INDEX IF NOT EXISTS "inventories_branch_id_idx" ON "inventories"("branch_id")`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "productId" TEXT`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "branchId" TEXT`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "reservedQuantity" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "reorderLevel" INTEGER NOT NULL DEFAULT 10`,
+  `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `CREATE INDEX IF NOT EXISTS "inventories_productId_idx" ON "inventories"("productId")`,
+  `CREATE INDEX IF NOT EXISTS "inventories_branchId_idx" ON "inventories"("branchId")`,
 
   // Purchases table
   `CREATE TABLE IF NOT EXISTS "purchases" (
     "id" TEXT NOT NULL PRIMARY KEY,
+    "branchId" TEXT NOT NULL,
     "branch_id" TEXT NOT NULL,
+    "supplierId" TEXT NOT NULL,
     "supplier_id" TEXT NOT NULL,
+    "invoiceNumber" TEXT,
     "invoice_number" TEXT,
+    "purchaseDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "purchase_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "totalAmount" DECIMAL(12,2) NOT NULL DEFAULT 0,
     "total_amount" DECIMAL(12,2) NOT NULL DEFAULT 0,
     "notes" TEXT,
+    "createdById" TEXT NOT NULL,
     "created_by_id" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
-  `CREATE INDEX IF NOT EXISTS "purchases_branch_id_idx" ON "purchases"("branch_id")`,
-  `CREATE INDEX IF NOT EXISTS "purchases_supplier_id_idx" ON "purchases"("supplier_id")`,
-  `CREATE INDEX IF NOT EXISTS "purchases_purchase_date_idx" ON "purchases"("purchase_date")`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "branchId" TEXT`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "supplierId" TEXT`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "invoiceNumber" TEXT`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "purchaseDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "totalAmount" DECIMAL(12,2) NOT NULL DEFAULT 0`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "createdById" TEXT`,
+  `ALTER TABLE "purchases" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `CREATE INDEX IF NOT EXISTS "purchases_branchId_idx" ON "purchases"("branchId")`,
+  `CREATE INDEX IF NOT EXISTS "purchases_supplierId_idx" ON "purchases"("supplierId")`,
 
   // Purchase Items table
   `CREATE TABLE IF NOT EXISTS "purchase_items" (
     "id" TEXT NOT NULL PRIMARY KEY,
+    "purchaseId" TEXT NOT NULL,
     "purchase_id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
     "product_id" TEXT NOT NULL,
     "quantity" INTEGER NOT NULL,
+    "unitPurchasePrice" DECIMAL(12,2) NOT NULL DEFAULT 0,
     "unit_purchase_price" DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "totalPrice" DECIMAL(12,2) NOT NULL DEFAULT 0,
     "total_price" DECIMAL(12,2) NOT NULL DEFAULT 0
   )`,
-  `CREATE INDEX IF NOT EXISTS "purchase_items_purchase_id_idx" ON "purchase_items"("purchase_id")`,
-  `CREATE INDEX IF NOT EXISTS "purchase_items_product_id_idx" ON "purchase_items"("product_id")`,
+  `ALTER TABLE "purchase_items" ADD COLUMN IF NOT EXISTS "purchaseId" TEXT`,
+  `ALTER TABLE "purchase_items" ADD COLUMN IF NOT EXISTS "productId" TEXT`,
+  `ALTER TABLE "purchase_items" ADD COLUMN IF NOT EXISTS "unitPurchasePrice" DECIMAL(12,2) NOT NULL DEFAULT 0`,
+  `ALTER TABLE "purchase_items" ADD COLUMN IF NOT EXISTS "totalPrice" DECIMAL(12,2) NOT NULL DEFAULT 0`,
+  `CREATE INDEX IF NOT EXISTS "purchase_items_purchaseId_idx" ON "purchase_items"("purchaseId")`,
+  `CREATE INDEX IF NOT EXISTS "purchase_items_productId_idx" ON "purchase_items"("productId")`,
 
   // Stock Transfers table
   `CREATE TABLE IF NOT EXISTS "stock_transfers" (
     "id" TEXT NOT NULL PRIMARY KEY,
+    "fromBranchId" TEXT NOT NULL,
     "from_branch_id" TEXT NOT NULL,
+    "toBranchId" TEXT NOT NULL,
     "to_branch_id" TEXT NOT NULL,
     "status" "TransferStatus" NOT NULL DEFAULT 'PENDING',
+    "requestedById" TEXT NOT NULL,
     "requested_by_id" TEXT NOT NULL,
+    "approvedById" TEXT,
     "approved_by_id" TEXT,
+    "receivedById" TEXT,
     "received_by_id" TEXT,
     "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "dispatchedAt" TIMESTAMP(3),
     "dispatched_at" TIMESTAMP(3),
+    "receivedAt" TIMESTAMP(3),
     "received_at" TIMESTAMP(3)
   )`,
-  `CREATE INDEX IF NOT EXISTS "stock_transfers_from_branch_id_idx" ON "stock_transfers"("from_branch_id")`,
-  `CREATE INDEX IF NOT EXISTS "stock_transfers_to_branch_id_idx" ON "stock_transfers"("to_branch_id")`,
-  `CREATE INDEX IF NOT EXISTS "stock_transfers_status_idx" ON "stock_transfers"("status")`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "fromBranchId" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "toBranchId" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "requestedById" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "approvedById" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "receivedById" TEXT`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "dispatchedAt" TIMESTAMP(3)`,
+  `ALTER TABLE "stock_transfers" ADD COLUMN IF NOT EXISTS "receivedAt" TIMESTAMP(3)`,
+  `CREATE INDEX IF NOT EXISTS "stock_transfers_fromBranchId_idx" ON "stock_transfers"("fromBranchId")`,
+  `CREATE INDEX IF NOT EXISTS "stock_transfers_toBranchId_idx" ON "stock_transfers"("toBranchId")`,
 
   // Stock Transfer Items table
   `CREATE TABLE IF NOT EXISTS "stock_transfer_items" (
     "id" TEXT NOT NULL PRIMARY KEY,
+    "transferId" TEXT NOT NULL,
     "transfer_id" TEXT NOT NULL,
+    "productId" TEXT NOT NULL,
     "product_id" TEXT NOT NULL,
     "quantity" INTEGER NOT NULL
   )`,
-  `CREATE INDEX IF NOT EXISTS "stock_transfer_items_transfer_id_idx" ON "stock_transfer_items"("transfer_id")`,
-  `CREATE INDEX IF NOT EXISTS "stock_transfer_items_product_id_idx" ON "stock_transfer_items"("product_id")`,
+  `ALTER TABLE "stock_transfer_items" ADD COLUMN IF NOT EXISTS "transferId" TEXT`,
+  `ALTER TABLE "stock_transfer_items" ADD COLUMN IF NOT EXISTS "productId" TEXT`,
+  `CREATE INDEX IF NOT EXISTS "stock_transfer_items_transferId_idx" ON "stock_transfer_items"("transferId")`,
+  `CREATE INDEX IF NOT EXISTS "stock_transfer_items_productId_idx" ON "stock_transfer_items"("productId")`,
 
   // Stock Movements ledger table
   `CREATE TABLE IF NOT EXISTS "stock_movements" (
     "id" TEXT NOT NULL PRIMARY KEY,
+    "productId" TEXT NOT NULL,
     "product_id" TEXT NOT NULL,
+    "branchId" TEXT NOT NULL,
     "branch_id" TEXT NOT NULL,
     "type" "StockMovementType" NOT NULL,
     "quantity" INTEGER NOT NULL,
+    "previousQty" INTEGER NOT NULL DEFAULT 0,
     "previous_qty" INTEGER NOT NULL DEFAULT 0,
+    "newQty" INTEGER NOT NULL DEFAULT 0,
     "new_qty" INTEGER NOT NULL DEFAULT 0,
+    "referenceType" TEXT,
     "reference_type" TEXT,
+    "referenceId" TEXT,
     "reference_id" TEXT,
     "notes" TEXT,
+    "performedById" TEXT NOT NULL,
     "performed_by_id" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
-  `CREATE INDEX IF NOT EXISTS "stock_movements_product_branch_idx" ON "stock_movements"("product_id", "branch_id")`,
-  `CREATE INDEX IF NOT EXISTS "stock_movements_created_at_idx" ON "stock_movements"("created_at")`,
-  `CREATE INDEX IF NOT EXISTS "stock_movements_ref_idx" ON "stock_movements"("reference_type", "reference_id")`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "productId" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "branchId" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "previousQty" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "newQty" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "referenceType" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "referenceId" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "performedById" TEXT`,
+  `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `CREATE INDEX IF NOT EXISTS "stock_movements_product_branch_idx" ON "stock_movements"("productId", "branchId")`,
 
   // Seed Default Branches (Delhi HQ & Kolkata)
-  `INSERT INTO "branches" ("id", "name", "code", "address", "city", "state", "is_active", "created_at", "updated_at")
+  `INSERT INTO "branches" ("id", "name", "code", "address", "city", "state", "isActive", "is_active", "createdAt", "created_at", "updatedAt", "updated_at")
    VALUES
-     ('b1000000-0000-0000-0000-000000000001', 'Delhi HQ', 'DEL', 'Pacific Hardware HQ, Mayapuri Industrial Area Phase II', 'New Delhi', 'Delhi', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-     ('b2000000-0000-0000-0000-000000000002', 'Kolkata Branch', 'KOL', 'PRC Hardware Depot, Topsia Road', 'Kolkata', 'West Bengal', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ('b1000000-0000-0000-0000-000000000001', 'Delhi HQ', 'DEL', 'Pacific Hardware HQ, Mayapuri Industrial Area Phase II', 'New Delhi', 'Delhi', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+     ('b2000000-0000-0000-0000-000000000002', 'Kolkata Branch', 'KOL', 'PRC Hardware Depot, Topsia Road', 'Kolkata', 'West Bengal', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
    ON CONFLICT ("code") DO UPDATE SET
      "name" = EXCLUDED."name",
      "address" = EXCLUDED."address",
      "city" = EXCLUDED."city",
      "state" = EXCLUDED."state",
-     "is_active" = EXCLUDED."is_active"`,
+     "isActive" = true,
+     "is_active" = true`,
 
-  // Backfill Inventory records for all existing products across Delhi HQ (with current product.stock) and Kolkata (with 0)
+  // Backfill Inventory records for all existing products across Delhi HQ and Kolkata
   `DO $$
   DECLARE
     del_id TEXT := 'b1000000-0000-0000-0000-000000000001';
     kol_id TEXT := 'b2000000-0000-0000-0000-000000000002';
   BEGIN
-    -- Delhi HQ Inventory backfill
-    INSERT INTO "inventories" ("id", "product_id", "branch_id", "quantity", "reserved_quantity", "reorder_level", "updated_at")
+    INSERT INTO "inventories" ("id", "productId", "product_id", "branchId", "branch_id", "quantity", "reservedQuantity", "reserved_quantity", "reorderLevel", "reorder_level", "updatedAt", "updated_at")
     SELECT
       md5(random()::text || clock_timestamp()::text)::text,
       p."id",
+      p."id",
+      del_id,
       del_id,
       COALESCE(p."stock", 0),
       0,
+      0,
       COALESCE(p."reorderLevel", 10),
+      COALESCE(p."reorderLevel", 10),
+      CURRENT_TIMESTAMP,
       CURRENT_TIMESTAMP
     FROM "products" p
-    ON CONFLICT ("product_id", "branch_id") DO NOTHING;
+    ON CONFLICT ("productId", "branchId") DO NOTHING;
 
-    -- Kolkata Inventory backfill
-    INSERT INTO "inventories" ("id", "product_id", "branch_id", "quantity", "reserved_quantity", "reorder_level", "updated_at")
+    INSERT INTO "inventories" ("id", "productId", "product_id", "branchId", "branch_id", "quantity", "reservedQuantity", "reserved_quantity", "reorderLevel", "reorder_level", "updatedAt", "updated_at")
     SELECT
       md5(random()::text || clock_timestamp()::text)::text,
       p."id",
+      p."id",
+      kol_id,
       kol_id,
       0,
       0,
+      0,
       COALESCE(p."reorderLevel", 10),
+      COALESCE(p."reorderLevel", 10),
+      CURRENT_TIMESTAMP,
       CURRENT_TIMESTAMP
     FROM "products" p
-    ON CONFLICT ("product_id", "branch_id") DO NOTHING;
+    ON CONFLICT ("productId", "branchId") DO NOTHING;
   END $$`,
 ];
 

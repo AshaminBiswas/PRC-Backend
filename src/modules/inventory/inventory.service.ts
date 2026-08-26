@@ -17,6 +17,7 @@ import type {
   ListStockTransfersQuery,
   CreateStockAdjustmentInput,
   ListStockMovementsQuery,
+  QuickStockInput,
 } from './inventory.schema';
 
 // ─── Single Source of Truth: Stock Status Utility ────────────────────────────
@@ -502,7 +503,7 @@ export const createPurchase = async (input: CreatePurchaseInput, userId: string)
     if (!branch) throw new AppError('BAD_REQUEST', 'Invalid or inactive destination branch', 400);
     if (!supplier) throw new AppError('BAD_REQUEST', 'Invalid or inactive supplier', 400);
 
-    // 2. Calculate total
+    // 2. Resolve line items & products
     let grandTotal = new Prisma.Decimal(0);
     const itemRecords: Array<{
       productId: string;
@@ -510,17 +511,57 @@ export const createPurchase = async (input: CreatePurchaseInput, userId: string)
       unitPurchasePrice: Prisma.Decimal;
       totalPrice: Prisma.Decimal;
     }> = [];
+    const resolvedItems: Array<{
+      productId: string;
+      quantity: number;
+    }> = [];
 
     for (const it of input.items) {
+      let resolvedProductId = it.productId;
+
+      if (!resolvedProductId && it.sku) {
+        const skuUpper = it.sku.trim().toUpperCase();
+        let prod = await tx.product.findUnique({
+          where: { sku: skuUpper },
+        });
+
+        if (!prod && it.name) {
+          const slug = `${it.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString().slice(-4)}`;
+          prod = await tx.product.create({
+            data: {
+              name: it.name.trim(),
+              sku: skuUpper,
+              slug,
+              price: new Prisma.Decimal(it.unitPurchasePrice || 0),
+              stock: 0,
+              status: 'ACTIVE',
+            },
+          });
+        }
+
+        if (prod) {
+          resolvedProductId = prod.id;
+        }
+      }
+
+      if (!resolvedProductId) {
+        throw new AppError('BAD_REQUEST', `Cannot identify or create product for item: ${it.sku || 'N/A'}`, 400);
+      }
+
       const unitPrice = new Prisma.Decimal(it.unitPurchasePrice);
       const lineTotal = unitPrice.mul(it.quantity);
       grandTotal = grandTotal.add(lineTotal);
 
       itemRecords.push({
-        productId: it.productId,
+        productId: resolvedProductId,
         quantity: it.quantity,
         unitPurchasePrice: unitPrice,
         totalPrice: lineTotal,
+      });
+
+      resolvedItems.push({
+        productId: resolvedProductId,
+        quantity: it.quantity,
       });
     }
 
@@ -546,7 +587,7 @@ export const createPurchase = async (input: CreatePurchaseInput, userId: string)
     });
 
     // 4. Update Inventory + Record Stock Movements atomically
-    for (const item of input.items) {
+    for (const item of resolvedItems) {
       // Find or create inventory row
       let inv = await tx.inventory.findUnique({
         where: {
@@ -598,6 +639,115 @@ export const createPurchase = async (input: CreatePurchaseInput, userId: string)
     }
 
     return purchase;
+  });
+};
+
+// ─── 4b. Quick Stock Entry (Direct SKU & Initial Quantity Registration) ──────
+
+export const quickStock = async (input: QuickStockInput, userId: string) => {
+  return prisma.$transaction(async (tx) => {
+    // 1. Verify branch (support PRC_STOCK master / central alias)
+    const isPrcStockAlias = input.branchId === 'PRC_STOCK' || input.branchId === 'GLOBAL' || input.branchId === 'CENTRAL';
+    const branch = await tx.branch.findFirst({
+      where: isPrcStockAlias
+        ? { deletedAt: null, isActive: true }
+        : { id: input.branchId, deletedAt: null },
+      orderBy: { code: 'asc' },
+    });
+    if (!branch) {
+      throw new AppError('BAD_REQUEST', 'Fulfillment facility or PRC Stock destination not found', 400);
+    }
+
+    const targetBranchId = branch.id;
+    const skuUpper = input.sku.trim().toUpperCase();
+
+    // 2. Find or create product
+    let product = await tx.product.findUnique({
+      where: { sku: skuUpper },
+    });
+
+    if (!product) {
+      const slug = `${input.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString().slice(-4)}`;
+      const priceVal = input.sellingPrice ?? (input.unitCost ? input.unitCost * 1.3 : 0);
+
+      product = await tx.product.create({
+        data: {
+          name: input.name.trim(),
+          sku: skuUpper,
+          slug,
+          price: new Prisma.Decimal(priceVal),
+          reorderLevel: input.reorderLevel || 10,
+          categoryId: input.categoryId || null,
+          stock: 0,
+          status: 'ACTIVE',
+        },
+      });
+    } else {
+      if (input.reorderLevel) {
+        await tx.product.update({
+          where: { id: product.id },
+          data: { reorderLevel: input.reorderLevel },
+        });
+      }
+    }
+
+    // 3. Update or create branch inventory
+    let inv = await tx.inventory.findUnique({
+      where: {
+        productId_branchId: {
+          productId: product.id,
+          branchId: targetBranchId,
+        },
+      },
+    });
+
+    const prevQty = inv ? inv.quantity : 0;
+    const newQty = prevQty + input.quantity;
+
+    if (!inv) {
+      inv = await tx.inventory.create({
+        data: {
+          productId: product.id,
+          branchId: targetBranchId,
+          quantity: newQty,
+          reservedQuantity: 0,
+          reorderLevel: input.reorderLevel || product.reorderLevel || 10,
+        },
+      });
+    } else {
+      inv = await tx.inventory.update({
+        where: { id: inv.id },
+        data: {
+          quantity: newQty,
+          ...(input.reorderLevel ? { reorderLevel: input.reorderLevel } : {}),
+        },
+      });
+    }
+
+    // 4. Log movement
+    const movement = await tx.stockMovement.create({
+      data: {
+        productId: product.id,
+        branchId: targetBranchId,
+        type: StockMovementType.PURCHASE_IN,
+        quantity: input.quantity,
+        previousQty: prevQty,
+        newQty,
+        referenceType: 'QUICK_STOCK_ENTRY',
+        referenceId: `QUICK-${Date.now().toString().slice(-6)}`,
+        notes: input.notes || `Initial quick stock registration: +${input.quantity} units (Destination: ${branch.name})`,
+        performedById: userId,
+      },
+    });
+
+    // 5. Sync total catalog stock
+    const totalStock = await syncProductStock(product.id, tx);
+
+    return {
+      product: { ...product, stock: totalStock },
+      inventory: inv,
+      movement,
+    };
   });
 };
 

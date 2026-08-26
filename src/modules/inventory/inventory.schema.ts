@@ -58,7 +58,9 @@ export const ListInventoryQuerySchema = z.object({
 // ─── Purchases (Stock-In) ────────────────────────────────────────────────────
 
 export const CreatePurchaseItemSchema = z.object({
-  productId: z.string().min(1, 'Product ID is required'),
+  productId: z.string().optional(),
+  sku: z.string().optional(),
+  name: z.string().optional(),
   quantity: z.number().int().min(1, 'Quantity must be at least 1'),
   unitPurchasePrice: z.number().min(0, 'Purchase price must be positive'),
 });
@@ -70,6 +72,20 @@ export const CreatePurchaseSchema = z.object({
   purchaseDate: z.string().optional(),
   notes: z.string().optional(),
   items: z.array(CreatePurchaseItemSchema).min(1, 'At least one item is required'),
+});
+
+// ─── Quick Stock (Add New SKU & Initial Stock Entry) ─────────────────────────
+
+export const QuickStockSchema = z.object({
+  sku: z.string().min(1, 'SKU is required').max(50),
+  name: z.string().min(1, 'Product Name is required').max(150),
+  branchId: z.string().min(1, 'Branch ID is required'),
+  quantity: z.number().int().min(1, 'Quantity must be at least 1'),
+  unitCost: z.number().min(0).optional().default(0),
+  sellingPrice: z.number().min(0).optional(),
+  reorderLevel: z.number().int().min(0).optional().default(10),
+  categoryId: z.string().optional(),
+  notes: z.string().optional(),
 });
 
 export const ListPurchasesQuerySchema = z.object({
@@ -203,4 +219,5 @@ export type InventoryReportQuery = z.infer<typeof InventoryReportQuerySchema>;
 
 export type CreateSaleItemInput = z.infer<typeof CreateSaleItemSchema>;
 export type CreateSaleInput = z.infer<typeof CreateSaleSchema>;
+export type QuickStockInput = z.infer<typeof QuickStockSchema>;
 
