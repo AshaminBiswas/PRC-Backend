@@ -458,3 +458,42 @@ export const exportMovementsReport = async (req: Request, res: Response, next: N
     next(error);
   }
 };
+
+// ─── 9. Record Direct / Manual Sale Controller ────────────────────────────────
+
+export const recordSale = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id || 'system';
+    const { items, referenceId, referenceType, notes } = req.body;
+
+    const data = await inventoryService.recordSale(
+      items,
+      {
+        referenceId,
+        referenceType: referenceType || 'MANUAL_SALE',
+        notes,
+        userId,
+      }
+    );
+
+    clearResponseCache('cache:*inventory*');
+    clearResponseCache('cache:*products*');
+
+    logAdminAction({
+      userId,
+      action: 'SALE_RECORDED',
+      entity: 'INVENTORY',
+      entityId: referenceId,
+      entityName: `Sale ${referenceId}`,
+      details: `Recorded direct sale of ${items.length} items with reference #${referenceId}.`,
+      severity: 'INFO',
+      metadata: { items, referenceId, referenceType },
+      req,
+    });
+
+    sendSuccess(res, data, 'Sale recorded and inventory decremented successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};
+

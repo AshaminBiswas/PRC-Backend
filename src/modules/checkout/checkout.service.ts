@@ -3,6 +3,7 @@ import { AppError } from '../../middleware/error.middleware';
 import * as cartService from '../cart/cart.service';
 import * as shippingService from '../shipping/shipping.service';
 import { allocateWarehouseForOrder } from '../allocation/allocation.service';
+import { recordSale } from '../inventory/inventory.service';
 import type { GetShippingRatesInput, PlaceOrderInput } from './checkout.schema';
 import type { Prisma } from '@prisma/client';
 
@@ -341,7 +342,41 @@ export const placeOrder = async (userId: string, input: PlaceOrderInput) => {
       });
     }
 
-    // 5b. Variant Stock Sync & Stock Re-verification inside transaction
+    // 5b. Resolve Fulfilling Branch Facility for Multi-Branch Inventory
+    let fulfillingBranchId: string;
+    if (allocatedWarehouseId) {
+      const wh = await tx.warehouse.findUnique({
+        where: { id: allocatedWarehouseId },
+        select: { code: true, city: true },
+      });
+      const matchedBranch = await tx.branch.findFirst({
+        where: {
+          deletedAt: null,
+          isActive: true,
+          OR: [
+            { code: wh?.code },
+            { city: wh?.city ? { contains: wh.city, mode: 'insensitive' } : undefined },
+          ].filter(Boolean) as any,
+        },
+      });
+      if (matchedBranch) {
+        fulfillingBranchId = matchedBranch.id;
+      } else {
+        const defaultBranch = await tx.branch.findFirst({
+          where: { deletedAt: null, isActive: true },
+          orderBy: { code: 'asc' },
+        });
+        fulfillingBranchId = defaultBranch?.id || 'b1000000-0000-0000-0000-000000000001';
+      }
+    } else {
+      const defaultBranch = await tx.branch.findFirst({
+        where: { deletedAt: null, isActive: true },
+        orderBy: { code: 'asc' },
+      });
+      fulfillingBranchId = defaultBranch?.id || 'b1000000-0000-0000-0000-000000000001';
+    }
+
+    // 5c. Create Order Line Items & Variant Stock Sync inside transaction
     for (const item of cart.items) {
       const dbProduct = await tx.product.findUnique({
         where: { id: item.productId },
@@ -368,14 +403,6 @@ export const placeOrder = async (userId: string, input: PlaceOrderInput) => {
           );
         }
 
-        if (dbProduct.stock < item.quantity) {
-          throw new AppError(
-            'BAD_REQUEST',
-            `Insufficient stock for "${item.product.name}". Available: ${dbProduct.stock}`,
-            400
-          );
-        }
-
         const unitPrice = dbVariant.salePrice ? Number(dbVariant.salePrice) : Number(dbVariant.price);
         const totalItemPrice = Number((unitPrice * item.quantity).toFixed(2));
 
@@ -396,20 +423,7 @@ export const placeOrder = async (userId: string, input: PlaceOrderInput) => {
           where: { id: item.variantId },
           data: { stock: { decrement: item.quantity } },
         });
-
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
-        });
       } else {
-        if (dbProduct.stock < item.quantity) {
-          throw new AppError(
-            'BAD_REQUEST',
-            `Insufficient stock for "${item.product.name}". Available: ${dbProduct.stock}`,
-            400
-          );
-        }
-
         const unitPrice = dbProduct.salePrice ? Number(dbProduct.salePrice) : Number(dbProduct.price);
         const totalItemPrice = Number((unitPrice * item.quantity).toFixed(2));
 
@@ -424,13 +438,26 @@ export const placeOrder = async (userId: string, input: PlaceOrderInput) => {
             total: totalItemPrice,
           },
         });
-
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { decrement: item.quantity } },
-        });
       }
     }
+
+    // 5d. Atomic Branch Inventory Sale Deduction & Immutable Ledger (SALE_OUT)
+    const saleItems = cart.items.map((it) => ({
+      productId: it.productId,
+      branchId: fulfillingBranchId,
+      quantity: it.quantity,
+    }));
+
+    await recordSale(
+      saleItems,
+      {
+        referenceId: order.orderNumber,
+        referenceType: 'ORDER',
+        notes: `E-commerce checkout order #${order.orderNumber}`,
+        userId,
+      },
+      tx
+    );
 
     await tx.orderStatusHistory.create({
       data: {
@@ -488,6 +515,13 @@ export const placeOrder = async (userId: string, input: PlaceOrderInput) => {
   } catch (e: any) {
     console.error('[Checkout EventBus Error]:', e.message);
   }
+
+  try {
+    const { clearResponseCache } = await import('../../middleware/cache.middleware');
+    clearResponseCache('cache:*products*');
+    clearResponseCache('cache:*inventory*');
+    clearResponseCache('cache:*orders*');
+  } catch {}
 
   return {
     ...fullOrder,

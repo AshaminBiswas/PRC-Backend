@@ -164,6 +164,21 @@ export const InventoryReportQuerySchema = z.object({
   format: z.enum(['xlsx', 'pdf', 'json']).default('xlsx'),
 });
 
+// ─── Manual / POS Sales (Stock-Out) ──────────────────────────────────────────
+
+export const CreateSaleItemSchema = z.object({
+  productId: z.string().min(1, 'Product ID is required'),
+  branchId: z.string().min(1, 'Branch ID is required'),
+  quantity: z.number().int().min(1, 'Quantity must be at least 1'),
+});
+
+export const CreateSaleSchema = z.object({
+  referenceId: z.string().min(1, 'Reference ID or receipt number is required'),
+  referenceType: z.string().optional().default('WALK_IN_SALE'),
+  notes: z.string().optional(),
+  items: z.array(CreateSaleItemSchema).min(1, 'At least one sale item is required'),
+});
+
 // ─── Type Exports ────────────────────────────────────────────────────────────
 
 export type ListBranchesQuery = z.infer<typeof ListBranchesQuerySchema>;
@@ -185,3 +200,7 @@ export type TransferActionInput = z.infer<typeof TransferActionSchema>;
 export type CreateStockAdjustmentInput = z.infer<typeof CreateStockAdjustmentSchema>;
 export type ListStockMovementsQuery = z.infer<typeof ListStockMovementsQuerySchema>;
 export type InventoryReportQuery = z.infer<typeof InventoryReportQuerySchema>;
+
+export type CreateSaleItemInput = z.infer<typeof CreateSaleItemSchema>;
+export type CreateSaleInput = z.infer<typeof CreateSaleSchema>;
+

@@ -3,6 +3,7 @@ import { AppError } from '../../middleware/error.middleware';
 import { buildPagination, getPaginationParams } from '../../utils/response';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { createInvoice as createInvoiceService } from '../invoices/invoices.service';
+import { recordRestock } from '../inventory/inventory.service';
 import type { ListOrdersQuery } from './orders.schema';
 
 interface UserContext {
@@ -273,28 +274,57 @@ export const generateInvoice = async (id: string, user: UserContext) => {
   return newInvoice;
 };
 
-const restockOrderItems = async (items: any[], tx: any, userId: string, reason: string) => {
-  const stockPromises = items.map(async (item) => {
+const restockOrderItems = async (order: any, tx: any, userId: string, reason: string) => {
+  // 1. Restore variant stock if applicable
+  for (const item of order.items || []) {
     if (item.variantId) {
       await tx.productVariant.update({
         where: { id: item.variantId },
         data: { stock: { increment: item.quantity } },
       });
-      if (item.productId) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        });
-      }
-    } else if (item.productId) {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { stock: { increment: item.quantity } },
-      });
     }
-  });
+  }
 
-  await Promise.all(stockPromises);
+  // 2. Resolve fulfilling branch
+  let branchId = 'b1000000-0000-0000-0000-000000000001';
+  if (order.allocatedWarehouseId) {
+    const wh = await tx.warehouse.findUnique({
+      where: { id: order.allocatedWarehouseId },
+      select: { code: true, city: true },
+    });
+    const matchedBranch = await tx.branch.findFirst({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        OR: [
+          { code: wh?.code },
+          { city: wh?.city ? { contains: wh.city, mode: 'insensitive' } : undefined },
+        ].filter(Boolean) as any,
+      },
+    });
+    if (matchedBranch) branchId = matchedBranch.id;
+  }
+
+  const restockItems = (order.items || [])
+    .filter((item: any) => item.productId)
+    .map((item: any) => ({
+      productId: item.productId,
+      branchId,
+      quantity: item.quantity,
+    }));
+
+  if (restockItems.length > 0) {
+    await recordRestock(
+      restockItems,
+      {
+        referenceId: order.orderNumber,
+        referenceType: 'ORDER_CANCEL',
+        reason: reason || `Restocked from cancelled order #${order.orderNumber}`,
+        userId,
+      },
+      tx
+    );
+  }
 };
 
 export const cancelOrder = async (id: string, user: UserContext, reason: string) => {
@@ -302,7 +332,7 @@ export const cancelOrder = async (id: string, user: UserContext, reason: string)
     throw new AppError('BAD_REQUEST', 'Cancellation reason is required', 400);
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id },
       select: {
@@ -310,6 +340,7 @@ export const cancelOrder = async (id: string, user: UserContext, reason: string)
         userId: true,
         status: true,
         orderNumber: true,
+        allocatedWarehouseId: true,
         items: true,
       },
     });
@@ -351,10 +382,19 @@ export const cancelOrder = async (id: string, user: UserContext, reason: string)
       },
     });
 
-    await restockOrderItems(order.items, tx, user.id, cancelReason);
+    await restockOrderItems(order, tx, user.id, cancelReason);
 
     return formatOrder(updated);
   });
+
+  try {
+    const { clearResponseCache } = await import('../../middleware/cache.middleware');
+    clearResponseCache('cache:*products*');
+    clearResponseCache('cache:*inventory*');
+    clearResponseCache('cache:*orders*');
+  } catch {}
+
+  return result;
 };
 
 export const updateOrderStatus = async (
@@ -372,6 +412,7 @@ export const updateOrderStatus = async (
         id: true,
         status: true,
         orderNumber: true,
+        allocatedWarehouseId: true,
         items: true,
         userId: true,
       },
@@ -433,11 +474,18 @@ export const updateOrderStatus = async (
     });
 
     if (newStatus === OrderStatus.CANCELLED) {
-      await restockOrderItems(order.items, tx, user.id, comment || 'Cancelled by admin');
+      await restockOrderItems(order, tx, user.id, comment || 'Cancelled by admin');
     }
 
     return updated;
   });
+
+  try {
+    const { clearResponseCache } = await import('../../middleware/cache.middleware');
+    clearResponseCache('cache:*products*');
+    clearResponseCache('cache:*inventory*');
+    clearResponseCache('cache:*orders*');
+  } catch {}
 
   try {
     const { eventBus } = await import('../../events/eventBus');

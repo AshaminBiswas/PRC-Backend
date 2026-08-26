@@ -80,6 +80,16 @@ export interface PaymentFailedPayload {
   reason: string;
 }
 
+export interface InventoryLowStockPayload {
+  productId: string;
+  productName: string;
+  sku: string;
+  branchId: string;
+  branchName: string;
+  currentQuantity: number;
+  reorderLevel: number;
+}
+
 export type DomainEvents = {
   'order.created': OrderCreatedPayload;
   'order.status_changed': OrderStatusChangedPayload;
@@ -90,6 +100,7 @@ export type DomainEvents = {
   'system.alert': SystemAlertPayload;
   'enquiry.submitted': EnquirySubmittedPayload;
   'payment.failed': PaymentFailedPayload;
+  'inventory.low_stock': InventoryLowStockPayload;
 };
 
 // ─── Type-Safe Domain Event Bus ──────────────────────────────────────────────

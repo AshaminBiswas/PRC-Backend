@@ -19,6 +19,7 @@ import {
   CreateStockAdjustmentSchema,
   ListStockMovementsQuerySchema,
   InventoryReportQuerySchema,
+  CreateSaleSchema,
 } from './inventory.schema';
 
 // ─── 1. Branches Router ──────────────────────────────────────────────────────
@@ -114,6 +115,14 @@ inventoryRouter.get(
   authenticate,
   authorize('inventory.stock.read', 'inventory.view', 'products.read'),
   controller.getProductInventory
+);
+
+inventoryRouter.post(
+  '/sales',
+  authenticate,
+  authorize('inventory.stock.write', 'orders.create', 'sales.create', 'orders.manage'),
+  validate(CreateSaleSchema),
+  controller.recordSale
 );
 
 // ─── 4. Purchases (Stock-In) Router ──────────────────────────────────────────

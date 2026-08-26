@@ -19,6 +19,51 @@ import type {
   ListStockMovementsQuery,
 } from './inventory.schema';
 
+// ─── Single Source of Truth: Stock Status Utility ────────────────────────────
+
+export type StockStatusType = 'OUT_OF_STOCK' | 'LOW_STOCK' | 'IN_STOCK';
+
+export interface StockStatusResult {
+  status: StockStatusType;
+  label: string;
+  isLowStock: boolean;
+  isOutOfStock: boolean;
+  isInStock: boolean;
+}
+
+export const getStockStatus = (quantity: number, reorderLevel?: number | null): StockStatusResult => {
+  const threshold = (reorderLevel !== undefined && reorderLevel !== null && !isNaN(Number(reorderLevel))) ? Number(reorderLevel) : 10;
+  const qty = Number(quantity) || 0;
+
+  if (qty <= 0) {
+    return {
+      status: 'OUT_OF_STOCK',
+      label: 'Out of Stock',
+      isLowStock: false,
+      isOutOfStock: true,
+      isInStock: false,
+    };
+  }
+
+  if (qty <= threshold) {
+    return {
+      status: 'LOW_STOCK',
+      label: 'Low Stock',
+      isLowStock: true,
+      isOutOfStock: false,
+      isInStock: false,
+    };
+  }
+
+  return {
+    status: 'IN_STOCK',
+    label: 'In Stock',
+    isLowStock: false,
+    isOutOfStock: false,
+    isInStock: true,
+  };
+};
+
 // ─── Denormalized Product.stock Synchronization Helper ───────────────────────
 
 export const syncProductStock = async (productId: string, tx?: Prisma.TransactionClient): Promise<number> => {
@@ -292,10 +337,28 @@ export const listInventory = async (query: ListInventoryQuery) => {
     readPrisma.inventory.count({ where }),
   ]);
 
-  // Apply in-memory lowStock filter if requested
+  // Enrich with on-hand vs available and shared stock status
+  const enriched = rawInventory.map((item) => {
+    const onHand = item.quantity;
+    const reservedQuantity = item.reservedQuantity;
+    const availableQuantity = Math.max(0, onHand - reservedQuantity);
+    const stockHealth = getStockStatus(availableQuantity, item.reorderLevel || item.product.reorderLevel);
+
+    return {
+      ...item,
+      onHand,
+      availableQuantity,
+      stockStatus: stockHealth.status,
+      stockStatusLabel: stockHealth.label,
+      isLowStock: stockHealth.isLowStock,
+      isOutOfStock: stockHealth.isOutOfStock,
+    };
+  });
+
+  // Apply lowStock filter consistently with getStockStatus
   const data = query.lowStock
-    ? rawInventory.filter((item) => item.quantity <= (item.reorderLevel || item.product.reorderLevel || 10))
-    : rawInventory;
+    ? enriched.filter((item) => item.isLowStock || item.isOutOfStock)
+    : enriched;
 
   return {
     data,
@@ -327,14 +390,38 @@ export const getProductInventory = async (productId: string) => {
     orderBy: { branch: { code: 'asc' } },
   });
 
-  const totalAvailable = branchInventories.reduce((acc, curr) => acc + curr.quantity, 0);
+  const totalOnHand = branchInventories.reduce((acc, curr) => acc + curr.quantity, 0);
   const totalReserved = branchInventories.reduce((acc, curr) => acc + curr.reservedQuantity, 0);
+  const totalAvailable = Math.max(0, totalOnHand - totalReserved);
+  const stockHealth = getStockStatus(totalAvailable, product.reorderLevel);
+
+  const enrichedBranches = branchInventories.map((b) => {
+    const onHand = b.quantity;
+    const reservedQuantity = b.reservedQuantity;
+    const availableQuantity = Math.max(0, onHand - reservedQuantity);
+    const branchStatus = getStockStatus(availableQuantity, b.reorderLevel || product.reorderLevel);
+
+    return {
+      ...b,
+      onHand,
+      availableQuantity,
+      stockStatus: branchStatus.status,
+      stockStatusLabel: branchStatus.label,
+      isLowStock: branchStatus.isLowStock,
+      isOutOfStock: branchStatus.isOutOfStock,
+    };
+  });
 
   return {
-    product,
-    totalAvailable,
+    product: {
+      ...product,
+      stockStatus: stockHealth.status,
+      stockStatusLabel: stockHealth.label,
+    },
+    totalOnHand,
     totalReserved,
-    branches: branchInventories,
+    totalAvailable,
+    branches: enrichedBranches,
   };
 };
 
@@ -1035,3 +1122,221 @@ export const getMovementsReportData = async (branchId?: string, productId?: stri
     },
   });
 };
+
+// ─── 9. Sales & Restock Engine (Atomic Concurrency-Guarded Mutations) ────────
+
+export interface RecordSaleItem {
+  productId: string;
+  branchId: string;
+  quantity: number;
+}
+
+export interface RecordSaleOptions {
+  referenceId: string;
+  referenceType?: string;
+  notes?: string;
+  userId?: string;
+}
+
+export interface RecordRestockItem {
+  productId: string;
+  branchId: string;
+  quantity: number;
+}
+
+export interface RecordRestockOptions {
+  referenceId: string;
+  referenceType?: string;
+  reason?: string;
+  userId?: string;
+}
+
+export const recordSale = async (
+  items: RecordSaleItem[],
+  options: RecordSaleOptions,
+  tx?: Prisma.TransactionClient
+) => {
+  if (!items || items.length === 0) {
+    throw new AppError('BAD_REQUEST', 'At least one sale item is required', 400);
+  }
+
+  const execute = async (client: Prisma.TransactionClient) => {
+    const movements: any[] = [];
+
+    for (const item of items) {
+      const qty = Number(item.quantity);
+      if (qty <= 0) {
+        throw new AppError('BAD_REQUEST', `Invalid sale quantity ${qty} for product ${item.productId}`, 400);
+      }
+
+      // 1. Fetch current inventory to capture exact pre-sale quantity for audit ledger
+      const currentInv = await client.inventory.findUnique({
+        where: {
+          productId_branchId: {
+            productId: item.productId,
+            branchId: item.branchId,
+          },
+        },
+        include: {
+          product: { select: { name: true, sku: true, reorderLevel: true } },
+          branch: { select: { name: true, code: true } },
+        },
+      });
+
+      if (!currentInv) {
+        throw new AppError(
+          'NOT_FOUND',
+          `Inventory record not found for product ${item.productId} at branch ${item.branchId}`,
+          404
+        );
+      }
+
+      const availableToSell = currentInv.quantity - currentInv.reservedQuantity;
+      if (availableToSell < qty) {
+        throw new AppError(
+          'INSUFFICIENT_STOCK',
+          `Insufficient available stock for "${currentInv.product.name}" (${currentInv.product.sku}) at ${currentInv.branch.name}. Available: ${availableToSell}, Requested: ${qty}`,
+          409
+        );
+      }
+
+      // 2. Concurrency-guarded atomic decrement: guarantees quantity >= requested under racing parallel checkouts
+      const updateResult = await client.inventory.updateMany({
+        where: {
+          productId: item.productId,
+          branchId: item.branchId,
+          quantity: { gte: qty },
+        },
+        data: {
+          quantity: { decrement: qty },
+        },
+      });
+
+      if (updateResult.count === 0) {
+        throw new AppError(
+          'INSUFFICIENT_STOCK',
+          `Concurrent stock reservation conflict for "${currentInv.product.name}" at ${currentInv.branch.name}. Insufficient physical stock remaining.`,
+          409
+        );
+      }
+
+      const previousQuantity = currentInv.quantity;
+      const newQuantity = previousQuantity - qty;
+
+      // 3. Write immutable StockMovement audit ledger entry
+      const movement = await client.stockMovement.create({
+        data: {
+          productId: item.productId,
+          branchId: item.branchId,
+          type: StockMovementType.SALE_OUT,
+          quantity: qty,
+          previousQty: previousQuantity,
+          newQty: newQuantity,
+          referenceType: options.referenceType || 'ORDER',
+          referenceId: options.referenceId,
+          notes: options.notes || `Fulfilled customer order #${options.referenceId}`,
+          performedById: options.userId || 'system',
+        },
+      });
+      movements.push(movement);
+
+      // 4. Synchronize denormalized Product.stock catalog total
+      await syncProductStock(item.productId, client);
+
+      // 5. Emit low-stock alert event if threshold reached
+      const effectiveReorder = currentInv.reorderLevel || currentInv.product.reorderLevel || 10;
+      if (newQuantity <= effectiveReorder) {
+        eventBus.emitEvent('inventory.low_stock', {
+          productId: item.productId,
+          productName: currentInv.product.name,
+          sku: currentInv.product.sku,
+          branchId: item.branchId,
+          branchName: currentInv.branch.name,
+          currentQuantity: newQuantity,
+          reorderLevel: effectiveReorder,
+        });
+      }
+    }
+
+    return movements;
+  };
+
+  if (tx) {
+    return execute(tx);
+  } else {
+    return prisma.$transaction(execute);
+  }
+};
+
+export const recordRestock = async (
+  items: RecordRestockItem[],
+  options: RecordRestockOptions,
+  tx?: Prisma.TransactionClient
+) => {
+  if (!items || items.length === 0) return [];
+
+  const execute = async (client: Prisma.TransactionClient) => {
+    const movements: any[] = [];
+
+    for (const item of items) {
+      const qty = Number(item.quantity);
+      if (qty <= 0) continue;
+
+      const currentInv = await client.inventory.findUnique({
+        where: {
+          productId_branchId: {
+            productId: item.productId,
+            branchId: item.branchId,
+          },
+        },
+      });
+
+      const previousQuantity = currentInv?.quantity || 0;
+      const newQuantity = previousQuantity + qty;
+
+      if (currentInv) {
+        await client.inventory.update({
+          where: { id: currentInv.id },
+          data: { quantity: { increment: qty } },
+        });
+      } else {
+        await client.inventory.create({
+          data: {
+            productId: item.productId,
+            branchId: item.branchId,
+            quantity: qty,
+            reservedQuantity: 0,
+            reorderLevel: 10,
+          },
+        });
+      }
+
+      const movement = await client.stockMovement.create({
+        data: {
+          productId: item.productId,
+          branchId: item.branchId,
+          type: StockMovementType.RETURN_IN,
+          quantity: qty,
+          previousQty: previousQuantity,
+          newQty: newQuantity,
+          referenceType: options.referenceType || 'ORDER_CANCEL',
+          referenceId: options.referenceId,
+          notes: options.reason || `Restocked from cancelled order #${options.referenceId}`,
+          performedById: options.userId || 'system',
+        },
+      });
+      movements.push(movement);
+
+      await syncProductStock(item.productId, client);
+    }
+
+    return movements;
+  };
+
+  if (tx) {
+    return execute(tx);
+  } else {
+    return prisma.$transaction(execute);
+  }
+};
+

@@ -18,6 +18,8 @@ try {
   console.warn('[Inventory PDF] Font initialization warning:', e?.message || e);
 }
 
+import { getStockStatus } from './inventory.service';
+
 // ─── Excel Reports Generator ──────────────────────────────────────────────────
 
 export const generateStockExcel = async (data: any[], branchName: string = 'All Branches'): Promise<Buffer> => {
@@ -75,7 +77,8 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
 
   // Table Rows
   data.forEach((row, index) => {
-    const isLow = row.quantity <= (row.reorderLevel || 10);
+    const availableQty = Math.max(0, (row.quantity || 0) - (row.reservedQuantity || 0));
+    const stockInfo = getStockStatus(availableQty, row.reorderLevel || row.product?.reorderLevel || 10);
     const r = worksheet.addRow([
       row.product?.sku || row.sku || 'N/A',
       row.product?.name || row.productName || 'N/A',
@@ -83,7 +86,7 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
       row.quantity,
       row.reservedQuantity || 0,
       row.reorderLevel || 10,
-      isLow ? 'LOW STOCK' : row.quantity === 0 ? 'OUT OF STOCK' : 'IN STOCK',
+      stockInfo.label.toUpperCase(),
     ]);
 
     r.height = 20;
@@ -107,8 +110,10 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
         cell.numFmt = '#,##0';
       } else if (colNumber === 7) {
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        if (isLow) {
+        if (stockInfo.isOutOfStock) {
           cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FFDC2626' } };
+        } else if (stockInfo.isLowStock) {
+          cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FFD97706' } };
         } else {
           cell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: 'FF16A34A' } };
         }
@@ -320,7 +325,8 @@ export const generateStockPdf = async (data: any[], branchName: string = 'All Br
     ];
 
     data.forEach((row, i) => {
-      const isLow = row.quantity <= (row.reorderLevel || 10);
+      const availableQty = Math.max(0, (row.quantity || 0) - (row.reservedQuantity || 0));
+      const stockInfo = getStockStatus(availableQty, row.reorderLevel || row.product?.reorderLevel || 10);
       const isEven = i % 2 === 0;
       const rowFill = isEven ? '#f8fafc' : '#ffffff';
 
@@ -332,11 +338,11 @@ export const generateStockPdf = async (data: any[], branchName: string = 'All Br
         { text: String(row.reservedQuantity || 0), fontSize: 8.5, alignment: 'right', fillColor: rowFill },
         { text: String(row.reorderLevel || 10), fontSize: 8.5, alignment: 'right', fillColor: rowFill },
         {
-          text: isLow ? 'LOW STOCK' : row.quantity === 0 ? 'OUT OF STOCK' : 'IN STOCK',
+          text: stockInfo.label.toUpperCase(),
           fontSize: 8,
           bold: true,
           alignment: 'center',
-          color: isLow ? '#dc2626' : '#16a34a',
+          color: stockInfo.isOutOfStock ? '#dc2626' : stockInfo.isLowStock ? '#d97706' : '#16a34a',
           fillColor: rowFill,
         },
       ]);
