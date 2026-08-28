@@ -204,7 +204,13 @@ app.options('*', cors());
 app.use(
   morgan(env.isDev ? 'dev' : 'combined', {
     stream: morganStream,
-    skip: (req) => req.url === '/health' || req.url === '/ready',
+    skip: (req) =>
+      req.url === '/health' ||
+      req.url === '/ready' ||
+      req.url === `${env.API_PREFIX}/health` ||
+      req.url === `${env.API_PREFIX}/ready` ||
+      req.url.endsWith('/health') ||
+      req.url.endsWith('/ready'),
   })
 );
 
@@ -230,12 +236,12 @@ app.get('/', (_req, res) => {
     version: '1.0.0',
     documentation: `${prefix}/docs-ui`,
     swaggerDocs: `${prefix}/docs`,
-    health: '/health',
+    health: `${prefix}/health`,
     status: 'ONLINE',
   });
 });
 
-app.get('/health', (_req, res) => {
+const handleHealth = (_req: express.Request, res: express.Response) => {
   res.json({
     success: true,
     message: 'PRC Hardware API is running',
@@ -244,16 +250,19 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     environment: env.NODE_ENV,
   });
-});
+};
 
-app.get('/ready', (_req, res) => {
+const handleReady = (_req: express.Request, res: express.Response) => {
   res.json({
     success: true,
     ready: true,
     instanceId: env.INSTANCE_ID,
     timestamp: new Date().toISOString(),
   });
-});
+};
+
+app.get(['/health', `${prefix}/health`], handleHealth);
+app.get(['/ready', `${prefix}/ready`], handleReady);
 
 // ─── Prometheus Metrics Endpoint ─────────────────────────────────────────────
 import { register, httpRequestDurationMicroseconds, httpRequestsTotal } from './config/metrics';
