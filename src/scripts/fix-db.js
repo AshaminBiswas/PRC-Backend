@@ -29,6 +29,34 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 
 const STATEMENTS = [
+  // ─── Projects table for Our Clients & Completed Projects ───────────────────
+  `CREATE TABLE IF NOT EXISTS "projects" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "client_name" TEXT NOT NULL,
+    "location" TEXT,
+    "city" TEXT NOT NULL,
+    "state" TEXT NOT NULL,
+    "region" TEXT,
+    "is_pan_india" BOOLEAN NOT NULL DEFAULT false,
+    "category" TEXT NOT NULL DEFAULT 'Commercial',
+    "description" TEXT,
+    "completion_year" TEXT,
+    "products_used" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "images" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "video_url" TEXT,
+    "is_featured" BOOLEAN NOT NULL DEFAULT false,
+    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+    "order_index" INTEGER NOT NULL DEFAULT 0,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "projects_pkey" PRIMARY KEY ("id")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "projects_status_is_featured_idx" ON "projects"("status", "is_featured")`,
+  `CREATE INDEX IF NOT EXISTS "projects_city_idx" ON "projects"("city")`,
+  `CREATE INDEX IF NOT EXISTS "projects_category_idx" ON "projects"("category")`,
+  `CREATE INDEX IF NOT EXISTS "projects_is_pan_india_idx" ON "projects"("is_pan_india")`,
+
   // ─── Coupons table missing columns ────────────────────────────────────────
   `ALTER TABLE "coupons" ADD COLUMN IF NOT EXISTS "applicable_product_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
   `ALTER TABLE "coupons" ADD COLUMN IF NOT EXISTS "applicable_category_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,

@@ -1888,3 +1888,32 @@ model StockMovement {
   @@map("stock_movements")
 }
 
+// ─── Completed Client Projects Portfolio ──────────────────────────────────────
+model Project {
+  id             String   @id @default(uuid())
+  name           String
+  clientName     String   @map("client_name")
+  location       String?
+  city           String
+  state          String
+  region         String?
+  isPanIndia     Boolean  @default(false) @map("is_pan_india")
+  category       String   @default("Commercial")
+  description    String?  @db.Text
+  completionYear String?  @map("completion_year")
+  productsUsed   String[] @default([]) @map("products_used")
+  images         String[] @default([])
+  videoUrl       String?  @map("video_url")
+  isFeatured     Boolean  @default(false) @map("is_featured")
+  status         String   @default("ACTIVE")
+  orderIndex     Int      @default(0) @map("order_index")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([status, isFeatured])
+  @@index([city])
+  @@index([category])
+  @@index([isPanIndia])
+  @@map("projects")
+}
+

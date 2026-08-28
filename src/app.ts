@@ -44,6 +44,7 @@ import invoiceRoutes from './modules/invoices/invoices.routes';
 import webhookRoutes from './modules/payments/webhook.routes';
 import b2bPricingRoutes from './modules/b2b-pricing/b2b-pricing.routes';
 import auditRoutes from './modules/audit/audit.routes';
+import projectsRoutes from './modules/projects/projects.routes';
 import {
   branchesRouter,
   suppliersRouter,
@@ -318,6 +319,7 @@ app.use(`${prefix}/homepage`, homepageRoutes);
 app.use(`${prefix}/notifications`, notificationsRoutes);
 app.use(`${prefix}/search`, searchRoutes);
 app.use(`${prefix}/settings`, settingsRoutes);
+app.use(`${prefix}/projects`, projectsRoutes);
 app.use(`${prefix}/dashboard`, dashboardRoutes);
 app.use(`${prefix}/analytics`, dashboardRoutes);
 app.use(`${prefix}/reports`, reportsRoutes);
