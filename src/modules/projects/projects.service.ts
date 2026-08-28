@@ -55,11 +55,21 @@ export const CITY_COORDINATES: Record<string, { lat: number; lng: number; state:
   'Kochi': { lat: 9.9312, lng: 76.2673, state: 'Kerala' },
   'Thiruvananthapuram': { lat: 8.5241, lng: 76.9366, state: 'Kerala' },
   'Mangalore': { lat: 12.9141, lng: 74.8560, state: 'Karnataka' },
+  'Mangaluru': { lat: 12.9141, lng: 74.8560, state: 'Karnataka' },
   'Mysore': { lat: 12.2958, lng: 76.6394, state: 'Karnataka' },
+  'Mysuru': { lat: 12.2958, lng: 76.6394, state: 'Karnataka' },
   'Dehradun': { lat: 30.3165, lng: 78.0322, state: 'Uttarakhand' },
   'Ranchi': { lat: 23.3441, lng: 85.3096, state: 'Jharkhand' },
   'Raipur': { lat: 21.2514, lng: 81.6296, state: 'Chhattisgarh' },
   'Goa': { lat: 15.2993, lng: 74.1240, state: 'Goa' },
+  'Murthal': { lat: 29.0289, lng: 77.0784, state: 'Haryana' },
+  'Jhajjar': { lat: 28.6074, lng: 76.6565, state: 'Haryana' },
+  'Panipat': { lat: 29.3909, lng: 76.9635, state: 'Haryana' },
+  'Sohna': { lat: 28.2478, lng: 77.0673, state: 'Haryana' },
+  'Rupnagar': { lat: 30.9664, lng: 76.5331, state: 'Punjab' },
+  'Jammu': { lat: 32.7266, lng: 74.8570, state: 'Jammu and Kashmir' },
+  'Mathura': { lat: 27.4924, lng: 77.6737, state: 'Uttar Pradesh' },
+  'Sardarshahar': { lat: 28.4414, lng: 74.4925, state: 'Rajasthan' },
 };
 
 // Fallback State Centroids for any new city entered in any Indian State/UT
