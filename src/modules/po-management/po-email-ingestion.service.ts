@@ -450,11 +450,23 @@ export async function processInboundEmail(email: InboundEmailPayload) {
     id: createdPo.submission.id,
     poSubmissionId: generatedPoId,
     classification,
+    confidenceScore,
     customerName,
     companyName,
     customerEmail: senderEmailNormalized,
+    customerPhone,
     subject: cleanSubject,
+    previewText,
+    status: createdPo.submission.status,
+    priority: createdPo.submission.priority,
+    source: createdPo.submission.source,
+    assignedUserId: null,
+    assignedUser: null,
+    receivedAt: createdPo.submission.receivedAt.toISOString(),
+    lastActivityAt: createdPo.submission.lastActivityAt.toISOString(),
     createdAt: createdPo.submission.createdAt.toISOString(),
+    updatedAt: createdPo.submission.updatedAt.toISOString(),
+    _count: { emails: 1, attachments: attachmentRecords.length, internalNotes: 0 },
   });
 
   return {

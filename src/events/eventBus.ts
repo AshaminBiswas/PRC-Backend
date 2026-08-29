@@ -105,11 +105,23 @@ export type DomainEvents = {
     id: string;
     poSubmissionId?: string | null;
     classification: string;
+    confidenceScore?: number;
     customerName?: string | null;
     companyName?: string | null;
     customerEmail: string;
+    customerPhone?: string | null;
     subject: string;
+    previewText?: string | null;
+    status?: string;
+    priority?: string;
+    source?: string;
+    assignedUserId?: string | null;
+    assignedUser?: any | null;
+    receivedAt?: string;
+    lastActivityAt?: string;
     createdAt: string;
+    updatedAt?: string;
+    _count?: { emails: number; attachments: number; internalNotes: number };
   };
   'po.updated': {
     id: string;
