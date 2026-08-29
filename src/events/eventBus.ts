@@ -101,6 +101,23 @@ export type DomainEvents = {
   'enquiry.submitted': EnquirySubmittedPayload;
   'payment.failed': PaymentFailedPayload;
   'inventory.low_stock': InventoryLowStockPayload;
+  'po.created': {
+    id: string;
+    poSubmissionId?: string | null;
+    classification: string;
+    customerName?: string | null;
+    companyName?: string | null;
+    customerEmail: string;
+    subject: string;
+    createdAt: string;
+  };
+  'po.updated': {
+    id: string;
+    poId?: string;
+    poSubmissionId?: string | null;
+    status?: string;
+    action: string;
+  };
 };
 
 // ─── Type-Safe Domain Event Bus ──────────────────────────────────────────────

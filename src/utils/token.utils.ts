@@ -29,8 +29,22 @@ export const verifyAccessToken = (token: string): DecodedAccessToken => {
 
 // ─── Refresh Token ────────────────────────────────────────────────────────────
 
-export const generateRefreshToken = (): string => {
-  return crypto.randomBytes(64).toString('hex');
+/**
+ * Generate a cryptographically secure opaque refresh token.
+ * Returns both the raw token (sent to client) and its SHA-256 hash (stored in DB).
+ * Never persist the raw token — only ever store the hash.
+ */
+export const generateRefreshToken = (): { raw: string; hash: string } => {
+  const raw = crypto.randomBytes(64).toString('hex');
+  const hash = crypto.createHash('sha256').update(raw).digest('hex');
+  return { raw, hash };
+};
+
+/**
+ * Hash an incoming refresh token for DB lookup comparison.
+ */
+export const hashRefreshToken = (raw: string): string => {
+  return crypto.createHash('sha256').update(raw).digest('hex');
 };
 
 // ─── One-Time Tokens (email verify, password reset) ──────────────────────────

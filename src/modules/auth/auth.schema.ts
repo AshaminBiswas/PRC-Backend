@@ -36,8 +36,9 @@ export const AdminLoginSchema = z.object({
     .optional(),
 });
 
+// Refresh token now lives in an httpOnly cookie — body field is optional backward-compat fallback
 export const RefreshTokenSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
+  refreshToken: z.string().optional(),
 });
 
 export const LogoutSchema = z.object({

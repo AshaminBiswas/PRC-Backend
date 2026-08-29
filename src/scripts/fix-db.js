@@ -29,6 +29,184 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 
 const STATEMENTS = [
+  // ─── PO Management & Inbound Email Tables & Types ────────────────────────
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PoClassification') THEN
+      CREATE TYPE "PoClassification" AS ENUM ('PO_DETECTED', 'POSSIBLE_PO', 'GENERAL_EMAIL');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PoSource') THEN
+      CREATE TYPE "PoSource" AS ENUM ('EMAIL', 'QUOTATION', 'PO_FORM', 'CUSTOM_PDF_UPLOAD');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PoStatus') THEN
+      CREATE TYPE "PoStatus" AS ENUM ('NEW', 'UNDER_REVIEW', 'PROCESSING', 'WAITING_FOR_CUSTOMER', 'COMPLETED', 'CANCELLED', 'ON_HOLD');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PoPriority') THEN
+      CREATE TYPE "PoPriority" AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'URGENT');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'EmailDirection') THEN
+      CREATE TYPE "EmailDirection" AS ENUM ('INCOMING', 'OUTGOING');
+    END IF;
+  END $$`,
+
+  `CREATE TABLE IF NOT EXISTS "po_submissions" (
+    "id" TEXT NOT NULL,
+    "po_submission_id" TEXT,
+    "source" "PoSource" NOT NULL DEFAULT 'EMAIL',
+    "classification" "PoClassification" NOT NULL DEFAULT 'PO_DETECTED',
+    "confidence_score" DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+    "customer_po_number" TEXT,
+    "customer_name" TEXT,
+    "company_name" TEXT,
+    "customer_email" TEXT NOT NULL,
+    "customer_phone" TEXT,
+    "subject" TEXT NOT NULL,
+    "preview_text" TEXT,
+    "status" "PoStatus" NOT NULL DEFAULT 'NEW',
+    "priority" "PoPriority" NOT NULL DEFAULT 'MEDIUM',
+    "assigned_user_id" TEXT,
+    "assigned_department" TEXT,
+    "received_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "last_activity_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "metadata" JSONB,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "po_submissions_pkey" PRIMARY KEY ("id")
+  )`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "po_submission_id" TEXT`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "source" TEXT NOT NULL DEFAULT 'EMAIL'`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "classification" TEXT NOT NULL DEFAULT 'PO_DETECTED'`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "confidence_score" DOUBLE PRECISION NOT NULL DEFAULT 1.0`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "customer_po_number" TEXT`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "customer_name" TEXT`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "company_name" TEXT`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "customer_email" TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "customer_phone" TEXT`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "subject" TEXT NOT NULL DEFAULT 'No Subject'`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "preview_text" TEXT`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'NEW'`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "priority" TEXT NOT NULL DEFAULT 'MEDIUM'`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "assigned_user_id" TEXT`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "assigned_department" TEXT`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "received_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "last_activity_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "metadata" JSONB`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "po_submissions" ADD COLUMN IF NOT EXISTS "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "po_submissions" ALTER COLUMN "status" TYPE TEXT USING "status"::TEXT`,
+  `ALTER TABLE "po_submissions" ALTER COLUMN "status" SET DEFAULT 'NEW'`,
+  `ALTER TABLE "po_submissions" ALTER COLUMN "source" TYPE TEXT USING "source"::TEXT`,
+  `ALTER TABLE "po_submissions" ALTER COLUMN "source" SET DEFAULT 'EMAIL'`,
+  `ALTER TABLE "po_submissions" ALTER COLUMN "classification" TYPE TEXT USING "classification"::TEXT`,
+  `ALTER TABLE "po_submissions" ALTER COLUMN "classification" SET DEFAULT 'PO_DETECTED'`,
+  `ALTER TABLE "po_submissions" ALTER COLUMN "priority" TYPE TEXT USING "priority"::TEXT`,
+  `ALTER TABLE "po_submissions" ALTER COLUMN "priority" SET DEFAULT 'MEDIUM'`,
+  `DO $$ 
+  DECLARE
+    col record;
+  BEGIN
+    FOR col IN 
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'po_submissions' 
+        AND is_nullable = 'NO'
+        AND column_name NOT IN ('id', 'customer_email', 'subject', 'created_at', 'updated_at')
+    LOOP
+      EXECUTE format('ALTER TABLE "po_submissions" ALTER COLUMN %I DROP NOT NULL', col.column_name);
+    END LOOP;
+  END $$`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "po_submissions_po_submission_id_key" ON "po_submissions"("po_submission_id")`,
+  `CREATE INDEX IF NOT EXISTS "po_submissions_customer_po_number_idx" ON "po_submissions"("customer_po_number")`,
+  `CREATE INDEX IF NOT EXISTS "po_submissions_customer_email_idx" ON "po_submissions"("customer_email")`,
+  `CREATE INDEX IF NOT EXISTS "po_submissions_classification_idx" ON "po_submissions"("classification")`,
+  `CREATE INDEX IF NOT EXISTS "po_submissions_status_idx" ON "po_submissions"("status")`,
+  `CREATE INDEX IF NOT EXISTS "po_submissions_priority_idx" ON "po_submissions"("priority")`,
+  `CREATE INDEX IF NOT EXISTS "po_submissions_assigned_user_id_idx" ON "po_submissions"("assigned_user_id")`,
+  `CREATE INDEX IF NOT EXISTS "po_submissions_received_at_idx" ON "po_submissions"("received_at")`,
+  `CREATE INDEX IF NOT EXISTS "po_submissions_last_activity_at_idx" ON "po_submissions"("last_activity_at")`,
+
+  `CREATE TABLE IF NOT EXISTS "po_email_messages" (
+    "id" TEXT NOT NULL,
+    "po_submission_id" TEXT,
+    "message_id" TEXT NOT NULL,
+    "provider_email_id" TEXT,
+    "thread_id" TEXT,
+    "in_reply_to" TEXT,
+    "references" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "direction" "EmailDirection" NOT NULL DEFAULT 'INCOMING',
+    "sender_name" TEXT,
+    "sender_email" TEXT NOT NULL,
+    "recipient_email" TEXT NOT NULL,
+    "cc" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "bcc" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    "subject" TEXT NOT NULL,
+    "plain_text_body" TEXT,
+    "html_body" TEXT,
+    "raw_headers" JSONB,
+    "received_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "po_email_messages_pkey" PRIMARY KEY ("id")
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "po_email_messages_message_id_key" ON "po_email_messages"("message_id")`,
+  `CREATE INDEX IF NOT EXISTS "po_email_messages_po_submission_id_idx" ON "po_email_messages"("po_submission_id")`,
+  `CREATE INDEX IF NOT EXISTS "po_email_messages_thread_id_idx" ON "po_email_messages"("thread_id")`,
+  `CREATE INDEX IF NOT EXISTS "po_email_messages_sender_email_idx" ON "po_email_messages"("sender_email")`,
+  `CREATE INDEX IF NOT EXISTS "po_email_messages_received_at_idx" ON "po_email_messages"("received_at")`,
+
+  `CREATE TABLE IF NOT EXISTS "po_email_attachments" (
+    "id" TEXT NOT NULL,
+    "po_submission_id" TEXT,
+    "email_message_id" TEXT NOT NULL,
+    "file_name" TEXT NOT NULL,
+    "file_type" TEXT NOT NULL,
+    "file_size" INTEGER NOT NULL,
+    "storage_path" TEXT NOT NULL,
+    "storage_url" TEXT NOT NULL,
+    "extracted_text" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "po_email_attachments_pkey" PRIMARY KEY ("id")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "po_email_attachments_po_submission_id_idx" ON "po_email_attachments"("po_submission_id")`,
+  `CREATE INDEX IF NOT EXISTS "po_email_attachments_email_message_id_idx" ON "po_email_attachments"("email_message_id")`,
+
+  `CREATE TABLE IF NOT EXISTS "po_internal_notes" (
+    "id" TEXT NOT NULL,
+    "po_submission_id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "note" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "po_internal_notes_pkey" PRIMARY KEY ("id")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "po_internal_notes_po_submission_id_idx" ON "po_internal_notes"("po_submission_id")`,
+  `CREATE INDEX IF NOT EXISTS "po_internal_notes_user_id_idx" ON "po_internal_notes"("user_id")`,
+
+  `CREATE TABLE IF NOT EXISTS "po_activity_logs" (
+    "id" TEXT NOT NULL,
+    "po_submission_id" TEXT NOT NULL,
+    "activity_type" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
+    "previous_value" TEXT,
+    "new_value" TEXT,
+    "performed_by_user_id" TEXT,
+    "metadata" JSONB,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "po_activity_logs_pkey" PRIMARY KEY ("id")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "po_activity_logs_po_submission_id_idx" ON "po_activity_logs"("po_submission_id")`,
+  `CREATE INDEX IF NOT EXISTS "po_activity_logs_activity_type_idx" ON "po_activity_logs"("activity_type")`,
+  `CREATE INDEX IF NOT EXISTS "po_activity_logs_created_at_idx" ON "po_activity_logs"("created_at")`,
+
+  `CREATE TABLE IF NOT EXISTS "po_sequences" (
+    "id" TEXT NOT NULL,
+    "year" INTEGER NOT NULL,
+    "last_number" INTEGER NOT NULL DEFAULT 0,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "po_sequences_pkey" PRIMARY KEY ("id")
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "po_sequences_year_key" ON "po_sequences"("year")`,
+
   // ─── Projects table for Our Clients & Completed Projects ───────────────────
   `CREATE TABLE IF NOT EXISTS "projects" (
     "id" TEXT NOT NULL,

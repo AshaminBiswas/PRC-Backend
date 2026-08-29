@@ -13,6 +13,7 @@ import {
   getEmailVerificationExpiry,
   getPasswordResetExpiry,
   verifyAccessToken,
+  hashRefreshToken,
 } from '../../utils/token.utils';
 import {
   sendOtpEmail,
@@ -47,9 +48,10 @@ const getOtpExpiry = (): Date => new Date(Date.now() + env.auth.otpTtlSeconds * 
 
 export const buildTokenPair = async (userId: string, email: string, roleSlug: string) => {
   const accessToken = generateAccessToken({ userId, email, roleSlug });
-  const rawRefresh = generateRefreshToken();
+  const { raw: rawRefresh, hash: refreshHash } = generateRefreshToken();
   const expiresAt = getRefreshTokenExpiry();
-  await prisma.refreshToken.create({ data: { token: rawRefresh, userId, expiresAt } });
+  // Store only the SHA-256 hash — never the raw token
+  await prisma.refreshToken.create({ data: { token: refreshHash, userId, expiresAt } });
   return { accessToken, refreshToken: rawRefresh };
 };
 
@@ -403,27 +405,29 @@ export const getMe = async (userId: string) => {
 
 export const logout = async (refreshToken?: string) => {
   if (refreshToken) {
-    await prisma.refreshToken.updateMany({ where: { token: refreshToken }, data: { revokedAt: new Date() } });
+    const tokenHash = hashRefreshToken(refreshToken);
+    await prisma.refreshToken.updateMany({ where: { token: tokenHash }, data: { revokedAt: new Date() } });
   }
 };
 
 export const refreshTokens = async (token: string) => {
-  const stored = await prisma.refreshToken.findUnique({ where: { token } });
+  // Always look up by hash — raw token is never stored
+  const tokenHash = hashRefreshToken(token);
+  const stored = await prisma.refreshToken.findUnique({ where: { token: tokenHash } });
+
   if (!stored) {
     throw new AppError('INVALID_TOKEN', 'Invalid or expired refresh token', 401);
   }
 
-  // Grace period for concurrent requests: if token was revoked within the last 30s, reuse the latest active token
+  // ── Replay detection ─────────────────────────────────────────────────────────
   if (stored.revokedAt) {
     const gracePeriodMs = 30 * 1000;
     const timeSinceRevocation = Date.now() - new Date(stored.revokedAt).getTime();
+
     if (timeSinceRevocation <= gracePeriodMs) {
+      // Within grace window — concurrent request race: reuse the latest active token
       const latestToken = await prisma.refreshToken.findFirst({
-        where: {
-          userId: stored.userId,
-          revokedAt: null,
-          expiresAt: { gt: new Date() },
-        },
+        where: { userId: stored.userId, revokedAt: null, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: 'desc' },
       });
 
@@ -435,10 +439,18 @@ export const refreshTokens = async (token: string) => {
       if (user && user.status === 'ACTIVE' && latestToken) {
         const roleSlug = getPrimaryRoleSlug(user.userRoles);
         const { accessToken } = await buildTokenPair(user.id, user.email, roleSlug);
-        return { accessToken, refreshToken: latestToken.token, expiresIn: 3600 };
+        return { accessToken, refreshToken: token, expiresIn: 900 };
       }
     }
-    throw new AppError('INVALID_TOKEN', 'Invalid or expired refresh token', 401);
+
+    // Definitive replay outside grace window — TREAT AS TOKEN THEFT
+    // Immediately revoke every active session for this user
+    logger.warn(`[Auth] Refresh token replay detected — revoking all sessions`, { userId: stored.userId });
+    await prisma.refreshToken.updateMany({
+      where: { userId: stored.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    throw new AppError('INVALID_TOKEN', 'Session invalidated due to suspicious activity. Please log in again.', 401);
   }
 
   if (stored.expiresAt < new Date()) {
@@ -452,11 +464,12 @@ export const refreshTokens = async (token: string) => {
   if (!user || user.status !== 'ACTIVE')
     throw new AppError('UNAUTHORIZED', 'User not found or inactive', 401);
 
+  // Rotate: revoke old token, issue new pair
   await prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
 
   const roleSlug = getPrimaryRoleSlug(user.userRoles);
   const { accessToken, refreshToken: newRefresh } = await buildTokenPair(user.id, user.email, roleSlug);
-  return { accessToken, refreshToken: newRefresh, expiresIn: 3600 };
+  return { accessToken, refreshToken: newRefresh, expiresIn: 900 };
 };
 
 export const forgotPassword = async (rawIdentifier: string) => {

@@ -1,6 +1,43 @@
 import { Request, Response, NextFunction } from 'express';
 import * as authService from './auth.service';
 import { sendSuccess, sendMessage } from '../../utils/response';
+import { env } from '../../config/env';
+
+// ─── Cookie Helpers ───────────────────────────────────────────────────────────
+
+const REFRESH_COOKIE_NAME = 'prc_refresh';
+const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+
+/**
+ * Write the refresh token into an httpOnly, Secure, SameSite=Strict cookie.
+ * The raw token is NEVER exposed in the JSON response body.
+ */
+function setRefreshCookie(res: Response, rawRefreshToken: string): void {
+  res.cookie(REFRESH_COOKIE_NAME, rawRefreshToken, {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: REFRESH_COOKIE_MAX_AGE,
+    path: '/',
+  });
+}
+
+/** Clear the refresh token cookie on logout. */
+function clearRefreshCookie(res: Response): void {
+  res.clearCookie(REFRESH_COOKIE_NAME, {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+  });
+}
+
+/** Read refresh token from httpOnly cookie, with fallback to request body for backward compat. */
+function readRefreshToken(req: Request): string | undefined {
+  return req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
+}
+
+// ─── Auth Controllers ─────────────────────────────────────────────────────────
 
 export const register = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -12,7 +49,10 @@ export const register = async (req: Request, res: Response, next: NextFunction) 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await authService.login(req.body);
-    sendSuccess(res, data);
+    setRefreshCookie(res, data.refreshToken);
+    // Strip refreshToken from body — client must use the cookie
+    const { refreshToken: _rt, ...safeData } = data;
+    sendSuccess(res, { ...safeData, expiresIn: 900 });
   } catch (error) { next(error); }
 };
 
@@ -20,7 +60,7 @@ export const adminLogin = async (req: Request, res: Response, next: NextFunction
   try {
     const data = await authService.adminLogin(req.body);
 
-    // If 2FA is required, return mfaToken for the 2FA challenge step
+    // 2FA required — return mfaToken challenge (no cookie yet)
     if ((data as any).requiresTwoFactor && (data as any).mfaToken) {
       sendSuccess(res, {
         requiresTwoFactor: true,
@@ -30,10 +70,12 @@ export const adminLogin = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    sendSuccess(res, data);
+    const fullData = data as any;
+    setRefreshCookie(res, fullData.refreshToken);
+    const { refreshToken: _rt, ...safeData } = fullData;
+    sendSuccess(res, { ...safeData, expiresIn: 900 });
   } catch (error) { next(error); }
 };
-
 
 export const getMe = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -44,15 +86,24 @@ export const getMe = async (req: Request, res: Response, next: NextFunction) => 
 
 export const logout = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await authService.logout(req.body?.refreshToken);
+    const refreshToken = readRefreshToken(req);
+    await authService.logout(refreshToken);
+    clearRefreshCookie(res);
     sendMessage(res, 'Logged out successfully');
   } catch (error) { next(error); }
 };
 
 export const refreshToken = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const data = await authService.refreshTokens(req.body.refreshToken);
-    sendSuccess(res, data);
+    const token = readRefreshToken(req);
+    if (!token) {
+      res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Refresh token is required' } });
+      return;
+    }
+    const data = await authService.refreshTokens(token);
+    setRefreshCookie(res, data.refreshToken);
+    // Only return the new access token — refresh token stays in cookie
+    sendSuccess(res, { accessToken: data.accessToken, expiresIn: 900, tokenType: 'Bearer' });
   } catch (error) { next(error); }
 };
 
@@ -75,6 +126,8 @@ export const verifyResetOtp = async (req: Request, res: Response, next: NextFunc
 export const resetPassword = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await authService.resetPassword(req.body);
+    // Reset revokes all refresh tokens — clear the cookie too
+    clearRefreshCookie(res);
     sendSuccess(res, result, result.message);
   } catch (error) { next(error); }
 };
@@ -82,6 +135,8 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
 export const changePassword = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await authService.changePassword(req.user!.id, req.body);
+    // changePassword revokes all refresh tokens — force re-login
+    clearRefreshCookie(res);
     sendMessage(res, 'Password changed successfully');
   } catch (error) { next(error); }
 };
@@ -96,7 +151,13 @@ export const verifyEmail = async (req: Request, res: Response, next: NextFunctio
 export const verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await authService.verifyOtp(req.body);
-    sendSuccess(res, data, data.autoLogin ? 'Email verified. You are now logged in.' : 'Email verified successfully.');
+    if (data.autoLogin && (data as any).refreshToken) {
+      setRefreshCookie(res, (data as any).refreshToken);
+      const { refreshToken: _rt, ...safeData } = data as any;
+      sendSuccess(res, { ...safeData, expiresIn: 900 }, 'Email verified. You are now logged in.');
+      return;
+    }
+    sendSuccess(res, data, 'Email verified successfully.');
   } catch (error) { next(error); }
 };
 
@@ -129,15 +190,12 @@ export const verify2FaLogin = async (req: Request, res: Response, next: NextFunc
 
     const cleanCode = String(code).trim();
     let userId: string | null = null;
-    let userEmail: string | null = null;
 
     // Decode the mfaToken (temporary JWT issued at login when 2FA is required)
     try {
       const jwt = await import('jsonwebtoken');
-      const { env } = await import('../../config/env');
       const decoded = jwt.default.verify(mfaToken, env.jwt.accessSecret) as any;
       userId = decoded?.userId || decoded?.id || null;
-      userEmail = decoded?.email || null;
     } catch {
       const { AppError } = await import('../../middleware/error.middleware');
       throw new AppError('UNAUTHORIZED', 'Invalid or expired MFA token. Please login again.', 401);
@@ -148,7 +206,6 @@ export const verify2FaLogin = async (req: Request, res: Response, next: NextFunc
       throw new AppError('UNAUTHORIZED', 'Invalid MFA token. Please login again.', 401);
     }
 
-    // Verify the TOTP/backup code against this specific user's 2FA secret
     const twoFactorService = await import('./twoFactor.service');
     const isValid = await twoFactorService.verify2FaCode(userId, cleanCode);
 
@@ -157,7 +214,6 @@ export const verify2FaLogin = async (req: Request, res: Response, next: NextFunc
       throw new AppError('UNAUTHORIZED', 'Invalid 2FA code. Please check your authenticator app and try again.', 401);
     }
 
-    // Load user and issue real JWT tokens
     const prisma = (await import('../../config/database')).default;
     const { buildTokenPair, getPrimaryRoleSlug } = await import('./auth.service');
 
@@ -177,8 +233,10 @@ export const verify2FaLogin = async (req: Request, res: Response, next: NextFunc
     }
 
     const roleSlug = getPrimaryRoleSlug(dbUser.userRoles);
-    const { accessToken, refreshToken } = await buildTokenPair(dbUser.id, dbUser.email, roleSlug);
+    const { accessToken, refreshToken: rawRefresh } = await buildTokenPair(dbUser.id, dbUser.email, roleSlug);
     const permissions = dbUser.userRoles.flatMap((ur) => ur.role.rolePermissions.map((rp) => rp.permission.slug));
+
+    setRefreshCookie(res, rawRefresh);
 
     sendSuccess(
       res,
@@ -186,8 +244,7 @@ export const verify2FaLogin = async (req: Request, res: Response, next: NextFunc
         valid: true,
         verified: true,
         accessToken,
-        refreshToken,
-        expiresIn: 3600,
+        expiresIn: 900,
         tokenType: 'Bearer',
         user: {
           id: dbUser.id,
@@ -249,4 +306,3 @@ export const disable2Fa = async (req: Request, res: Response, next: NextFunction
     sendSuccess(res, data, '2FA disabled successfully');
   } catch (error) { next(error); }
 };
-

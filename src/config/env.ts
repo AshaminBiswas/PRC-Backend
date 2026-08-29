@@ -12,7 +12,7 @@ const envSchema = z.object({
 
   JWT_ACCESS_SECRET: z.string().default('super-secret-access-key-prc-hardware-api-2026'),
   JWT_REFRESH_SECRET: z.string().default('super-secret-refresh-key-prc-hardware-api-2026'),
-  JWT_ACCESS_EXPIRES_IN: z.string().default('1h'),
+  JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
   SUPABASE_URL: z.string().default('https://example.supabase.co'),

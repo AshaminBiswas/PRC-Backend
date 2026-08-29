@@ -228,6 +228,9 @@ model User {
   b2bCustomerPrices    B2BCustomerPrice[]
   quoteActivityLogs    QuoteActivityLog[]  @relation("AdminQuoteActivity")
   SavedAddress         SavedAddress[]
+  assignedPoSubmissions PoSubmission[]   @relation("AssignedStaffPo")
+  poInternalNotes       PoInternalNote[] @relation("PoInternalNoteAuthor")
+  poActivityLogs        PoActivityLog[]  @relation("PoActivityLogPerformer")
 
   @@index([email])
   @@index([status])
@@ -1916,4 +1919,187 @@ model Project {
   @@index([isPanIndia])
   @@map("projects")
 }
+
+// ─── Purchase Order (PO) Management & Inbound Email Module ──────────────────
+
+enum PoClassification {
+  PO_DETECTED
+  POSSIBLE_PO
+  GENERAL_EMAIL
+}
+
+enum PoSource {
+  EMAIL
+  QUOTATION
+  PO_FORM
+  CUSTOM_PDF_UPLOAD
+}
+
+enum PoStatus {
+  NEW
+  UNDER_REVIEW
+  PROCESSING
+  WAITING_FOR_CUSTOMER
+  COMPLETED
+  CANCELLED
+  ON_HOLD
+}
+
+enum PoPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum EmailDirection {
+  INCOMING
+  OUTGOING
+}
+
+model PoSubmission {
+  id                 String           @id @default(uuid())
+  poSubmissionId     String?          @unique @map("po_submission_id")
+  source             PoSource         @default(EMAIL)
+  classification     PoClassification @default(PO_DETECTED)
+  confidenceScore    Float            @default(1.0) @map("confidence_score")
+  customerPoNumber   String?          @map("customer_po_number")
+  customerName       String?          @map("customer_name")
+  companyName        String?          @map("company_name")
+  customerEmail      String           @map("customer_email")
+  customerPhone      String?          @map("customer_phone")
+  subject            String
+  previewText        String?          @map("preview_text") @db.Text
+  status             PoStatus         @default(NEW)
+  priority           PoPriority       @default(MEDIUM)
+  assignedUserId     String?          @map("assigned_user_id")
+  assignedDepartment String?          @map("assigned_department")
+  receivedAt         DateTime         @default(now()) @map("received_at")
+  lastActivityAt     DateTime         @default(now()) @map("last_activity_at")
+  metadata           Json?
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  // Relations
+  assignedUser       User?               @relation("AssignedStaffPo", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  emails             PoEmailMessage[]
+  attachments        PoEmailAttachment[]
+  internalNotes      PoInternalNote[]
+  activityLogs       PoActivityLog[]
+
+  @@index([poSubmissionId])
+  @@index([customerPoNumber])
+  @@index([customerEmail])
+  @@index([classification])
+  @@index([status])
+  @@index([priority])
+  @@index([assignedUserId])
+  @@index([receivedAt])
+  @@index([lastActivityAt])
+  @@map("po_submissions")
+}
+
+model PoEmailMessage {
+  id              String          @id @default(uuid())
+  poSubmissionId  String?         @map("po_submission_id")
+  messageId       String          @unique @map("message_id")
+  providerEmailId String?         @map("provider_email_id")
+  threadId        String?         @map("thread_id")
+  inReplyTo       String?         @map("in_reply_to")
+  references      String[]        @default([])
+  direction       EmailDirection  @default(INCOMING)
+  senderName      String?         @map("sender_name")
+  senderEmail     String          @map("sender_email")
+  recipientEmail  String          @map("recipient_email")
+  cc              String[]        @default([])
+  bcc             String[]        @default([])
+  subject         String
+  plainTextBody   String?         @map("plain_text_body") @db.Text
+  htmlBody        String?         @map("html_body") @db.Text
+  rawHeaders      Json?           @map("raw_headers")
+  receivedAt      DateTime        @default(now()) @map("received_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  poSubmission    PoSubmission?       @relation(fields: [poSubmissionId], references: [id], onDelete: Cascade)
+  attachments     PoEmailAttachment[]
+
+  @@index([poSubmissionId])
+  @@index([messageId])
+  @@index([threadId])
+  @@index([senderEmail])
+  @@index([receivedAt])
+  @@map("po_email_messages")
+}
+
+model PoEmailAttachment {
+  id             String          @id @default(uuid())
+  poSubmissionId String?         @map("po_submission_id")
+  emailMessageId String          @map("email_message_id")
+  fileName       String          @map("file_name")
+  fileType       String          @map("file_type")
+  fileSize       Int             @map("file_size")
+  storagePath    String          @map("storage_path")
+  storageUrl     String          @map("storage_url")
+  extractedText  String?         @map("extracted_text") @db.Text
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  poSubmission   PoSubmission?   @relation(fields: [poSubmissionId], references: [id], onDelete: Cascade)
+  emailMessage   PoEmailMessage  @relation(fields: [emailMessageId], references: [id], onDelete: Cascade)
+
+  @@index([poSubmissionId])
+  @@index([emailMessageId])
+  @@map("po_email_attachments")
+}
+
+model PoInternalNote {
+  id             String       @id @default(uuid())
+  poSubmissionId String       @map("po_submission_id")
+  userId         String       @map("user_id")
+  note           String       @db.Text
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  poSubmission   PoSubmission @relation(fields: [poSubmissionId], references: [id], onDelete: Cascade)
+  user           User         @relation("PoInternalNoteAuthor", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([poSubmissionId])
+  @@index([userId])
+  @@map("po_internal_notes")
+}
+
+model PoActivityLog {
+  id                String       @id @default(uuid())
+  poSubmissionId    String       @map("po_submission_id")
+  activityType      String       @map("activity_type")
+  title             String
+  description       String       @db.Text
+  previousValue     String?      @map("previous_value")
+  newValue          String?      @map("new_value")
+  performedByUserId String?      @map("performed_by_user_id")
+  metadata          Json?
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  // Relations
+  poSubmission      PoSubmission @relation(fields: [poSubmissionId], references: [id], onDelete: Cascade)
+  performedByUser   User?        @relation("PoActivityLogPerformer", fields: [performedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([poSubmissionId])
+  @@index([activityType])
+  @@index([createdAt])
+  @@map("po_activity_logs")
+}
+
+model PoSequence {
+  id         String   @id @default(uuid())
+  year       Int      @unique
+  lastNumber Int      @default(0) @map("last_number")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("po_sequences")
+}
+
 
