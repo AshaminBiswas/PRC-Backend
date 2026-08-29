@@ -469,3 +469,33 @@ export async function addInternalNote(
 
   return createdNote;
 }
+
+/**
+ * Delete a PO Submission and all associated emails/attachments/notes
+ */
+export async function deletePoSubmission(id: string, performedByUserId?: string) {
+  const po = await prisma.poSubmission.findUnique({
+    where: { id },
+    select: { id: true, poSubmissionId: true, customerEmail: true, subject: true },
+  });
+
+  if (!po) {
+    throw new AppError('NOT_FOUND', 'Purchase Order submission not found', 404);
+  }
+
+  await prisma.poSubmission.delete({
+    where: { id },
+  });
+
+  eventBus.emitEvent('po.deleted', {
+    id: po.id,
+    poSubmissionId: po.poSubmissionId,
+    reason: 'MANUAL_DELETION',
+  });
+
+  logger.info(
+    `[PO Management] Deleted PO Submission: ${po.poSubmissionId || po.id} (${po.subject}) by user ${performedByUserId || 'system'}`
+  );
+
+  return { success: true, id: po.id };
+}

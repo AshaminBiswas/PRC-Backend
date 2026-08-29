@@ -130,6 +130,11 @@ export type DomainEvents = {
     status?: string;
     action: string;
   };
+  'po.deleted': {
+    id: string;
+    poSubmissionId?: string | null;
+    reason?: string;
+  };
 };
 
 // ─── Type-Safe Domain Event Bus ──────────────────────────────────────────────
@@ -258,5 +263,18 @@ export const initEventBus = () => {
     );
   });
 
-  logger.info('[Domain Event Bus] Subscribers active: order.created, order.status_changed, quote.created, notification.created, system.alert, enquiry.submitted, payment.failed');
+  // 8. Real-time PO Management SSE Subscribers
+  eventBus.onEvent('po.created', (payload) => {
+    sseService.broadcastAll('po.created', payload);
+  });
+
+  eventBus.onEvent('po.updated', (payload) => {
+    sseService.broadcastAll('po.updated', payload);
+  });
+
+  eventBus.onEvent('po.deleted', (payload) => {
+    sseService.broadcastAll('po.deleted', payload);
+  });
+
+  logger.info('[Domain Event Bus] Subscribers active: order.created, order.status_changed, quote.created, notification.created, system.alert, enquiry.submitted, payment.failed, po.created, po.updated, po.deleted');
 };

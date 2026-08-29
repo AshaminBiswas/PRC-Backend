@@ -1,9 +1,36 @@
 import imaps from 'imap-simple';
 import { simpleParser, ParsedMail } from 'mailparser';
+import prisma from '../../config/database';
 import { env } from '../../config/env';
 import { logger } from '../../config/logger';
+import { eventBus } from '../../events/eventBus';
 import { InboundEmailPayload } from './po.types';
 import { processInboundEmail } from './po-email-ingestion.service';
+
+/**
+ * Normalizes email Message-ID for consistent set comparison
+ */
+function normalizeMessageId(id?: string | null): string {
+  if (!id) return '';
+  return id.trim().replace(/^<|>$/g, '').toLowerCase();
+}
+
+/**
+ * Extracts raw Message-ID string from an IMAP header part body
+ */
+function extractMessageIdFromHeader(partBody: any): string | null {
+  if (!partBody) return null;
+  if (typeof partBody === 'object') {
+    const raw = partBody['message-id'] || partBody['Message-ID'] || partBody['Message-Id'];
+    if (Array.isArray(raw)) return raw[0] ? String(raw[0]) : null;
+    if (typeof raw === 'string') return raw;
+  }
+  if (typeof partBody === 'string') {
+    const match = partBody.match(/(?:^|\r?\n)message-id:\s*([^\r\n]+)/i);
+    if (match && match[1]) return match[1].trim();
+  }
+  return null;
+}
 
 /**
  * Parses raw RFC 822 MIME message source into structured InboundEmailPayload
@@ -81,12 +108,14 @@ let autoSyncTimer: NodeJS.Timeout | null = null;
 
 /**
  * Synchronize inbound emails from the configured IMAP Mailbox (e.g. Gmail / Outlook / Exchange)
+ * Automatically detects new emails and reconciles deleted emails from the mail client.
  */
 export async function syncInboundEmails() {
   if (isSyncing) {
     logger.info('[PO Sync] IMAP synchronization is already in progress. Skipping concurrent run.');
     return {
       syncedCount: 0,
+      deletedCount: 0,
       duplicateCount: 0,
       results: [],
       message: 'Sync already in progress.',
@@ -106,6 +135,7 @@ export async function syncInboundEmails() {
     );
     return {
       syncedCount: 0,
+      deletedCount: 0,
       duplicateCount: 0,
       results: [],
       message:
@@ -129,6 +159,7 @@ export async function syncInboundEmails() {
 
   let connection: imaps.ImapSimple | null = null;
   let syncedCount = 0;
+  let deletedCount = 0;
   let duplicateCount = 0;
   const results: any[] = [];
 
@@ -137,6 +168,104 @@ export async function syncInboundEmails() {
     connection = await imaps.connect(config);
     await connection.openBox(mailbox);
 
+    // ─── STEP 1: RECONCILE DELETED EMAILS FROM MAIL APP ───────────────────────
+    // Fetch all active message headers currently residing in the IMAP INBOX
+    try {
+      const allHeaderMessages = await connection.search(['ALL'], {
+        bodies: ['HEADER'],
+        struct: false,
+      });
+
+      const activeInboxMsgIds = new Set<string>();
+      for (const item of allHeaderMessages) {
+        const headerPart = item.parts.find((p) => p.which === 'HEADER');
+        if (headerPart && headerPart.body) {
+          const extractedMsgId = extractMessageIdFromHeader(headerPart.body);
+          if (extractedMsgId) {
+            activeInboxMsgIds.add(normalizeMessageId(extractedMsgId));
+          }
+        }
+      }
+
+      logger.info(`[PO Sync] Active IMAP Inbox contains ${activeInboxMsgIds.size} message(s) for reconciliation.`);
+
+      // Query all incoming email records from our database created via email
+      const dbEmails = await prisma.poEmailMessage.findMany({
+        where: {
+          direction: 'INCOMING',
+          poSubmission: {
+            source: 'EMAIL',
+          },
+        },
+        select: {
+          id: true,
+          messageId: true,
+          poSubmissionId: true,
+          poSubmission: {
+            select: {
+              id: true,
+              poSubmissionId: true,
+              subject: true,
+              _count: {
+                select: { emails: true },
+              },
+            },
+          },
+        },
+      });
+
+      const processedSubmissionDeletes = new Set<string>();
+
+      for (const dbEmail of dbEmails) {
+        const normDbId = normalizeMessageId(dbEmail.messageId);
+        // Skip synthetic / manually generated message IDs
+        if (!normDbId || normDbId.startsWith('generated-')) continue;
+
+        // If the email Message-ID is no longer in the user's IMAP Inbox, it was deleted in the Mail App!
+        if (!activeInboxMsgIds.has(normDbId)) {
+          if (dbEmail.poSubmissionId && !processedSubmissionDeletes.has(dbEmail.poSubmissionId)) {
+            const submission = dbEmail.poSubmission;
+            const emailCount = submission?._count?.emails || 1;
+
+            if (emailCount <= 1) {
+              // Delete entire PO submission if it only consisted of this deleted email
+              processedSubmissionDeletes.add(dbEmail.poSubmissionId);
+              try {
+                await prisma.poSubmission.delete({
+                  where: { id: dbEmail.poSubmissionId },
+                });
+                eventBus.emitEvent('po.deleted', {
+                  id: dbEmail.poSubmissionId,
+                  poSubmissionId: submission?.poSubmissionId || null,
+                  reason: 'EMAIL_DELETED_IN_MAILBOX',
+                });
+                logger.info(
+                  `[PO Sync] Pruned deleted email PO Submission: ${submission?.poSubmissionId || dbEmail.poSubmissionId} (${submission?.subject || dbEmail.messageId})`
+                );
+                deletedCount++;
+              } catch (delErr: any) {
+                logger.warn(`[PO Sync] Failed to delete pruned PO Submission ${dbEmail.poSubmissionId}:`, delErr?.message || delErr);
+              }
+            } else {
+              // Delete individual email message from threaded submission
+              try {
+                await prisma.poEmailMessage.delete({
+                  where: { id: dbEmail.id },
+                });
+                logger.info(`[PO Sync] Pruned single deleted message from thread: ${dbEmail.messageId}`);
+                deletedCount++;
+              } catch (delErr: any) {
+                logger.warn(`[PO Sync] Failed to delete pruned email message ${dbEmail.id}:`, delErr?.message || delErr);
+              }
+            }
+          }
+        }
+      }
+    } catch (reconcileErr: any) {
+      logger.warn('[PO Sync] Deletion reconciliation pass notice:', reconcileErr?.message || reconcileErr);
+    }
+
+    // ─── STEP 2: INGEST NEW / UNSEEN INBOUND EMAILS ───────────────────────────
     const fetchOptions = {
       bodies: ['HEADER', 'TEXT', ''],
       struct: true,
@@ -147,7 +276,7 @@ export async function syncInboundEmails() {
     let messages = await connection.search(['UNSEEN'], fetchOptions);
     logger.info(`[PO Sync] Found ${messages.length} unread email(s) in ${mailbox}.`);
 
-    // 2. If no unread emails, fetch all recent emails so existing inbox emails are ingested
+    // 2. If no unread emails, fetch recent emails so existing inbox emails are ingested
     if (messages.length === 0) {
       logger.info(`[PO Sync] Searching for recent emails in ${mailbox}...`);
       messages = await connection.search(['ALL'], fetchOptions);
@@ -186,14 +315,15 @@ export async function syncInboundEmails() {
 
     connection.end();
     logger.info(
-      `[PO Sync] IMAP Sync completed: ${syncedCount} new email(s) ingested, ${duplicateCount} duplicate(s) skipped.`
+      `[PO Sync] IMAP Sync completed: ${syncedCount} new ingested, ${deletedCount} pruned, ${duplicateCount} duplicate(s) skipped.`
     );
 
     return {
       syncedCount,
+      deletedCount,
       duplicateCount,
       results,
-      message: `Successfully synchronized inbox: ${syncedCount} new email(s) ingested, ${duplicateCount} duplicate(s) skipped.`,
+      message: `Successfully synchronized inbox: ${syncedCount} new ingested, ${deletedCount} deleted email(s) removed, ${duplicateCount} duplicate(s) skipped.`,
     };
   } catch (err: any) {
     if (connection) {

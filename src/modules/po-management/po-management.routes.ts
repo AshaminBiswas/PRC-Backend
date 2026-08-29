@@ -92,4 +92,10 @@ router.post(
   controller.addInternalNote
 );
 
+router.delete(
+  '/:id',
+  authorize('orders.manage', 'quotes.manage', 'po.manage'),
+  controller.deletePoSubmission
+);
+
 export default router;

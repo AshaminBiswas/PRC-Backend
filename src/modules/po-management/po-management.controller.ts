@@ -157,3 +157,13 @@ export const handleInboundWebhook = async (req: Request, res: Response, next: Ne
     next(error);
   }
 };
+
+export const deletePoSubmission = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const currentUserId = req.user?.id;
+    const result = await poService.deletePoSubmission(req.params.id, currentUserId);
+    sendSuccess(res, result, 'Purchase Order submission deleted successfully');
+  } catch (error) {
+    next(error);
+  }
+};
