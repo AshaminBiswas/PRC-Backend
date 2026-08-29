@@ -29,6 +29,14 @@ const envSchema = z.object({
   SMTP_FROM_NAME: z.string().default('PRC Hardware'),
   SMTP_FROM_EMAIL: z.string().default('noreply@pacifichardware.com'),
 
+  IMAP_HOST: z.string().optional().default(''),
+  IMAP_PORT: z.coerce.number().default(993),
+  IMAP_TLS: z.string().transform((v) => v === 'true').default('true'),
+  IMAP_USER: z.string().optional().default(''),
+  IMAP_PASS: z.string().optional().default(''),
+  IMAP_MAILBOX: z.string().default('INBOX'),
+  IMAP_AUTO_SYNC_ENABLED: z.string().transform((v) => v === 'true').default('false'),
+
   FRONTEND_URL: z.string().default('http://localhost:5173'),
   ADMIN_FRONTEND_URL: z.string().default('http://localhost:5174'),
 
@@ -134,6 +142,16 @@ export const env = {
     pass: rawEnv.SMTP_PASS,
     fromName: rawEnv.SMTP_FROM_NAME,
     fromEmail: rawEnv.SMTP_FROM_EMAIL,
+  },
+
+  imap: {
+    host: rawEnv.IMAP_HOST,
+    port: rawEnv.IMAP_PORT,
+    tls: rawEnv.IMAP_TLS,
+    user: rawEnv.IMAP_USER,
+    pass: rawEnv.IMAP_PASS,
+    mailbox: rawEnv.IMAP_MAILBOX,
+    autoSyncEnabled: rawEnv.IMAP_AUTO_SYNC_ENABLED,
   },
 
   frontend: {
