@@ -489,10 +489,13 @@ The Storefront was architected and optimized for native app-like responsiveness 
           - **B2B Customer Search & Instant Auto-Fill**:
             - Debounced search across all registered B2B clients, legal entity names, contact persons, phone numbers, emails, and GSTINs.
             - Instantly auto-populates legal entity name, GSTIN, contact details, place of supply (auto-decoded from first 2 digits of GSTIN), and registered billing/site shipping addresses with "Same as billing" toggle.
-          - **Catalog Product Search & Line Items Composer**:
-            - Live product search by name, SKU, or category from `/api/v1/products`.
+          - **Catalog Product Search & Line Items Composer (Replicated from Frontend B2B Quotation Form)**:
+            - Category dropdown filter (All Categories, Restroom & Cubicle Hardware, Locker & Storage, Urinal & Partition, Shower & Glass) side-by-side with live search.
+            - Rich autocomplete product dropdown with high-res image thumbnail, product title, SKU, HSN code, category tags, B2B unit rate, stock badge, and 1-click addition (`+ Add to PI`).
+            - Smart addition logic: appends new items or increments quantity if item is already added.
+            - Interactive quantity stepper controls (`-`, number input, `+`) on both desktop table and responsive mobile touch cards.
             - Auto-fills product name, SKU, HSN/SAC code (`83024110`), unit (`PCS/SETS`), catalog unit rate, and GST rate (18%).
-            - Supports adding custom / non-catalog line items on the fly with live quantity steppers and line total calculations.
+            - Supports adding custom / non-catalog line items on the fly with custom SKU generator and line total calculations.
           - **Commercial & Financial Terms Calculation**:
             - Sequential PI reference generator (`PRC-PI-YYYY-XXXXXX`).
             - Configurable Issue Date, 30-day validity expiry, optional Customer PO / Quotation reference numbers, delivery dispatch timeline, and remarks.
