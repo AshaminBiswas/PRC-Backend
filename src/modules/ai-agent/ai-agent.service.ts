@@ -70,7 +70,7 @@ export async function adminCopilotChat(input: AiChatInput): Promise<{
   reply: string;
   model: string;
 }> {
-  const systemPrompt = `You are the PRC PILOT — an intelligent business assistant for Pacific Rehousing Corporation, a premium hardware products company based in India.
+  const systemPrompt = `You are the PRC PILOT — an intelligent business assistant for PRC Hardware, a premier B2B architectural hardware and building supplies company based in India.
 
 LANGUAGE & COMMUNICATION RULES:
 - Always use proper, articulate, grammatically correct, and professional standard English.
@@ -144,25 +144,27 @@ export async function draftPoEmailReply(input: AiDraftReplyInput): Promise<{
     )
     .join("\n\n---\n\n");
 
-  const systemPrompt = `You are a professional B2B corporate correspondence composer for PRC Hardware (Pacific Rehousing Corporation).
+  const defaultSubject = `Re: [${po.poSubmissionId || po.customerPoNumber || "PO"}] ${po.subject || "Purchase Order Update"}`;
 
-LANGUAGE & COMMUNICATION RULES:
-- Write in flawless, elegant, and grammatically precise standard English.
-- Maintain formal yet warm corporate etiquette appropriate for high-value B2B trade.
-- Ensure all sentences are complete, clearly structured, and free of colloquialisms or grammatical flaws.
+  const systemPrompt = `You are a professional B2B corporate correspondence composer for PRC Hardware.
 
-Your task is to draft a professional, courteous, and action-oriented email reply based on the purchase order details and customer email thread provided.
+CRITICAL INSTRUCTIONS:
+1. BREVITY & CONCISENESS: Keep the email reply short, crisp, and direct to the point (2 to 3 brief paragraphs maximum). Do NOT write lengthy or repetitive text.
+2. LANGUAGE QUALITY: Write in articulate, elegant, and grammatically flawless standard English.
+3. SUBJECT LINE: Make the subject line short, clear, and relevant. Example: "Re: [${po.poSubmissionId || po.customerPoNumber || "PO"}] Proforma Invoice & Order Confirmation".
+4. COMPANY IDENTITY: Refer only to "PRC Hardware". NEVER use "Pacific Rehousing Corporation".
+5. FORMAT: Return VALID JSON ONLY (no markdown code blocks, no backticks, no extra text outside the JSON object).
 
-RESPONSE FORMAT (return valid JSON only, no markdown fences):
+JSON SCHEMA:
 {
-  "subject": "Re: [Subject Line Here]",
-  "body": "Full email body text here...",
-  "suggestedStatus": "WAITING_FOR_CUSTOMER|IN_PROGRESS|APPROVED|COMPLETED",
-  "detectedContext": "Brief 1-line summary of what you detected in this PO"
+  "subject": "Re: [${po.poSubmissionId || po.customerPoNumber || "PO"}] Specific Subject Line",
+  "body": "Dear [Customer Name],\\n\\n[Paragraph 1: Direct acknowledgment & order status/PI update]\\n\\n[Paragraph 2: Stock availability or next action steps]\\n\\nWarm regards,\\nPRC Hardware Team\\nsales@pacifichardware.com",
+  "suggestedStatus": "WAITING_FOR_CUSTOMER",
+  "detectedContext": "Short 1-line summary of customer request"
 }
 
 TONE: ${input.tone}
-${input.instructions ? `ADDITIONAL INSTRUCTIONS FROM ADMIN: ${input.instructions}` : ""}`;
+${input.instructions ? `ADMIN INSTRUCTION: ${input.instructions}` : ""}`;
 
   const userMessage = `PO SUBMISSION DETAILS:
 - PO ID: ${po.poSubmissionId || po.id}
@@ -177,27 +179,48 @@ EMAIL THREAD:
 ${emailThread || "(No email thread found)"}
 ${stockContext}
 
-Draft a professional reply email now.`;
+Draft a short, professional B2B reply email now in valid JSON format.`;
 
   const rawReply = await callNvidiaModel(
     [
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },
     ],
-    { maxTokens: 1500, temperature: 0.5 }
+    { maxTokens: 1000, temperature: 0.4 }
   );
 
-  let parsed: { subject: string; body: string; suggestedStatus: string; detectedContext: string };
+  let parsed = {
+    subject: defaultSubject,
+    body: "",
+    suggestedStatus: "WAITING_FOR_CUSTOMER",
+    detectedContext: "PO analyzed by PRC PILOT",
+  };
+
   try {
-    const cleaned = rawReply.replace(/```json|```/g, "").trim();
-    parsed = JSON.parse(cleaned);
+    const jsonMatch = rawReply.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const obj = JSON.parse(jsonMatch[0]);
+      if (obj.subject) parsed.subject = obj.subject.replace(/^(Re:\s*)+/i, "Re: ").trim();
+      if (obj.body) parsed.body = obj.body.trim();
+      if (obj.suggestedStatus) parsed.suggestedStatus = obj.suggestedStatus;
+      if (obj.detectedContext) parsed.detectedContext = obj.detectedContext;
+    } else {
+      parsed.body = rawReply.trim();
+    }
   } catch {
-    parsed = {
-      subject: `Re: ${po.subject || "Your Purchase Order"}`,
-      body: rawReply,
-      suggestedStatus: "IN_PROGRESS",
-      detectedContext: "AI analysis completed.",
-    };
+    parsed.body = rawReply
+      .replace(/```json|```/g, "")
+      .replace(/"(subject|body|suggestedStatus|detectedContext)":\s*/g, "")
+      .replace(/^\{|\}$/g, "")
+      .trim();
+  }
+
+  // Safety filter: Clean any leaked JSON keys or escape sequences
+  if (parsed.body.includes('"suggestedStatus"') || parsed.body.includes('"detectedContext"')) {
+    const bodyMatch = parsed.body.match(/"body":\s*"([\s\S]*?)"(?=,\s*"suggestedStatus"|,\s*"detectedContext"|\})/);
+    if (bodyMatch && bodyMatch[1]) {
+      parsed.body = bodyMatch[1].replace(/\\n/g, "\n").replace(/\\"/g, '"');
+    }
   }
 
   return { ...parsed, model: env.nvidia.model };

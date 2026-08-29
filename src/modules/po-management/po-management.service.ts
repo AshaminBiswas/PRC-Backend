@@ -642,7 +642,7 @@ export async function replyToPoSubmission(
       </div>
       <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
       <div style="font-size: 12px; color: #64748b;">
-        <strong>Pacific Rehousing Corporation</strong><br/>
+        <strong>PRC Hardware</strong><br/>
         PO Reference: ${po.poSubmissionId || 'General Inquiry'}<br/>
         <a href="https://prchardware.com" style="color: #8b5cf6; text-decoration: none;">prchardware.com</a>
       </div>
