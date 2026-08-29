@@ -44,6 +44,24 @@ const userListSelect = {
       isDefault: true,
     },
   },
+  SavedAddress: {
+    select: {
+      id: true,
+      label: true,
+      attentionTo: true,
+      companyName: true,
+      addressLine1: true,
+      addressLine2: true,
+      city: true,
+      state: true,
+      postalCode: true,
+      country: true,
+      phone: true,
+      email: true,
+      isDefaultBilling: true,
+      isDefaultDelivery: true,
+    },
+  },
 } as const;
 
 // ─── List Users ───────────────────────────────────────────────────────────────
