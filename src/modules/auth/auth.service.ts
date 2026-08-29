@@ -345,7 +345,12 @@ export const adminLogin = async (input: AdminLoginInput) => {
     throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
 
   const roleSlug = getPrimaryRoleSlug(user.userRoles);
-  if (!['super-admin', 'admin'].includes(roleSlug))
+  const userRolesSlugs = user.userRoles.map((ur) => (ur.role.slug || '').toLowerCase());
+  const isAdminRole =
+    ['super-admin', 'super_admin', 'superadmin', 'admin', 'manager', 'staff'].includes(roleSlug.toLowerCase()) ||
+    userRolesSlugs.some((s) => ['super-admin', 'super_admin', 'superadmin', 'admin', 'manager', 'staff'].includes(s));
+
+  if (!isAdminRole)
     throw new AppError('FORBIDDEN', 'Admin access required', 403);
   if (user.status !== 'ACTIVE')
     throw new AppError('ACCOUNT_INACTIVE', 'Account is not active', 403);

@@ -185,6 +185,16 @@ app.use(
         return callback(null, true);
       }
 
+      // Allow local Wi-Fi / LAN IPs (e.g. 192.168.x.x, 10.x.x.x, 172.16-31.x.x) for testing from mobile devices and other laptops
+      if (/^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      // Allow official production and staging domains
+      if (/^https?:\/\/([a-zA-Z0-9_-]+\.)?(pacifichardware\.com|prchardware\.com)$/.test(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
       // Fail gracefully without crashing the server
       return callback(null, false);
     },
