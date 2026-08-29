@@ -98,6 +98,9 @@ const envSchema = z.object({
 
   BREVO_API_KEY: z.string().optional().default(''),
   RESEND_API_KEY: z.string().optional().default(''),
+
+  NVIDIA_API_KEY: z.string().optional().default(''),
+  NVIDIA_MODEL: z.string().default('meta/llama-3.2-90b-vision-instruct'),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -242,6 +245,11 @@ export const env = {
     cloudName: rawEnv.CLOUDINARY_CLOUD_NAME,
     apiKey: rawEnv.CLOUDINARY_API_KEY,
     apiSecret: rawEnv.CLOUDINARY_API_SECRET,
+  },
+  nvidia: {
+    apiKey: rawEnv.NVIDIA_API_KEY || '',
+    model: rawEnv.NVIDIA_MODEL,
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
   },
 } as const;
 
