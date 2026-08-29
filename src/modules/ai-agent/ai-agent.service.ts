@@ -70,7 +70,7 @@ export async function adminCopilotChat(input: AiChatInput): Promise<{
   reply: string;
   model: string;
 }> {
-  const systemPrompt = `You are the PRC Hardware Admin AI Copilot — an intelligent business assistant for Pacific Rehousing Corporation, a premium hardware products company based in India.
+  const systemPrompt = `You are the PRC PILOT — an intelligent business assistant for Pacific Rehousing Corporation, a premium hardware products company based in India.
 
 You help the admin team with:
 - Analyzing purchase orders (POs), proforma invoices (PIs), quotations, and customer email inquiries.
@@ -353,3 +353,4 @@ The report should:
     model: env.nvidia.model,
   };
 }
+
