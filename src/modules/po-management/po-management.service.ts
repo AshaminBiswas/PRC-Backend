@@ -62,10 +62,10 @@ export async function listPoSubmissions(filters: PoListFilters) {
     ];
   }
 
-  // 6. Sorting
-  const sortBy = filters.sortBy || 'receivedAt';
+  // 6. Sorting (Newest activity / newest received first)
+  const sortBy = filters.sortBy || 'lastActivityAt';
   const sortOrder = filters.sortOrder || 'desc';
-  const orderBy: any = { [sortBy]: sortOrder };
+  const orderBy: any = [{ [sortBy]: sortOrder }, { receivedAt: 'desc' }];
 
   const [items, totalItems] = await Promise.all([
     prisma.poSubmission.findMany({

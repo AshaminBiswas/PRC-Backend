@@ -5,6 +5,7 @@ import app from './app';
 import { env } from './config/env';
 import { connectDatabases, disconnectDatabases } from './config/database';
 import { stopKeepAlive } from './jobs/keepAlive';
+import { startPoAutoSync, stopPoAutoSync } from './modules/po-management/po-sync.service';
 
 const workerCount = env.scaling.workers > 0 ? env.scaling.workers : os.availableParallelism?.() ?? os.cpus().length;
 
@@ -24,6 +25,9 @@ const startWorker = async () => {
 
     await connectDatabases();
     console.log(`Database connected and schema auto-healed on ${env.INSTANCE_ID}`);
+
+    // Start background PO email auto-sync service
+    startPoAutoSync(60000);
   } catch (error) {
     console.error('Failed to start server:', error);
     await disconnectDatabases();
@@ -33,6 +37,7 @@ const startWorker = async () => {
   const shutdown = async (signal: string) => {
     console.log(`${signal} received by ${env.INSTANCE_ID}. Shutting down gracefully...`);
     stopKeepAlive();
+    stopPoAutoSync();
 
     const forceExit = setTimeout(() => {
       console.error(`Graceful shutdown timed out for ${env.INSTANCE_ID}`);
