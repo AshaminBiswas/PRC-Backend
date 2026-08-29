@@ -664,75 +664,74 @@ export async function replyToPoSubmission(
     attachments: emailAttachments,
   });
 
-  // 4. Save outbound message, attachments, activity log, and status in DB transaction
+  // 4. Save outbound message, attachments, activity log, and status in DB
   const nextStatus = replyData.newStatus || (po.status === 'NEW' ? 'WAITING_FOR_CUSTOMER' : po.status);
 
-  await prisma.$transaction(
-    async (tx) => {
-      // a. Create PoEmailMessage
-      const emailMsg = await tx.poEmailMessage.create({
-        data: {
-          poSubmissionId: po.id,
-          messageId: outboundMessageId,
-          threadId: latestEmail?.threadId || inReplyTo,
-          inReplyTo,
-          references,
-          direction: 'OUTGOING',
-          senderName: env.smtp.fromName || 'PRC Hardware Support',
-          senderEmail: env.smtp.fromEmail || 'po@pacifichardware.com',
-          recipientEmail,
-          cc: ccList || [],
-          bcc: bccList || [],
-          subject: replyData.subject,
-          plainTextBody: replyData.message,
-          htmlBody: formattedHtml,
-          receivedAt: new Date(),
-        },
-      });
-
-      // b. Create PoEmailAttachment records
-      if (storedAttachments.length > 0) {
-        await tx.poEmailAttachment.createMany({
-          data: storedAttachments.map((att) => ({
-            poSubmissionId: po.id,
-            emailMessageId: emailMsg.id,
-            fileName: att.fileName,
-            fileType: att.fileType,
-            fileSize: att.fileSize,
-            storagePath: att.storagePath,
-            storageUrl: att.storageUrl,
-          })),
-        });
-      }
-
-      // c. Update PoSubmission status and lastActivityAt
-      await tx.poSubmission.update({
-        where: { id: po.id },
-        data: {
-          status: nextStatus,
-          lastActivityAt: new Date(),
-        },
-      });
-
-      // d. Create Activity Log
-      await tx.poActivityLog.create({
-        data: {
-          poSubmissionId: po.id,
-          activityType: 'REPLIED',
-          title: 'Reply Sent to Customer',
-          description: `Reply sent with subject "${replyData.subject}" and ${storedAttachments.length} attachment(s) to ${recipientEmail}`,
-          performedByUserId: currentUserId || null,
-          metadata: {
-            to: recipientEmail,
-            subject: replyData.subject,
-            attachmentsCount: storedAttachments.length,
-            newStatus: nextStatus,
-          },
-        },
-      });
+  // a. Create PoEmailMessage
+  const emailMsg = await prisma.poEmailMessage.create({
+    data: {
+      poSubmissionId: po.id,
+      messageId: outboundMessageId,
+      threadId: latestEmail?.threadId || inReplyTo,
+      inReplyTo,
+      references,
+      direction: 'OUTGOING',
+      senderName: env.smtp.fromName || 'PRC Hardware Support',
+      senderEmail: env.smtp.fromEmail || 'po@pacifichardware.com',
+      recipientEmail,
+      cc: ccList || [],
+      bcc: bccList || [],
+      subject: replyData.subject,
+      plainTextBody: replyData.message,
+      htmlBody: formattedHtml,
+      receivedAt: new Date(),
     },
-    { timeout: 30000, maxWait: 10000 }
-  );
+  });
+
+  // b. Create PoEmailAttachment records
+  if (storedAttachments.length > 0) {
+    await prisma.poEmailAttachment.createMany({
+      data: storedAttachments.map((att) => ({
+        poSubmissionId: po.id,
+        emailMessageId: emailMsg.id,
+        fileName: att.fileName,
+        fileType: att.fileType,
+        fileSize: att.fileSize,
+        storagePath: att.storagePath,
+        storageUrl: att.storageUrl,
+      })),
+    });
+  }
+
+  // c. Update PoSubmission status and lastActivityAt
+  await prisma.poSubmission.update({
+    where: { id: po.id },
+    data: {
+      status: nextStatus,
+      lastActivityAt: new Date(),
+    },
+  });
+
+  // d. Create Activity Log
+  try {
+    await prisma.poActivityLog.create({
+      data: {
+        poSubmissionId: po.id,
+        activityType: 'REPLIED',
+        title: 'Reply Sent to Customer',
+        description: `Reply sent with subject "${replyData.subject}" and ${storedAttachments.length} attachment(s) to ${recipientEmail}`,
+        performedByUserId: currentUserId || null,
+        metadata: {
+          to: recipientEmail,
+          subject: replyData.subject,
+          attachmentsCount: storedAttachments.length,
+          newStatus: nextStatus,
+        },
+      },
+    });
+  } catch (logErr) {
+    logger.warn('[PO Management] Could not write activity log for reply:', logErr);
+  }
 
   const updatedPo = await getPoSubmissionById(po.id);
 
