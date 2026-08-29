@@ -70,26 +70,39 @@ export const listUsers = async (query: ListUsersQuery) => {
   const { page, limit, skip } = getPaginationParams(query);
 
   const where: Record<string, unknown> = { deletedAt: null };
+  const andConditions: Array<Record<string, unknown>> = [];
 
   if (query.search) {
-    where.OR = [
-      { firstName: { contains: query.search, mode: 'insensitive' } },
-      { lastName: { contains: query.search, mode: 'insensitive' } },
-      { email: { contains: query.search, mode: 'insensitive' } },
-      { phone: { contains: query.search, mode: 'insensitive' } },
-      { companyName: { contains: query.search, mode: 'insensitive' } },
-      { gstin: { contains: query.search, mode: 'insensitive' } },
-    ];
+    andConditions.push({
+      OR: [
+        { firstName: { contains: query.search, mode: 'insensitive' } },
+        { lastName: { contains: query.search, mode: 'insensitive' } },
+        { email: { contains: query.search, mode: 'insensitive' } },
+        { phone: { contains: query.search, mode: 'insensitive' } },
+        { companyName: { contains: query.search, mode: 'insensitive' } },
+        { gstin: { contains: query.search, mode: 'insensitive' } },
+      ],
+    });
   }
   if (query.status) where.status = query.status;
   if (query.role) {
     where.userRoles = { some: { role: { slug: query.role } } };
   } else if (query.type === 'b2b' || query.isB2B) {
-    where.AND = [
+    andConditions.push(
       {
         OR: [
-          { companyName: { not: null } },
-          { gstin: { not: null } },
+          {
+            AND: [
+              { companyName: { not: null } },
+              { companyName: { not: '' } },
+            ],
+          },
+          {
+            AND: [
+              { gstin: { not: null } },
+              { gstin: { not: '' } },
+            ],
+          },
           { userRoles: { some: { role: { slug: { in: ['b2b', 'b2b-customer', 'wholesale', 'enterprise'] } } } } },
         ],
       },
@@ -105,37 +118,50 @@ export const listUsers = async (query: ListUsersQuery) => {
                   'staff',
                   'manager',
                   'accounts',
+                  'sales',
+                  'support',
+                  'operations',
                   'inventory_manager',
                   'inventory-manager',
+                  'vendor',
+                  'supplier',
                 ],
               },
             },
           },
         },
-      },
-    ];
+      }
+    );
   } else if (query.type === 'customer' || query.excludeStaff) {
-    where.userRoles = {
-      none: {
-        role: {
-          slug: {
-            in: [
-              'super_admin',
-              'super-admin',
-              'admin',
-              'staff',
-              'manager',
-              'accounts',
-              'sales',
-              'support',
-              'operations',
-              'inventory_manager',
-              'inventory-manager',
-            ],
+    andConditions.push({
+      userRoles: {
+        none: {
+          role: {
+            slug: {
+              in: [
+                'super_admin',
+                'super-admin',
+                'admin',
+                'staff',
+                'manager',
+                'accounts',
+                'sales',
+                'support',
+                'operations',
+                'inventory_manager',
+                'inventory-manager',
+                'vendor',
+                'supplier',
+              ],
+            },
           },
         },
       },
-    };
+    });
+  }
+
+  if (andConditions.length > 0) {
+    where.AND = andConditions;
   } else if (query.type === 'admin') {
     where.userRoles = {
       some: {
