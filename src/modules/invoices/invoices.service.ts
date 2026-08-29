@@ -323,6 +323,223 @@ export const emailInvoice = async (id: string, recipientEmail?: string, user?: U
   return { success: true, emailedTo: targetEmail };
 };
 
+export interface SendProformaEmailDirectInput {
+  piNumber: string;
+  customerName: string;
+  companyName?: string;
+  customerEmail: string;
+  customerPhone?: string;
+  customerGstin?: string;
+  issueDate?: string;
+  validUntil?: string;
+  facilityCode?: string;
+  facilityName?: string;
+  billingAddress?: string;
+  shippingAddress?: string;
+  grandTotal: number;
+  subtotal?: number;
+  cgstTotal?: number;
+  sgstTotal?: number;
+  igstTotal?: number;
+  advancePercentage?: number;
+  advancePayable?: number;
+  balancePayable?: number;
+  poReference?: string;
+  quoteReference?: string;
+  notes?: string;
+  items?: Array<{
+    sku: string;
+    productName: string;
+    description?: string;
+    hsnCode?: string;
+    unit?: string;
+    quantity: number;
+    unitPrice: number;
+    gstRate?: number;
+    total: number;
+  }>;
+}
+
+export const sendProformaInvoiceEmailDirect = async (
+  payload: SendProformaEmailDirectInput,
+  user?: UserContext
+) => {
+  const targetEmail = (payload.customerEmail || '').trim();
+  if (!targetEmail) {
+    throw new AppError('BAD_REQUEST', 'Recipient email address is required', 400);
+  }
+
+  const companyOrClient = payload.companyName || payload.customerName || 'Valued Client';
+  const piNumber = payload.piNumber || 'PRC-PI-DRAFT';
+  const grandTotalStr = `₹${Number(payload.grandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const advancePercent = payload.advancePercentage || 30;
+  const advanceAmount =
+    payload.advancePayable ||
+    Math.round(((Number(payload.grandTotal || 0) * advancePercent) / 100) * 100) / 100;
+  const advanceStr = `₹${Number(advanceAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const balanceStr = `₹${Number(
+    payload.balancePayable || Number(payload.grandTotal || 0) - advanceAmount
+  ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+  const itemsHtml = (payload.items || [])
+    .map(
+      (item, idx) => `
+      <tr style="border-bottom: 1px solid #e2e8f0; font-size: 13px;">
+        <td style="padding: 10px 8px; text-align: center; color: #64748b;">${idx + 1}</td>
+        <td style="padding: 10px 8px;">
+          <strong style="color: #0f172a;">${item.productName}</strong>
+          <div style="font-size: 11px; color: #64748b;">SKU: <span style="font-family: monospace; color: #d97706;">${item.sku}</span>${item.hsnCode ? ` • HSN: ${item.hsnCode}` : ''}</div>
+        </td>
+        <td style="padding: 10px 8px; text-align: center; font-weight: 600;">${item.quantity} ${item.unit || 'PCS'}</td>
+        <td style="padding: 10px 8px; text-align: right; font-family: monospace;">₹${Number(item.unitPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+        <td style="padding: 10px 8px; text-align: right; font-weight: 700; color: #0f172a; font-family: monospace;">₹${Number(item.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+      </tr>
+    `
+    )
+    .join('');
+
+  const emailHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Proforma Invoice - ${piNumber}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; background: #f4f6f8; margin: 0; padding: 24px 12px; }
+    .email-container { max-width: 650px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    .header-bar { background: #0f172a; padding: 24px 30px; border-bottom: 3px solid #d97706; }
+    .content-body { padding: 30px; }
+    .badge { display: inline-block; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; border: 1px solid #fde68a; }
+    .dossier-card { background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #d97706; border-radius: 6px; padding: 16px; margin: 20px 0; }
+    .advance-card { background: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 16px; margin: 20px 0; }
+    .bank-card { background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; border-radius: 6px; padding: 16px; margin: 20px 0; font-size: 13px; line-height: 1.5; color: #166534; }
+    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 30px; font-size: 12px; color: #64748b; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <div class="header-bar">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td>
+            <h1 style="color: #ffffff; font-size: 20px; font-weight: 900; margin: 0; letter-spacing: 0.5px;">PRC HARDWARE</h1>
+            <p style="color: #d97706; font-size: 11px; font-weight: 700; text-transform: uppercase; margin: 4px 0 0 0;">Commercial Architectural Hardware</p>
+          </td>
+          <td align="right">
+            <span class="badge">PROFORMA INVOICE</span>
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div class="content-body">
+      <h2 style="font-size: 18px; color: #0f172a; margin: 0 0 10px 0;">Commercial Proforma Invoice Generated</h2>
+      <p style="font-size: 14px; color: #475569; line-height: 1.5; margin: 0 0 18px 0;">
+        Dear <strong>${companyOrClient}</strong>,<br />
+        Please find attached the official Commercial Proforma Invoice <strong>${piNumber}</strong> issued for your order specifications.
+      </p>
+
+      <div class="dossier-card">
+        <table width="100%" style="font-size: 13px; color: #1e293b;">
+          <tr>
+            <td style="padding: 4px 0; color: #64748b; width: 40%;">PI Number:</td>
+            <td style="padding: 4px 0; font-weight: 800; font-family: monospace; color: #d97706;">${piNumber}</td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 0; color: #64748b;">Issued Date:</td>
+            <td style="padding: 4px 0; font-weight: 600;">${payload.issueDate || new Date().toISOString().slice(0, 10)}</td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 0; color: #64748b;">Grand Total (Incl. GST):</td>
+            <td style="padding: 4px 0; font-weight: 900; color: #0f172a; font-size: 15px;">${grandTotalStr}</td>
+          </tr>
+          ${payload.poReference ? `
+          <tr>
+            <td style="padding: 4px 0; color: #64748b;">PO Reference:</td>
+            <td style="padding: 4px 0; font-weight: 600; font-family: monospace;">${payload.poReference}</td>
+          </tr>` : ''}
+          ${payload.quoteReference ? `
+          <tr>
+            <td style="padding: 4px 0; color: #64748b;">Quote Reference:</td>
+            <td style="padding: 4px 0; font-weight: 600; font-family: monospace;">${payload.quoteReference}</td>
+          </tr>` : ''}
+        </table>
+      </div>
+
+      ${itemsHtml ? `
+      <h3 style="font-size: 14px; color: #0f172a; margin: 20px 0 10px 0; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">Ordered Line Items</h3>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin-bottom: 20px;">
+        <thead>
+          <tr style="background: #0f172a; color: #ffffff; font-size: 11px; text-transform: uppercase;">
+            <th style="padding: 8px; text-align: center;">#</th>
+            <th style="padding: 8px; text-align: left;">Product</th>
+            <th style="padding: 8px; text-align: center;">Qty</th>
+            <th style="padding: 8px; text-align: right;">Rate (₹)</th>
+            <th style="padding: 8px; text-align: right;">Amount (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsHtml}
+        </tbody>
+      </table>
+      ` : ''}
+
+      <div class="advance-card">
+        <h4 style="margin: 0 0 6px 0; color: #92400e; font-size: 14px;">Commercial Advance Terms:</h4>
+        <p style="margin: 0; font-size: 13px; color: #78350f; line-height: 1.5;">
+          • <strong>Required Advance (${advancePercent}%):</strong> <span style="font-size: 14px; font-weight: 900; color: #92400e;">${advanceStr}</span><br />
+          • <strong>Balance Payable at Dispatch Readiness:</strong> ${balanceStr}<br />
+          • Production queueing & dispatch commence immediately upon receipt of advance deposit.
+        </p>
+      </div>
+
+      <div class="bank-card">
+        <div style="font-weight: 800; font-size: 13px; color: #14532d; margin-bottom: 6px; border-bottom: 1px solid #bbf7d0; padding-bottom: 4px;">
+          🏦 Official PRC Hardware Bank Details (RTGS / NEFT / IMPS):
+        </div>
+        <strong>Beneficiary Name:</strong> Pacific Products and Solutions<br />
+        <strong>Bank Name:</strong> HDFC Bank Ltd.<br />
+        <strong>Account Number:</strong> <span style="font-family: monospace; font-weight: 900;">50200089412356</span><br />
+        <strong>IFSC Code:</strong> <span style="font-family: monospace; font-weight: 900;">HDFC0000280</span> &nbsp;|&nbsp; <strong>Branch:</strong> Dilshad Garden, Delhi<br />
+        <strong>Account Type:</strong> Current Account &nbsp;|&nbsp; <strong>UPI:</strong> pacificproducts@hdfcbank
+      </div>
+
+      ${payload.notes ? `
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; font-size: 12px; color: #475569; margin: 16px 0;">
+        <strong>Special Notes from Billing Team:</strong><br />
+        ${payload.notes}
+      </div>
+      ` : ''}
+
+      <p style="font-size: 13px; color: #475569; margin-top: 24px;">
+        For any billing inquiries, order customization, or dispatch coordination, please reply directly or reach our corporate desk at <strong>support@pacifichardware.com</strong>.
+      </p>
+    </div>
+
+    <div class="footer">
+      <p style="margin: 0 0 4px 0; font-weight: 700; color: #0f172a;">PRC HARDWARE • Architectural Solutions</p>
+      <p style="margin: 0; font-size: 11px; color: #94a3b8;">This is an official commercial transaction document generated by the PRC Core Billing System.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  await sendMail({
+    to: targetEmail,
+    subject: `Commercial Proforma Invoice #${piNumber} - PRC Hardware`,
+    html: emailHtml,
+  });
+
+  return {
+    success: true,
+    piNumber,
+    emailedTo: targetEmail,
+    message: `Proforma Invoice ${piNumber} emailed successfully to ${targetEmail}`,
+  };
+};
+
 /**
  * PUBLIC Verification Endpoint (Accessible without Login)
  */

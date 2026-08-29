@@ -36,6 +36,11 @@ router.post(
 );
 
 router.post(
+  '/proforma/send-email',
+  controller.sendProformaInvoiceEmail
+);
+
+router.post(
   '/quotation',
   authorize('invoices.create', 'quotes.create'),
   validate(createInvoiceSchema),

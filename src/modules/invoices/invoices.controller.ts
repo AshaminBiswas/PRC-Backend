@@ -114,6 +114,15 @@ export const emailInvoice = async (req: Request, res: Response, next: NextFuncti
   }
 };
 
+export const sendProformaInvoiceEmail = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await invoicesService.sendProformaInvoiceEmailDirect(req.body, req.user);
+    sendSuccess(res, data, 'Proforma Invoice emailed successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getInvoiceHtmlPrint = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const invoice = await invoicesService.getInvoiceById(req.params.id, req.user);
