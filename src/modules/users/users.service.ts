@@ -29,6 +29,21 @@ const userListSelect = {
   lastLoginAt: true,
   createdAt: true,
   userRoles: { select: { role: { select: { id: true, name: true, slug: true } } } },
+  addresses: {
+    select: {
+      id: true,
+      type: true,
+      addressLine1: true,
+      addressLine2: true,
+      city: true,
+      state: true,
+      postalCode: true,
+      country: true,
+      phone: true,
+      email: true,
+      isDefault: true,
+    },
+  },
 } as const;
 
 // ─── List Users ───────────────────────────────────────────────────────────────
