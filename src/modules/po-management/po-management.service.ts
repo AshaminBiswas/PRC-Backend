@@ -1087,53 +1087,76 @@ Remarks:
 ${input.notes || 'None'}
   `.trim();
 
-  // 5. Atomic DB Transaction
+  // 5. Database Persistence
   const messageId = `storefront-po-${Date.now()}-${uuidv4()}@pacifichardware.com`;
   const senderEmailNormalized = input.customerEmail.toLowerCase().trim();
 
-  const createdRecord = await prisma.$transaction(async (tx) => {
-    const finalCustomerPoNumber =
-      input.customerPoNumber?.trim() ||
-      (input.source === PoSource.QUOTATION && input.quoteNumber ? `PO-${input.quoteNumber}` : null) ||
-      poSubmissionId;
-
-    // A. Create PoSubmission
-    const submission = await tx.poSubmission.create({
-      data: {
-        poSubmissionId,
+  // A. Create PoSubmission
+  const submission = await prisma.poSubmission.create({
+    data: {
+      poSubmissionId,
+      source: input.source,
+      classification: PoClassification.PO_DETECTED,
+      confidenceScore: 1.0,
+      customerPoNumber: finalCustomerPoNumber,
+      customerName: input.customerName.trim(),
+      companyName: input.companyName?.trim() || null,
+      customerEmail: senderEmailNormalized,
+      customerPhone: input.customerPhone?.trim() || null,
+      subject: defaultSubject,
+      previewText: plainText.slice(0, 240),
+      status: PoStatus.NEW,
+      priority: input.priority || PoPriority.MEDIUM,
+      receivedAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {
         source: input.source,
-        classification: PoClassification.PO_DETECTED,
-        confidenceScore: 1.0,
-        customerPoNumber: finalCustomerPoNumber,
-        customerName: input.customerName.trim(),
-        companyName: input.companyName?.trim() || null,
-        customerEmail: senderEmailNormalized,
-        customerPhone: input.customerPhone?.trim() || null,
-        subject: defaultSubject,
-        previewText: plainText.slice(0, 240),
-        status: PoStatus.NEW,
-        priority: input.priority || PoPriority.MEDIUM,
-        receivedAt: new Date(),
-        lastActivityAt: new Date(),
-        metadata: {
-          source: input.source,
-          quoteId: input.quoteId || null,
-          quoteNumber: input.quoteNumber || null,
-          gstin: input.gstin || null,
-          billingAddress: input.billingAddress || null,
-          shippingAddress: input.shippingAddress || null,
-          deliveryTimeline: input.deliveryTimeline || null,
-          paymentTerms: input.paymentTerms || null,
-          lineItems: items,
-          totalEstimatedValue: totalAmount,
-          submissionType: 'STOREFRONT_CUSTOMER',
-        },
+        quoteId: input.quoteId || null,
+        quoteNumber: input.quoteNumber || null,
+        gstin: input.gstin || null,
+        billingAddress: input.billingAddress || null,
+        shippingAddress: input.shippingAddress || null,
+        deliveryTimeline: input.deliveryTimeline || null,
+        paymentTerms: input.paymentTerms || null,
+        lineItems: items,
+        totalEstimatedValue: totalAmount,
+        submissionType: 'STOREFRONT_CUSTOMER',
       },
-    });
+    },
+  });
 
-    // B. Bi-Directional Linking with Quote in DB
-    if (input.source === PoSource.QUOTATION || input.quoteId || input.quoteNumber) {
-      const dbQuote = await tx.quote.findFirst({
+  // B. Create Initial Email Message Record (Threads everything into /po-detail view)
+  const emailMsg = await prisma.poEmailMessage.create({
+    data: {
+      poSubmissionId: submission.id,
+      messageId,
+      threadId: submission.id,
+      direction: EmailDirection.INCOMING,
+      senderName: input.customerName,
+      senderEmail: senderEmailNormalized,
+      recipientEmail: 'po@pacifichardware.com',
+      subject: defaultSubject,
+      plainTextBody: plainText,
+      htmlBody: formattedHtml,
+      receivedAt: new Date(),
+      attachments: {
+        create: storedAttachments.map((att) => ({
+          poSubmissionId: submission.id,
+          fileName: att.fileName,
+          fileType: att.fileType,
+          fileSize: att.fileSize,
+          storagePath: att.storagePath,
+          storageUrl: att.storageUrl,
+        })),
+      },
+    },
+    include: { attachments: true },
+  });
+
+  // C. Bi-Directional Linking with Quote in DB
+  if (input.source === PoSource.QUOTATION || input.quoteId || input.quoteNumber) {
+    try {
+      const dbQuote = await prisma.quote.findFirst({
         where: {
           isDeleted: false,
           OR: [
@@ -1149,7 +1172,7 @@ ${input.notes || 'None'}
       });
 
       if (dbQuote) {
-        await tx.quote.update({
+        await prisma.quote.update({
           where: { id: dbQuote.id },
           data: {
             convertedOrderId: submission.id,
@@ -1157,15 +1180,15 @@ ${input.notes || 'None'}
           },
         });
 
-        await tx.quoteActivityLog.create({
+        await prisma.quoteActivityLog.create({
           data: {
             quoteId: dbQuote.id,
             changeType: 'CONVERTED_TO_PO',
             note: `Quotation converted to Purchase Order ${poSubmissionId} (Customer PO #: ${finalCustomerPoNumber})`,
           },
-        });
+        }).catch((logErr) => logger.warn('[Customer PO] Quote activity log write failed:', logErr));
 
-        await tx.poActivityLog.create({
+        await prisma.poActivityLog.create({
           data: {
             poSubmissionId: submission.id,
             activityType: 'QUOTATION_LINKED',
@@ -1174,44 +1197,20 @@ ${input.notes || 'None'}
             metadata: {
               quoteId: dbQuote.id,
               quoteNumber: dbQuote.referenceNo || dbQuote.quoteNumber,
-              grandTotal: dbQuote.grandTotal,
-              advancePercentage: dbQuote.advancePercentage,
+              grandTotal: dbQuote.grandTotal ? Number(dbQuote.grandTotal) : null,
+              advancePercentage: dbQuote.advancePercentage ? Number(dbQuote.advancePercentage) : null,
             },
           },
-        });
+        }).catch((logErr) => logger.warn('[Customer PO] PO activity log write failed:', logErr));
       }
+    } catch (quoteErr) {
+      logger.warn('[Customer PO] Error linking quote to PO:', quoteErr);
     }
+  }
 
-    // C. Create Initial Email Message Record (Threads everything into /po-detail view)
-    const emailMsg = await tx.poEmailMessage.create({
-      data: {
-        poSubmissionId: submission.id,
-        messageId,
-        threadId: submission.id,
-        direction: EmailDirection.INCOMING,
-        senderName: input.customerName,
-        senderEmail: senderEmailNormalized,
-        recipientEmail: 'po@pacifichardware.com',
-        subject: defaultSubject,
-        plainTextBody: plainText,
-        htmlBody: formattedHtml,
-        receivedAt: new Date(),
-        attachments: {
-          create: storedAttachments.map((att) => ({
-            poSubmissionId: submission.id,
-            fileName: att.fileName,
-            fileType: att.fileType,
-            fileSize: att.fileSize,
-            storagePath: att.storagePath,
-            storageUrl: att.storageUrl,
-          })),
-        },
-      },
-      include: { attachments: true },
-    });
-
-    // D. Activity Logs
-    await tx.poActivityLog.create({
+  // D. Activity Logs for PO Submission
+  try {
+    await prisma.poActivityLog.create({
       data: {
         poSubmissionId: submission.id,
         activityType: 'PO_CREATED',
@@ -1228,7 +1227,7 @@ ${input.notes || 'None'}
       },
     });
 
-    await tx.poActivityLog.create({
+    await prisma.poActivityLog.create({
       data: {
         poSubmissionId: submission.id,
         activityType: 'ID_GENERATED',
@@ -1237,18 +1236,18 @@ ${input.notes || 'None'}
         newValue: poSubmissionId,
       },
     });
-
-    return { submission, emailMsg };
-  });
+  } catch (actErr) {
+    logger.warn('[Customer PO] PO activity log creation error:', actErr);
+  }
 
   // 6. Broadcast Real-time Event to Admin Panel
-  eventBus.emitEvent('po.created', createdRecord.submission as any);
+  eventBus.emitEvent('po.created', submission as any);
 
   notifyAdmins(
     `New PO Received: ${poSubmissionId}`,
     `${customerOrCompany} submitted a new Purchase Order (${sourceLabel})`,
     'PO_ALERT',
-    { poId: createdRecord.submission.id, poSubmissionId }
+    { poId: submission.id, poSubmissionId }
   ).catch((err) => logger.warn('[Customer PO] Admin notification failed:', err));
 
   // 7. Send Automated Confirmation Email to Customer
@@ -1292,7 +1291,7 @@ ${input.notes || 'None'}
     success: true,
     message: 'Purchase Order submitted successfully! Our team will review and contact you shortly.',
     poSubmissionId,
-    id: createdRecord.submission.id,
-    po: createdRecord.submission,
+    id: submission.id,
+    po: submission,
   };
 }
