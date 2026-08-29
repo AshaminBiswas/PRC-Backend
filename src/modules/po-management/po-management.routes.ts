@@ -23,6 +23,11 @@ router.post(
   controller.handleInboundWebhook
 );
 
+// ─── Attachment Download & Preview Endpoints (Public/Direct download) ─────────
+router.get('/attachments/raw-:rawFile', controller.getAttachmentFile);
+router.get('/attachments/:attachmentId/download', controller.getAttachmentFile);
+router.get('/attachments/:attachmentId', controller.getAttachmentFile);
+
 // ─── Protected Admin Operations ───────────────────────────────────────────────
 router.use(authenticate);
 

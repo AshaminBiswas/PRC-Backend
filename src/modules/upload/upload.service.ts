@@ -236,3 +236,104 @@ export const deleteFile = async (url: string, bucket: BucketKey): Promise<void> 
     }
   }
 };
+
+/**
+ * Universal document and email attachment uploader
+ * Supports PDFs, spreadsheets, CAD drawings, docs, images, ZIPs without MIME restrictions
+ */
+export const uploadAttachmentFile = async (
+  file: { originalname: string; mimetype: string; buffer: Buffer; size?: number },
+  folder: string = 'po-attachments'
+): Promise<string> => {
+  const cleanBaseName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const fileName = `${Date.now()}-${cleanBaseName}`;
+  const filePath = `${folder}/${fileName}`;
+
+  // 1. Primary Priority: ImageKit.io
+  const ikClient = getImageKitClient();
+  if (ikClient) {
+    try {
+      const uploadable = await toFile(file.buffer, fileName, { type: file.mimetype });
+      const response = await ikClient.files.upload({
+        file: uploadable,
+        fileName,
+        folder: `/${folder}`,
+        useUniqueFileName: true,
+      });
+      if (response?.url) return response.url;
+    } catch (err: any) {
+      console.warn('[Storage] ImageKit document upload fallback:', err?.message || err);
+    }
+  }
+
+  // 2. Secondary Priority: Cloudinary
+  const cldClient = getCloudinaryClient();
+  if (cldClient) {
+    try {
+      const base64Data = `data:${file.mimetype || 'application/octet-stream'};base64,${file.buffer.toString('base64')}`;
+      const result = await cldClient.uploader.upload(base64Data, {
+        folder,
+        public_id: path.parse(fileName).name,
+        resource_type: 'auto',
+      });
+      if (result?.secure_url) return result.secure_url;
+    } catch (err: any) {
+      console.warn('[Storage] Cloudinary document upload fallback:', err?.message || err);
+    }
+  }
+
+  // 3. Fallback: Supabase Storage
+  if (env.supabase.url && env.supabase.serviceRoleKey) {
+    try {
+      const bucketName = env.supabase.buckets.products || 'products';
+      const { error } = await supabase.storage.from(bucketName).upload(filePath, file.buffer, {
+        contentType: file.mimetype || 'application/octet-stream',
+        upsert: true,
+      });
+
+      if (!error) {
+        const { data } = supabase.storage.from(bucketName).getPublicUrl(filePath);
+        if (data?.publicUrl) return data.publicUrl;
+      }
+    } catch (err: any) {
+      console.warn('[Storage] Supabase document upload fallback:', err?.message || err);
+    }
+  }
+
+  // 4. Fallback: Cloudflare R2 Storage
+  const clientR2 = getR2Client();
+  if (clientR2) {
+    try {
+      await clientR2.send(
+        new PutObjectCommand({
+          Bucket: env.r2.bucketName,
+          Key: filePath,
+          Body: file.buffer,
+          ContentType: file.mimetype || 'application/octet-stream',
+        })
+      );
+
+      const publicDomain = env.r2.publicDomain || `https://${env.r2.bucketName}.${env.r2.accountId}.r2.dev`;
+      return `${publicDomain}/${filePath}`;
+    } catch (err: any) {
+      console.warn('[Storage] Cloudflare R2 document upload fallback:', err?.message || err);
+    }
+  }
+
+  // 5. Fallback: Local Filesystem storage
+  try {
+    const fs = await import('fs');
+    const uploadDir = path.join(process.cwd(), 'uploads', folder);
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    const localPath = path.join(uploadDir, fileName);
+    fs.writeFileSync(localPath, file.buffer);
+    return `/uploads/${folder}/${fileName}`;
+  } catch (fsErr: any) {
+    console.warn('[Storage] Local filesystem write fallback:', fsErr?.message || fsErr);
+  }
+
+  // 6. Final In-Memory Base64 Data URI (Guarantees zero data loss)
+  return `data:${file.mimetype || 'application/octet-stream'};base64,${file.buffer.toString('base64')}`;
+};

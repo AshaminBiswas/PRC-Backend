@@ -13,7 +13,7 @@ import {
 } from './po.types';
 import { generatePoSubmissionId } from './po-sequence.service';
 import { classifyInboundEmail, extractSenderProfileDetails } from './po-classifier.service';
-import { uploadFile } from '../upload/upload.service';
+import { uploadAttachmentFile } from '../upload/upload.service';
 
 /**
  * Sanitize HTML email body to eliminate dangerous script tags, iframes, and malicious code
@@ -26,35 +26,41 @@ export function sanitizeEmailHtml(rawHtml: string): string {
       'h1',
       'h2',
       'h3',
+      'h4',
+      'h5',
+      'h6',
+      'table',
+      'thead',
+      'tbody',
+      'tr',
+      'th',
+      'td',
       'span',
       'div',
-      'table',
-      'tbody',
-      'thead',
-      'tr',
-      'td',
-      'th',
+      'p',
+      'br',
+      'hr',
+      'strong',
       'b',
+      'em',
       'i',
       'u',
-      'hr',
-      'br',
-      'p',
       'a',
-      'font',
+      'ul',
+      'ol',
+      'li',
     ]),
     allowedAttributes: {
-      ...sanitizeHtml.defaults.allowedAttributes,
-      '*': ['style', 'class', 'align', 'color', 'bgcolor', 'valign'],
       a: ['href', 'name', 'target', 'rel'],
-      img: ['src', 'alt', 'width', 'height', 'style'],
+      img: ['src', 'alt', 'title', 'width', 'height', 'style'],
+      '*': ['style', 'class', 'align', 'valign', 'bgcolor'],
     },
-    allowedSchemes: ['http', 'https', 'data', 'cid', 'mailto'],
+    allowedSchemes: ['http', 'https', 'mailto', 'data', 'cid'],
   });
 }
 
 /**
- * Upload an email attachment to the configured storage service
+ * Upload and process attachment safely using storage providers
  */
 async function processAndStoreAttachment(
   att: { fileName: string; fileType: string; fileSize: number; buffer?: Buffer; content?: string }
@@ -64,30 +70,24 @@ async function processAndStoreAttachment(
 
   if (att.buffer) {
     try {
-      // Build a Multer-compatible file object to pass to uploadFile
-      const mockFile: Express.Multer.File = {
-        fieldname: 'file',
-        originalname: fileName,
-        encoding: '7bit',
-        mimetype: fileType,
-        size: att.fileSize || att.buffer.length,
-        buffer: att.buffer,
-        destination: '',
-        filename: fileName,
-        path: '',
-        stream: null as any,
-      };
-
-      const url = await uploadFile(mockFile, 'products', 'po-attachments');
+      const url = await uploadAttachmentFile(
+        {
+          originalname: fileName,
+          mimetype: fileType,
+          buffer: att.buffer,
+          size: att.fileSize || att.buffer.length,
+        },
+        'po-attachments'
+      );
       return { storagePath: `po-attachments/${fileName}`, storageUrl: url };
     } catch (err: any) {
-      logger.warn(`[PO Ingestion] Storage upload fallback for ${fileName}:`, err?.message || err);
+      logger.warn(`[PO Ingestion] Storage upload error for ${fileName}:`, err?.message || err);
     }
   }
 
-  // Fallback storage URL
-  const fallbackUrl = att.content || `/api/v1/po-management/attachments/raw-${Date.now()}-${encodeURIComponent(fileName)}`;
-  return { storagePath: `local/${fileName}`, storageUrl: fallbackUrl };
+  // Fallback storage data URI or content
+  const fallbackUrl = att.content || (att.buffer ? `data:${fileType};base64,${att.buffer.toString('base64')}` : `/api/v1/po-management/attachments/raw-${Date.now()}-${encodeURIComponent(fileName)}`);
+  return { storagePath: `po-attachments/${fileName}`, storageUrl: fallbackUrl };
 }
 
 /**
