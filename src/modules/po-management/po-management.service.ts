@@ -848,7 +848,48 @@ export async function createCustomerPoSubmission(
   }
 
   // 4. Generate Line Items & HTML summary
-  const items = Array.isArray(input.lineItems) ? input.lineItems : [];
+  let items = Array.isArray(input.lineItems) ? [...input.lineItems] : [];
+
+  if (items.length === 0 && input.source === 'QUOTATION' && (input.quoteId || input.quoteNumber)) {
+    try {
+      const dbQuote = await prisma.quote.findFirst({
+        where: {
+          isDeleted: false,
+          OR: [
+            ...(input.quoteId ? [{ id: input.quoteId }] : []),
+            ...(input.quoteNumber
+              ? [
+                  { referenceNo: { equals: input.quoteNumber, mode: 'insensitive' as const } },
+                  { quoteNumber: { equals: input.quoteNumber, mode: 'insensitive' as const } },
+                ]
+              : []),
+          ],
+        },
+        include: {
+          items: {
+            include: {
+              product: { select: { id: true, name: true, sku: true } },
+            },
+          },
+        },
+      });
+
+      if (dbQuote && dbQuote.items && dbQuote.items.length > 0) {
+        items = dbQuote.items.map((it) => ({
+          productName: it.productNameSnapshot || it.product?.name || 'Hardware Fitting',
+          sku: it.product?.sku || undefined,
+          quantity: it.quantity,
+          unit: it.unit || 'PCS',
+          targetRate: it.rate !== null ? Number(it.rate) : 0,
+          totalPrice: it.amount !== null ? Number(it.amount) : Number(it.quantity) * Number(it.rate || 0),
+          specifications: `Quote Ref: ${dbQuote.referenceNo || dbQuote.quoteNumber}`,
+        }));
+      }
+    } catch (err) {
+      logger.warn('[Customer PO] Could not auto-fetch quote items from DB:', err);
+    }
+  }
+
   const totalAmount = items.reduce(
     (sum, it) => sum + (Number(it.totalPrice) || Number(it.quantity) * Number(it.targetRate) || 0),
     0

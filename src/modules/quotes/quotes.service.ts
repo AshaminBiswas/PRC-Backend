@@ -353,6 +353,7 @@ export const trackQuotation = async (rawQuery: string) => {
     gstAmount: q.gstAmount !== null ? Number(q.gstAmount) : Number(q.taxTotal || 0),
     shippingCost: q.shippingCost !== null ? Number(q.shippingCost) : null,
     grandTotal: q.grandTotal !== null ? Number(q.grandTotal) : 0,
+    advancePercentage: q.advancePercentage !== null ? Number(q.advancePercentage) : 30,
     customerResponse: q.customerResponse,
     hasDigitalSignature: !!q.digitalSignature,
     accessToken: q.status === 'APPROVED' ? q.accessToken : undefined,
