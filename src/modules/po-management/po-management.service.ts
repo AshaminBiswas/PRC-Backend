@@ -652,17 +652,23 @@ export async function replyToPoSubmission(
   // 3. Send Email via sendMail
   const outboundMessageId = `<prc-po-reply-${Date.now()}-${uuidv4()}@${env.smtp.host?.replace(/^smtp\./, '') || 'pacifichardware.com'}>`;
 
-  await sendMail({
-    to: recipientEmail,
-    subject: replyData.subject,
-    text: replyData.message,
-    html: formattedHtml,
-    cc: ccList,
-    bcc: bccList,
-    inReplyTo,
-    references,
-    attachments: emailAttachments,
-  });
+  let emailDeliveryError: string | null = null;
+  try {
+    await sendMail({
+      to: recipientEmail,
+      subject: replyData.subject,
+      text: replyData.message,
+      html: formattedHtml,
+      cc: ccList,
+      bcc: bccList,
+      inReplyTo,
+      references,
+      attachments: emailAttachments,
+    });
+  } catch (mailErr: any) {
+    emailDeliveryError = mailErr?.message || 'SMTP delivery failure';
+    logger.error(`[PO Management] Could not dispatch outbound email to ${recipientEmail}: ${emailDeliveryError}`);
+  }
 
   // 4. Save outbound message, attachments, activity log, and status in DB
   const nextStatus = replyData.newStatus || (po.status === 'NEW' ? 'WAITING_FOR_CUSTOMER' : po.status);
@@ -718,14 +724,17 @@ export async function replyToPoSubmission(
       data: {
         poSubmissionId: po.id,
         activityType: 'REPLIED',
-        title: 'Reply Sent to Customer',
-        description: `Reply sent with subject "${replyData.subject}" and ${storedAttachments.length} attachment(s) to ${recipientEmail}`,
+        title: emailDeliveryError ? 'Reply Recorded (Email Failed)' : 'Reply Sent to Customer',
+        description: emailDeliveryError
+          ? `Reply recorded in thread with subject "${replyData.subject}". Outbound delivery notice: ${emailDeliveryError}`
+          : `Reply sent with subject "${replyData.subject}" and ${storedAttachments.length} attachment(s) to ${recipientEmail}`,
         performedByUserId: currentUserId || null,
         metadata: {
           to: recipientEmail,
           subject: replyData.subject,
           attachmentsCount: storedAttachments.length,
           newStatus: nextStatus,
+          deliveryError: emailDeliveryError,
         },
       },
     });
