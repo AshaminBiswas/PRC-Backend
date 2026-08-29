@@ -1033,6 +1033,11 @@ ${input.notes || 'None'}
   const senderEmailNormalized = input.customerEmail.toLowerCase().trim();
 
   const createdRecord = await prisma.$transaction(async (tx) => {
+    const finalCustomerPoNumber =
+      input.customerPoNumber?.trim() ||
+      (input.source === PoSource.QUOTATION && input.quoteNumber ? `PO-${input.quoteNumber}` : null) ||
+      poSubmissionId;
+
     // A. Create PoSubmission
     const submission = await tx.poSubmission.create({
       data: {
@@ -1040,7 +1045,7 @@ ${input.notes || 'None'}
         source: input.source,
         classification: PoClassification.PO_DETECTED,
         confidenceScore: 1.0,
-        customerPoNumber: input.customerPoNumber?.trim() || null,
+        customerPoNumber: finalCustomerPoNumber,
         customerName: input.customerName.trim(),
         companyName: input.companyName?.trim() || null,
         customerEmail: senderEmailNormalized,
@@ -1067,7 +1072,58 @@ ${input.notes || 'None'}
       },
     });
 
-    // B. Create Initial Email Message Record (Threads everything into /po-detail view)
+    // B. Bi-Directional Linking with Quote in DB
+    if (input.source === PoSource.QUOTATION || input.quoteId || input.quoteNumber) {
+      const dbQuote = await tx.quote.findFirst({
+        where: {
+          isDeleted: false,
+          OR: [
+            ...(input.quoteId ? [{ id: input.quoteId }] : []),
+            ...(input.quoteNumber
+              ? [
+                  { referenceNo: { equals: input.quoteNumber, mode: 'insensitive' as const } },
+                  { quoteNumber: { equals: input.quoteNumber, mode: 'insensitive' as const } },
+                ]
+              : []),
+          ],
+        },
+      });
+
+      if (dbQuote) {
+        await tx.quote.update({
+          where: { id: dbQuote.id },
+          data: {
+            convertedOrderId: submission.id,
+            status: 'CONVERTED',
+          },
+        });
+
+        await tx.quoteActivityLog.create({
+          data: {
+            quoteId: dbQuote.id,
+            changeType: 'CONVERTED_TO_PO',
+            note: `Quotation converted to Purchase Order ${poSubmissionId} (Customer PO #: ${finalCustomerPoNumber})`,
+          },
+        });
+
+        await tx.poActivityLog.create({
+          data: {
+            poSubmissionId: submission.id,
+            activityType: 'QUOTATION_LINKED',
+            title: 'Quotation Linked',
+            description: `Linked to approved Quotation ${dbQuote.referenceNo || dbQuote.quoteNumber}. Converted status registered.`,
+            metadata: {
+              quoteId: dbQuote.id,
+              quoteNumber: dbQuote.referenceNo || dbQuote.quoteNumber,
+              grandTotal: dbQuote.grandTotal,
+              advancePercentage: dbQuote.advancePercentage,
+            },
+          },
+        });
+      }
+    }
+
+    // C. Create Initial Email Message Record (Threads everything into /po-detail view)
     const emailMsg = await tx.poEmailMessage.create({
       data: {
         poSubmissionId: submission.id,
@@ -1095,7 +1151,7 @@ ${input.notes || 'None'}
       include: { attachments: true },
     });
 
-    // C. Activity Logs
+    // D. Activity Logs
     await tx.poActivityLog.create({
       data: {
         poSubmissionId: submission.id,
@@ -1106,7 +1162,7 @@ ${input.notes || 'None'}
           poSubmissionId,
           source: input.source,
           quoteNumber: input.quoteNumber,
-          customerPoNumber: input.customerPoNumber,
+          customerPoNumber: finalCustomerPoNumber,
           itemsCount: items.length,
           totalAmount,
         },
