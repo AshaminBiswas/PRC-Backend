@@ -540,3 +540,231 @@ export async function bulkDeletePoSubmissions(ids: string[], performedByUserId?:
     ids: existing.map((e) => e.id),
   };
 }
+
+/**
+ * Reply to a customer's PO/Email with optional attachments and status advance
+ */
+export async function replyToPoSubmission(
+  poId: string,
+  replyData: {
+    to?: string;
+    subject: string;
+    message: string;
+    cc?: string | string[];
+    bcc?: string | string[];
+    newStatus?: PoStatus;
+  },
+  files: Express.Multer.File[] = [],
+  currentUserId?: string
+) {
+  const { uploadAttachmentFile } = await import('../upload/upload.service');
+  const { sendMail } = await import('../../utils/email.utils');
+  const { env } = await import('../../config/env');
+  const { v4: uuidv4 } = await import('uuid');
+
+  const po = await prisma.poSubmission.findUnique({
+    where: { id: poId },
+    include: {
+      emails: {
+        orderBy: { receivedAt: 'desc' },
+        take: 1,
+      },
+    },
+  });
+
+  if (!po) {
+    throw new AppError('NOT_FOUND', 'PO Submission not found', 404);
+  }
+
+  const recipientEmail = (replyData.to || po.customerEmail || '').trim();
+  if (!recipientEmail) {
+    throw new AppError('BAD_REQUEST', 'Recipient email address is required', 400);
+  }
+
+  const latestEmail = po.emails[0];
+  const inReplyTo = latestEmail?.messageId;
+  const references = latestEmail ? [...(latestEmail.references || []), latestEmail.messageId] : [];
+
+  // Parse CC and BCC
+  const parseList = (val?: string | string[]): string[] | undefined => {
+    if (!val) return undefined;
+    if (Array.isArray(val)) return val.map((s) => s.trim()).filter(Boolean);
+    return val.split(',').map((s) => s.trim()).filter(Boolean);
+  };
+
+  const ccList = parseList(replyData.cc);
+  const bccList = parseList(replyData.bcc);
+
+  // 1. Process and Upload Attachments
+  const emailAttachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
+  const storedAttachments: Array<{
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+    storagePath: string;
+    storageUrl: string;
+  }> = [];
+
+  if (files && files.length > 0) {
+    for (const file of files) {
+      const storageUrl = await uploadAttachmentFile(
+        {
+          originalname: file.originalname,
+          mimetype: file.mimetype,
+          buffer: file.buffer,
+          size: file.size,
+        },
+        'po-attachments'
+      );
+
+      emailAttachments.push({
+        filename: file.originalname,
+        content: file.buffer,
+        contentType: file.mimetype,
+      });
+
+      storedAttachments.push({
+        fileName: file.originalname,
+        fileType: file.mimetype,
+        fileSize: file.size,
+        storagePath: `po-attachments/${file.originalname}`,
+        storageUrl,
+      });
+    }
+  }
+
+  // 2. Format HTML email body
+  const escapedText = replyData.message.replace(/\n/g, '<br/>');
+  const formattedHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1e293b;">
+      <div style="padding-bottom: 16px;">
+        ${escapedText}
+      </div>
+      <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+      <div style="font-size: 12px; color: #64748b;">
+        <strong>Pacific Rehousing Corporation</strong><br/>
+        PO Reference: ${po.poSubmissionId || 'General Inquiry'}<br/>
+        <a href="https://prchardware.com" style="color: #8b5cf6; text-decoration: none;">prchardware.com</a>
+      </div>
+    </div>
+  `;
+
+  // 3. Send Email via sendMail
+  const outboundMessageId = `<prc-po-reply-${Date.now()}-${uuidv4()}@${env.smtp.host?.replace(/^smtp\./, '') || 'pacifichardware.com'}>`;
+
+  await sendMail({
+    to: recipientEmail,
+    subject: replyData.subject,
+    text: replyData.message,
+    html: formattedHtml,
+    cc: ccList,
+    bcc: bccList,
+    inReplyTo,
+    references,
+    attachments: emailAttachments,
+  });
+
+  // 4. Save outbound message, attachments, activity log, and status in DB transaction
+  const updatedPo = await prisma.$transaction(async (tx) => {
+    // a. Create PoEmailMessage
+    const emailMsg = await tx.poEmailMessage.create({
+      data: {
+        poSubmissionId: po.id,
+        messageId: outboundMessageId,
+        threadId: latestEmail?.threadId || inReplyTo,
+        inReplyTo,
+        references,
+        direction: 'OUTGOING',
+        senderName: env.smtp.fromName || 'PRC Hardware Support',
+        senderEmail: env.smtp.fromEmail || 'po@pacifichardware.com',
+        recipientEmail,
+        cc: ccList || [],
+        bcc: bccList || [],
+        subject: replyData.subject,
+        plainTextBody: replyData.message,
+        htmlBody: formattedHtml,
+        receivedAt: new Date(),
+      },
+    });
+
+    // b. Create PoEmailAttachment records
+    if (storedAttachments.length > 0) {
+      await tx.poEmailAttachment.createMany({
+        data: storedAttachments.map((att) => ({
+          poSubmissionId: po.id,
+          emailMessageId: emailMsg.id,
+          fileName: att.fileName,
+          fileType: att.fileType,
+          fileSize: att.fileSize,
+          storagePath: att.storagePath,
+          storageUrl: att.storageUrl,
+        })),
+      });
+    }
+
+    // c. Update PoSubmission status and lastActivityAt
+    const nextStatus = replyData.newStatus || (po.status === 'NEW' ? 'WAITING_FOR_CUSTOMER' : po.status);
+    const updated = await tx.poSubmission.update({
+      where: { id: po.id },
+      data: {
+        status: nextStatus,
+        lastActivityAt: new Date(),
+      },
+      include: {
+        emails: {
+          include: { attachments: true },
+          orderBy: { receivedAt: 'asc' },
+        },
+        attachments: true,
+        assignedUser: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+        internalNotes: {
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true, email: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        activityLogs: {
+          include: {
+            performedByUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    // d. Create Activity Log
+    await tx.poActivityLog.create({
+      data: {
+        poSubmissionId: po.id,
+        activityType: 'REPLIED',
+        title: 'Reply Sent to Customer',
+        description: `Reply sent with subject "${replyData.subject}" and ${storedAttachments.length} attachment(s) to ${recipientEmail}`,
+        performedByUserId: currentUserId || null,
+        metadata: {
+          to: recipientEmail,
+          subject: replyData.subject,
+          attachmentsCount: storedAttachments.length,
+          newStatus: nextStatus,
+        },
+      },
+    });
+
+    return updated;
+  });
+
+  // 5. Broadcast SSE event
+  eventBus.emitEvent('po.updated', {
+    id: updatedPo.id,
+    poSubmissionId: updatedPo.poSubmissionId,
+    status: updatedPo.status,
+    action: 'REPLIED',
+  });
+
+  logger.info(
+    `[PO Management] Replied to PO Submission ${po.poSubmissionId || po.id} (${recipientEmail}) with ${storedAttachments.length} attachments by user ${currentUserId || 'system'}`
+  );
+
+  return updatedPo;
+}

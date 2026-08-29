@@ -76,3 +76,12 @@ export const InboundWebhookSchema = z.object({
 export const BulkDeletePoSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, 'At least one PO ID is required for bulk deletion'),
 });
+
+export const ReplyPoSubmissionSchema = z.object({
+  to: z.string().email('Valid recipient email required').optional(),
+  subject: z.string().min(1, 'Email subject is required'),
+  message: z.string().min(1, 'Message body is required'),
+  cc: z.union([z.string(), z.array(z.string())]).optional(),
+  bcc: z.union([z.string(), z.array(z.string())]).optional(),
+  newStatus: z.nativeEnum(PoStatus).optional(),
+});

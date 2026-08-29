@@ -181,6 +181,30 @@ export const bulkDeletePoSubmissions = async (req: Request, res: Response, next:
   }
 };
 
+export const replyPoSubmission = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const poId = req.params.id;
+    const currentUserId = req.user?.id;
+    const files = (req.files as Express.Multer.File[]) || [];
+    const result = await poService.replyToPoSubmission(
+      poId,
+      {
+        to: req.body.to,
+        subject: req.body.subject,
+        message: req.body.message,
+        cc: req.body.cc,
+        bcc: req.body.bcc,
+        newStatus: req.body.newStatus,
+      },
+      files,
+      currentUserId
+    );
+    sendSuccess(res, result, 'Reply email sent successfully', 200);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getAttachmentFile = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const attachmentId = req.params.attachmentId || req.params.rawFile;

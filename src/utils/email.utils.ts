@@ -16,12 +16,16 @@ export interface EmailAttachment {
   contentType: string;
 }
 
-interface SendMailOptions {
+export interface SendMailOptions {
   to: string;
   subject: string;
   html: string;
   text?: string;
   replyTo?: string;
+  cc?: string | string[];
+  bcc?: string | string[];
+  inReplyTo?: string;
+  references?: string | string[];
   attachments?: EmailAttachment[];
 }
 
@@ -36,13 +40,26 @@ const sendViaResend = async (options: SendMailOptions, apiKey: string): Promise<
 
   const plainText = options.text || options.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
+  const toList = Array.isArray(options.to) ? options.to : [options.to];
+  const ccList = options.cc ? (Array.isArray(options.cc) ? options.cc : [options.cc]) : undefined;
+  const bccList = options.bcc ? (Array.isArray(options.bcc) ? options.bcc : [options.bcc]) : undefined;
+
+  const headers: Record<string, string> = {};
+  if (options.inReplyTo) headers['In-Reply-To'] = options.inReplyTo;
+  if (options.references) {
+    headers['References'] = Array.isArray(options.references) ? options.references.join(' ') : options.references;
+  }
+
   const payload: any = {
     from: `${env.smtp.fromName} <${env.smtp.fromEmail}>`,
-    to: [options.to],
+    to: toList,
     subject: options.subject,
     html: options.html,
     text: plainText,
     ...(options.replyTo && { reply_to: options.replyTo }),
+    ...(ccList && { cc: ccList }),
+    ...(bccList && { bcc: bccList }),
+    ...(Object.keys(headers).length > 0 && { headers }),
   };
 
   if (options.attachments?.length) {
@@ -67,13 +84,32 @@ const sendViaBrevoApi = async (options: SendMailOptions, apiKey: string): Promis
   const senderEmail = env.smtp.user?.includes('@') ? env.smtp.user : env.smtp.fromEmail;
   const plainText = options.text || options.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
+  const toRecipients = Array.isArray(options.to)
+    ? options.to.map((email) => ({ email }))
+    : [{ email: options.to }];
+  const ccRecipients = options.cc
+    ? (Array.isArray(options.cc) ? options.cc : [options.cc]).map((email) => ({ email }))
+    : undefined;
+  const bccRecipients = options.bcc
+    ? (Array.isArray(options.bcc) ? options.bcc : [options.bcc]).map((email) => ({ email }))
+    : undefined;
+
+  const headers: Record<string, string> = {};
+  if (options.inReplyTo) headers['In-Reply-To'] = options.inReplyTo;
+  if (options.references) {
+    headers['References'] = Array.isArray(options.references) ? options.references.join(' ') : options.references;
+  }
+
   const payload: any = {
     sender: { name: env.smtp.fromName, email: senderEmail },
-    to: [{ email: options.to }],
+    to: toRecipients,
     subject: options.subject,
     htmlContent: options.html,
     textContent: plainText,
     ...(options.replyTo && { replyTo: { email: options.replyTo } }),
+    ...(ccRecipients && { cc: ccRecipients }),
+    ...(bccRecipients && { bcc: bccRecipients }),
+    ...(Object.keys(headers).length > 0 && { headers }),
   };
 
   if (options.attachments?.length) {
@@ -138,18 +174,27 @@ const sendViaSmtp = async (options: SendMailOptions): Promise<void> => {
 
   const plainText = options.text || options.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 
+  const extraHeaders: Record<string, string> = {
+    'X-Priority': '1',
+    'X-MSMail-Priority': 'High',
+    Importance: 'high',
+  };
+
+  if (options.inReplyTo) extraHeaders['In-Reply-To'] = options.inReplyTo;
+  if (options.references) {
+    extraHeaders['References'] = Array.isArray(options.references) ? options.references.join(' ') : options.references;
+  }
+
   const mailPayload: any = {
     from: `"${env.smtp.fromName}" <${senderEmail}>`,
     to: options.to,
     subject: options.subject,
     text: plainText,
     html: options.html,
-    headers: {
-      'X-Priority': '1',
-      'X-MSMail-Priority': 'High',
-      Importance: 'high',
-    },
+    headers: extraHeaders,
     ...(options.replyTo && { replyTo: options.replyTo }),
+    ...(options.cc && { cc: options.cc }),
+    ...(options.bcc && { bcc: options.bcc }),
   };
 
   if (options.attachments?.length) {

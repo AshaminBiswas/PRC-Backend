@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as controller from './po-management.controller';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
 import { validate } from '../../middleware/validate.middleware';
+import multer from 'multer';
 import {
   GetPoSubmissionsQuerySchema,
   UpdatePoStatusSchema,
@@ -12,7 +13,13 @@ import {
   AddInternalNoteSchema,
   InboundWebhookSchema,
   BulkDeletePoSchema,
+  ReplyPoSubmissionSchema,
 } from './po-management.schema';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 10 },
+});
 
 const router = Router();
 
@@ -61,6 +68,14 @@ router.get(
   '/:id',
   authorize('orders.read', 'quotes.read', 'products.read', 'po.manage'),
   controller.getPoSubmissionById
+);
+
+router.post(
+  '/:id/reply',
+  authorize('orders.manage', 'quotes.manage', 'po.manage'),
+  upload.array('attachments', 10),
+  validate(ReplyPoSubmissionSchema),
+  controller.replyPoSubmission
 );
 
 router.patch(
