@@ -499,9 +499,11 @@ The Storefront was architected and optimized for native app-like responsiveness 
           - **Commercial & Financial Terms Calculation**:
             - Sequential PI reference generator (`PRC-PI-YYYY-XXXXXX`).
             - Configurable Issue Date, 30-day validity expiry, optional Customer PO / Quotation reference numbers, delivery dispatch timeline, and remarks.
-            - Configurable Advance Deposit Percentage (e.g. 30%, 50%, 100%) with live calculation of Advance Payable (₹) and Balance Due at Dispatch (₹).
-          - **Production-Grade PDF Generation Matching Quotation & PO PDF Layout (`proformaPdfGenerator.ts`)**:
-            - High-resolution, official Proforma Invoice PDF rendered with PRC Hardware architectural branding, deep Obsidian Navy (`#0f172a`), Amber Gold (`#d97706`), dual-facility header, 2-column Buyer & Consignee dossier cards, itemized HSN table, GST tax breakdown, Indian Rupee words conversion (`numberToIndianRupees`), advance payment callout, bank account details for RTGS/NEFT/UPI, commercial terms, and authorized digital stamp.
+            - **Customizable Transportation & Shipping Charges**: Dedicated input for Freight/Shipping amount (₹) and selectable GST tax rate (18%, 12%, 5%, 0% Exempt), dynamically added to total taxable value and GST calculations.
+            - **Customizable Advance Deposit Terms**: Fully customizable percentage input (0% to 100%) paired with quick-select chip presets (`10%`, `25%`, `30%`, `50%`, `70%`, `100%`) with live calculation of Advance Payable (₹) and Balance Due at Dispatch (₹).
+          - **Production-Grade PDF Generation Matching Quotation & PO PDF Layout (`proformaPdfGenerator.ts`, `logo.base64.ts`)**:
+            - Official Proforma Invoice PDF and printable HTML documents embedded with official high-resolution **PRC Logo** in header.
+            - Rendered with PRC Hardware architectural branding, deep Obsidian Navy (`#0f172a`), Amber Gold (`#d97706`), dual-facility header, 2-column Buyer & Consignee dossier cards, itemized HSN table, transportation & freight line items, GST tax breakdown, Indian Rupee words conversion (`numberToIndianRupees`), advance payment callout, bank account details for RTGS/NEFT/UPI, commercial terms, and authorized digital stamp.
           - **Production Email Dispatch System (`POST /api/v1/invoices/proforma/send-email`)**:
             - Dedicated backend endpoint in `invoices.routes.ts` / `invoices.service.ts` invoking `sendMail` with branded HTML template, dynamic line-item table, and commercial terms.
             - Interactive Email Dispatch Modal in `ProformaInvoiceDetailView.tsx` with editable recipient email, subject preview, custom payment notes, real-time dispatch state, and success toast notifications.
@@ -509,6 +511,6 @@ The Storefront was architected and optimized for native app-like responsiveness 
 
 ---
 
-*Last Updated: 2026-08-29 (Proforma Invoice Generation Hub, Dual-Facility Origin Routing, B2B Customer Auto-Fill, Quotation/PO-Matched PDF Export & Backend Email Dispatch)*
+*Last Updated: 2026-08-29 (Proforma Invoice Generation Hub, Dual-Facility Origin Routing, B2B Customer Auto-Fill, Customizable Shipping Charges & Advance %, Embedded PRC Logo PDF & Backend Email Dispatch)*
 
 
