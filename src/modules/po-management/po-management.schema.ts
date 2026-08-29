@@ -78,10 +78,10 @@ export const BulkDeletePoSchema = z.object({
 });
 
 export const ReplyPoSubmissionSchema = z.object({
-  to: z.string().email('Valid recipient email required').optional(),
+  to: z.string().email('Valid recipient email required').optional().or(z.literal('')),
   subject: z.string().min(1, 'Email subject is required'),
   message: z.string().min(1, 'Message body is required'),
-  cc: z.union([z.string(), z.array(z.string())]).optional(),
-  bcc: z.union([z.string(), z.array(z.string())]).optional(),
-  newStatus: z.nativeEnum(PoStatus).optional(),
+  cc: z.union([z.string(), z.array(z.string())]).optional().or(z.literal('')),
+  bcc: z.union([z.string(), z.array(z.string())]).optional().or(z.literal('')),
+  newStatus: z.nativeEnum(PoStatus).optional().or(z.literal('')),
 });
