@@ -12,7 +12,7 @@ import {
   EmailDirection,
 } from './po.types';
 import { generatePoSubmissionId } from './po-sequence.service';
-import { classifyInboundEmail } from './po-classifier.service';
+import { classifyInboundEmail, extractSenderProfileDetails } from './po-classifier.service';
 import { uploadFile } from '../upload/upload.service';
 
 /**
@@ -304,12 +304,15 @@ export async function processInboundEmail(email: InboundEmailPayload) {
     select: { id: true, firstName: true, lastName: true, companyName: true, phone: true, gstin: true },
   });
 
+  const extractedProfile = extractSenderProfileDetails(plainText);
+
   const customerName =
     email.senderName ||
-    (existingCustomer ? `${existingCustomer.firstName} ${existingCustomer.lastName}`.trim() : senderEmailNormalized.split('@')[0]);
+    (existingCustomer ? `${existingCustomer.firstName} ${existingCustomer.lastName}`.trim() : extractedProfile.extractedName) ||
+    senderEmailNormalized.split('@')[0];
 
-  const companyName = existingCustomer?.companyName || null;
-  const customerPhone = existingCustomer?.phone || null;
+  const companyName = existingCustomer?.companyName || extractedProfile.extractedCompany || null;
+  const customerPhone = existingCustomer?.phone || extractedProfile.extractedPhone || null;
 
   // ── STEP 7: Process Attachments ───────────────────────────────────────────────
   const attachmentRecords: any[] = [];

@@ -5,6 +5,7 @@ async function testList() {
   try {
     const listRes = await listPoSubmissions({ page: 1, limit: 15 });
     console.log('✅ listPoSubmissions success! Total items:', listRes.pagination.totalItems);
+    console.log('Items:', JSON.stringify(listRes.items, null, 2));
 
     const metricsRes = await getPoMetrics();
     console.log('✅ getPoMetrics success! Metrics:', metricsRes);
