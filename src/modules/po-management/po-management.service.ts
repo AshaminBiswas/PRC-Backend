@@ -12,6 +12,7 @@ import {
   PoManagementMetrics,
 } from './po.types';
 import { generatePoSubmissionId } from './po-sequence.service';
+import { generatePoPdfBuffer } from './po-pdf.service';
 
 /**
  * List PO Submissions with filtering, search, sorting and pagination
@@ -812,7 +813,82 @@ export async function createCustomerPoSubmission(
 
   const defaultSubject = input.subject?.trim() || `[${sourceLabel}] Purchase Order - ${customerOrCompany}`;
 
-  // 3. Process and Upload Attachments
+  // 3. Resolve Line Items from Input or Linked Quotation
+  let items = Array.isArray(input.lineItems) ? [...input.lineItems] : [];
+  let linkedQuoteRecord: any = null;
+
+  if (input.source === 'QUOTATION' || input.quoteId || input.quoteNumber) {
+    try {
+      linkedQuoteRecord = await prisma.quote.findFirst({
+        where: {
+          isDeleted: false,
+          OR: [
+            ...(input.quoteId ? [{ id: input.quoteId }] : []),
+            ...(input.quoteNumber
+              ? [
+                  { referenceNo: { equals: input.quoteNumber, mode: 'insensitive' as const } },
+                  { quoteNumber: { equals: input.quoteNumber, mode: 'insensitive' as const } },
+                ]
+              : []),
+          ],
+        },
+        include: {
+          items: {
+            include: {
+              product: { select: { id: true, name: true, sku: true } },
+            },
+          },
+        },
+      });
+
+      if (items.length === 0 && linkedQuoteRecord && linkedQuoteRecord.items && linkedQuoteRecord.items.length > 0) {
+        items = linkedQuoteRecord.items.map((it: any) => ({
+          productName: it.productNameSnapshot || it.product?.name || 'Hardware Fitting',
+          sku: it.product?.sku || undefined,
+          quantity: it.quantity,
+          unit: it.unit || 'PCS',
+          targetRate: it.rate !== null ? Number(it.rate) : 0,
+          totalPrice: it.amount !== null ? Number(it.amount) : Number(it.quantity) * Number(it.rate || 0),
+          specifications: `Quote Ref: ${linkedQuoteRecord.referenceNo || linkedQuoteRecord.quoteNumber}`,
+        }));
+      }
+    } catch (err) {
+      logger.warn('[Customer PO] Could not auto-fetch quote items from DB:', err);
+    }
+  }
+
+  const finalCustomerPoNumber =
+    input.customerPoNumber?.trim() ||
+    (input.source === PoSource.QUOTATION && input.quoteNumber ? `PO-${input.quoteNumber}` : null) ||
+    poSubmissionId;
+
+  // 4. Generate Official Commercial Purchase Order PDF Document
+  let poPdfBuffer: Buffer | null = null;
+  try {
+    poPdfBuffer = await generatePoPdfBuffer({
+      poSubmissionId,
+      customerPoNumber: finalCustomerPoNumber,
+      quoteNumber: input.quoteNumber || linkedQuoteRecord?.referenceNo || linkedQuoteRecord?.quoteNumber,
+      customerName: input.customerName.trim(),
+      companyName: input.companyName?.trim() || linkedQuoteRecord?.companyName,
+      customerEmail: input.customerEmail.trim().toLowerCase(),
+      customerPhone: input.customerPhone?.trim() || linkedQuoteRecord?.phone,
+      gstin: input.gstin?.trim() || linkedQuoteRecord?.gstNo,
+      billingAddress: input.billingAddress?.trim(),
+      shippingAddress: input.shippingAddress?.trim(),
+      deliveryTimeline: input.deliveryTimeline?.trim(),
+      paymentTerms: input.paymentTerms?.trim(),
+      notes: input.notes?.trim(),
+      source: input.source,
+      receivedAt: new Date(),
+      advancePercentage: linkedQuoteRecord?.advancePercentage ? Number(linkedQuoteRecord.advancePercentage) : 30,
+      lineItems: items,
+    });
+  } catch (pdfErr) {
+    logger.error('[Customer PO] Error generating PO PDF:', pdfErr);
+  }
+
+  // 5. Process and Upload Attachments (including generated PO PDF)
   const storedAttachments: Array<{
     fileName: string;
     fileType: string;
@@ -820,6 +896,32 @@ export async function createCustomerPoSubmission(
     storagePath: string;
     storageUrl: string;
   }> = [];
+
+  // Add the generated PO PDF as the primary document
+  if (poPdfBuffer) {
+    try {
+      const poPdfName = `${poSubmissionId}-Commercial-PO.pdf`;
+      const pdfStorageUrl = await uploadAttachmentFile(
+        {
+          originalname: poPdfName,
+          mimetype: 'application/pdf',
+          buffer: poPdfBuffer,
+          size: poPdfBuffer.length,
+        },
+        'po-attachments'
+      );
+
+      storedAttachments.push({
+        fileName: poPdfName,
+        fileType: 'application/pdf',
+        fileSize: poPdfBuffer.length,
+        storagePath: `po-attachments/${poPdfName}`,
+        storageUrl: pdfStorageUrl,
+      });
+    } catch (attErr) {
+      logger.warn('[Customer PO] Failed to save generated PO PDF to attachments:', attErr);
+    }
+  }
 
   if (files && files.length > 0) {
     for (const file of files) {
@@ -844,49 +946,6 @@ export async function createCustomerPoSubmission(
       } catch (err: any) {
         logger.error(`[Customer PO Submission] Failed to upload file ${file.originalname}:`, err);
       }
-    }
-  }
-
-  // 4. Generate Line Items & HTML summary
-  let items = Array.isArray(input.lineItems) ? [...input.lineItems] : [];
-
-  if (items.length === 0 && input.source === 'QUOTATION' && (input.quoteId || input.quoteNumber)) {
-    try {
-      const dbQuote = await prisma.quote.findFirst({
-        where: {
-          isDeleted: false,
-          OR: [
-            ...(input.quoteId ? [{ id: input.quoteId }] : []),
-            ...(input.quoteNumber
-              ? [
-                  { referenceNo: { equals: input.quoteNumber, mode: 'insensitive' as const } },
-                  { quoteNumber: { equals: input.quoteNumber, mode: 'insensitive' as const } },
-                ]
-              : []),
-          ],
-        },
-        include: {
-          items: {
-            include: {
-              product: { select: { id: true, name: true, sku: true } },
-            },
-          },
-        },
-      });
-
-      if (dbQuote && dbQuote.items && dbQuote.items.length > 0) {
-        items = dbQuote.items.map((it) => ({
-          productName: it.productNameSnapshot || it.product?.name || 'Hardware Fitting',
-          sku: it.product?.sku || undefined,
-          quantity: it.quantity,
-          unit: it.unit || 'PCS',
-          targetRate: it.rate !== null ? Number(it.rate) : 0,
-          totalPrice: it.amount !== null ? Number(it.amount) : Number(it.quantity) * Number(it.rate || 0),
-          specifications: `Quote Ref: ${dbQuote.referenceNo || dbQuote.quoteNumber}`,
-        }));
-      }
-    } catch (err) {
-      logger.warn('[Customer PO] Could not auto-fetch quote items from DB:', err);
     }
   }
 
@@ -1217,7 +1276,16 @@ ${input.notes || 'None'}
         </div>
       </div>
     `,
-    text: `Thank you for your Purchase Order. We have received your submission (Tracking ID: ${poSubmissionId}). Our team will review and contact you shortly.`,
+    text: `Thank you for your Purchase Order. We have received your submission (Tracking ID: ${poSubmissionId}). Attached is your Commercial Purchase Order PDF document. Our team will review and contact you shortly.`,
+    attachments: poPdfBuffer
+      ? [
+          {
+            filename: `${poSubmissionId}-Commercial-PO.pdf`,
+            content: poPdfBuffer,
+            contentType: 'application/pdf',
+          },
+        ]
+      : undefined,
   }).catch((err) => logger.warn('[Customer PO] Confirmation email failed:', err));
 
   return {
