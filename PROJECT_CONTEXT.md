@@ -482,10 +482,10 @@ The Storefront was architected and optimized for native app-like responsiveness 
           - **Dedicated Admin Console Hub (`/proforma-invoices`)**:
             - Accessible from the Admin sidebar under **Sales & Fulfillment** with route `id: "proforma-invoices"`.
             - Features high-level commercial KPIs (Total PIs Issued, Total Proforma Value ₹, Expected Advance Deposits, Active Documents), status filters (`ALL`, `SENT`, `DRAFT`, `CONVERTED`, `EXPIRED`), and dual-facility origin filters.
-          - **Dual-Facility Origin Routing (2 Production Works)**:
-            - **Facility 1: Delhi Corporate HQ & Central Works (`DELHI_WORKS`)**: `H-3, J.R. Complex, Gate No 4, Mandoli, Delhi - 110093` | GSTIN: `07AABCP1234F1Z9` | State Code: `07` | HDFC Bank RTGS account details.
-            - **Facility 2: Western Regional Logistics Depot (`MUMBAI_DEPOT`)**: `Unit 14-16, Logistics Park Phase II, Bhiwandi, Thane, MH - 421302` | GSTIN: `27AABCP1234F1Z9` | State Code: `27` | ICICI Bank RTGS account details.
-            - Dynamically updates registered dispatch address, facility code, GSTIN, bank payment instructions, and auto-determines Intrastate (`CGST + SGST`) vs Interstate (`IGST`) taxation based on customer Place of Supply.
+          - **Inventory-Linked Origin Facility Routing (Fulfillment Facilities Hub)**:
+            - Dynamically loads and connects with registered **Fulfillment Facilities** from the multi-branch inventory engine (`inventoryApi.getBranches({ isActive: true })` / `GET /branches`).
+            - Supports **Delhi Corporate Works (`DELHI_WORKS` / `DEL`)**, **Western Regional Depot (`MUMBAI_DEPOT`)**, **Kolkata Branch (`KOL`)**, and any newly registered warehouse depots.
+            - Dynamically updates registered dispatch address, facility code badge, GSTIN, bank RTGS transfer instructions, and auto-determines Intrastate (`CGST + SGST`) vs Interstate (`IGST`) taxation based on customer Place of Supply.
           - **B2B Customer Search & Instant Auto-Fill**:
             - Debounced search across all registered B2B clients, legal entity names, contact persons, phone numbers, emails, and GSTINs.
             - Instantly auto-populates legal entity name, GSTIN, contact details, place of supply (auto-decoded from first 2 digits of GSTIN), and registered billing/site shipping addresses with "Same as billing" toggle.
