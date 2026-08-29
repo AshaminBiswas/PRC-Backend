@@ -288,3 +288,61 @@ export const customerSubmitPo = async (req: Request, res: Response, next: NextFu
     next(error);
   }
 };
+
+export const getMyPoSubmissions = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = req.user;
+    const email = (user?.email || (req.query.email as string) || '').toLowerCase().trim();
+    const search = ((req.query.search as string) || '').trim();
+
+    if (!email && !search) {
+      sendSuccess(res, { items: [], total: 0 });
+      return;
+    }
+
+    const where: any = {};
+    if (email) {
+      where.customerEmail = { equals: email, mode: 'insensitive' };
+    }
+    if (search) {
+      where.OR = [
+        { poSubmissionId: { contains: search, mode: 'insensitive' } },
+        { customerPoNumber: { contains: search, mode: 'insensitive' } },
+        { subject: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const items = await prisma.poSubmission.findMany({
+      where,
+      orderBy: { receivedAt: 'desc' },
+      take: 50,
+      include: {
+        attachments: {
+          select: {
+            id: true,
+            fileName: true,
+            fileType: true,
+            fileSize: true,
+            storageUrl: true,
+            createdAt: true,
+          },
+        },
+        emails: {
+          orderBy: { receivedAt: 'desc' },
+          take: 3,
+          select: {
+            id: true,
+            subject: true,
+            direction: true,
+            receivedAt: true,
+            plainTextBody: true,
+          },
+        },
+      },
+    });
+
+    sendSuccess(res, { items, total: items.length });
+  } catch (error) {
+    next(error);
+  }
+};

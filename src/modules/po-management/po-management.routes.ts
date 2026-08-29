@@ -42,6 +42,9 @@ router.post(
   controller.customerSubmitPo
 );
 
+// ─── Customer / Public PO Submissions Lookup ──────────────────────────────────
+router.get('/my-pos', controller.getMyPoSubmissions);
+
 // ─── Attachment Download & Preview Endpoints (Public/Direct download) ─────────
 router.get('/attachments/raw-:rawFile', controller.getAttachmentFile);
 router.get('/attachments/:attachmentId/download', controller.getAttachmentFile);
