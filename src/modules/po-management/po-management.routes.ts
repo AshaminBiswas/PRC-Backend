@@ -30,6 +30,18 @@ router.post(
   controller.handleInboundWebhook
 );
 
+// ─── Public Customer Storefront PO Submission (Quotation-linked, Custom Form, Direct Upload) ─
+router.post(
+  '/customer-submit',
+  upload.array('attachments', 10),
+  controller.customerSubmitPo
+);
+router.post(
+  '/submit',
+  upload.array('attachments', 10),
+  controller.customerSubmitPo
+);
+
 // ─── Attachment Download & Preview Endpoints (Public/Direct download) ─────────
 router.get('/attachments/raw-:rawFile', controller.getAttachmentFile);
 router.get('/attachments/:attachmentId/download', controller.getAttachmentFile);

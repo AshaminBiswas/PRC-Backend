@@ -268,3 +268,23 @@ export const getAttachmentFile = async (req: Request, res: Response, next: NextF
     next(error);
   }
 };
+
+export const customerSubmitPo = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const files = (req.files as Express.Multer.File[]) || [];
+    let parsedBody = { ...req.body };
+
+    if (typeof parsedBody.lineItems === 'string') {
+      try {
+        parsedBody.lineItems = JSON.parse(parsedBody.lineItems);
+      } catch {
+        parsedBody.lineItems = [];
+      }
+    }
+
+    const data = await poService.createCustomerPoSubmission(parsedBody, files);
+    sendSuccess(res, data, 'Purchase Order submitted successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};

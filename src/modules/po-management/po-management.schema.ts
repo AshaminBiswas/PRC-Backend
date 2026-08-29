@@ -85,3 +85,47 @@ export const ReplyPoSubmissionSchema = z.object({
   bcc: z.union([z.string(), z.array(z.string())]).optional().or(z.literal('')),
   newStatus: z.nativeEnum(PoStatus).optional().or(z.literal('')),
 });
+
+export const CustomerSubmitPoSchema = z.object({
+  source: z.nativeEnum(PoSource).default(PoSource.PO_FORM),
+  customerName: z.string().min(1, 'Full name / Contact Person is required'),
+  companyName: z.string().optional().nullable(),
+  customerEmail: z.string().email('Valid email address is required'),
+  customerPhone: z.string().optional().nullable(),
+  customerPoNumber: z.string().optional().nullable(),
+  quoteId: z.string().optional().nullable(),
+  quoteNumber: z.string().optional().nullable(),
+  subject: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  billingAddress: z.string().optional().nullable(),
+  shippingAddress: z.string().optional().nullable(),
+  gstin: z.string().optional().nullable(),
+  deliveryTimeline: z.string().optional().nullable(),
+  paymentTerms: z.string().optional().nullable(),
+  priority: z.nativeEnum(PoPriority).optional().default(PoPriority.MEDIUM),
+  lineItems: z
+    .union([
+      z.string().transform((val) => {
+        try {
+          return JSON.parse(val);
+        } catch {
+          return [];
+        }
+      }),
+      z.array(
+        z.object({
+          productName: z.string().min(1, 'Product Name required'),
+          sku: z.string().optional(),
+          quantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
+          unit: z.string().optional().default('PCS'),
+          targetRate: z.coerce.number().optional().default(0),
+          totalPrice: z.coerce.number().optional().default(0),
+          specifications: z.string().optional(),
+        })
+      ),
+    ])
+    .optional()
+    .default([]),
+});
+
+export type CustomerSubmitPoInput = z.infer<typeof CustomerSubmitPoSchema>;

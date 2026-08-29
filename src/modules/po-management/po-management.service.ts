@@ -7,6 +7,7 @@ import {
   PoPriority,
   PoSource,
   PoStatus,
+  EmailDirection,
   PoListFilters,
   PoManagementMetrics,
 } from './po.types';
@@ -757,4 +758,376 @@ export async function replyToPoSubmission(
   );
 
   return updatedPo;
+}
+
+/**
+ * Customer Storefront PO Submission (Quotation-linked, Custom Form, Direct Upload)
+ */
+export async function createCustomerPoSubmission(
+  input: {
+    source: PoSource;
+    customerName: string;
+    companyName?: string | null;
+    customerEmail: string;
+    customerPhone?: string | null;
+    customerPoNumber?: string | null;
+    quoteId?: string | null;
+    quoteNumber?: string | null;
+    subject?: string | null;
+    notes?: string | null;
+    billingAddress?: string | null;
+    shippingAddress?: string | null;
+    gstin?: string | null;
+    deliveryTimeline?: string | null;
+    paymentTerms?: string | null;
+    priority?: PoPriority;
+    lineItems?: Array<{
+      productName: string;
+      sku?: string;
+      quantity: number;
+      unit?: string;
+      targetRate?: number;
+      totalPrice?: number;
+      specifications?: string;
+    }>;
+  },
+  files: Express.Multer.File[] = []
+) {
+  const { uploadAttachmentFile } = await import('../upload/upload.service');
+  const { sendMail } = await import('../../utils/email.utils');
+  const { notifyAdmins } = await import('../notifications/admin-notification.service');
+  const { v4: uuidv4 } = await import('uuid');
+
+  // 1. Generate unique PO Submission ID
+  const poSubmissionId = await generatePoSubmissionId();
+
+  // 2. Determine subject & labels
+  const customerOrCompany = input.companyName?.trim() || input.customerName.trim();
+  const sourceLabel =
+    input.source === PoSource.QUOTATION
+      ? `Quote PO [${input.quoteNumber || 'Linked Quote'}]`
+      : input.source === PoSource.PO_FORM
+      ? 'Custom PO Form'
+      : 'Direct PO Upload';
+
+  const defaultSubject = input.subject?.trim() || `[${sourceLabel}] Purchase Order - ${customerOrCompany}`;
+
+  // 3. Process and Upload Attachments
+  const storedAttachments: Array<{
+    fileName: string;
+    fileType: string;
+    fileSize: number;
+    storagePath: string;
+    storageUrl: string;
+  }> = [];
+
+  if (files && files.length > 0) {
+    for (const file of files) {
+      try {
+        const storageUrl = await uploadAttachmentFile(
+          {
+            originalname: file.originalname,
+            mimetype: file.mimetype,
+            buffer: file.buffer,
+            size: file.size,
+          },
+          'po-attachments'
+        );
+
+        storedAttachments.push({
+          fileName: file.originalname,
+          fileType: file.mimetype,
+          fileSize: file.size,
+          storagePath: `po-attachments/${file.originalname}`,
+          storageUrl,
+        });
+      } catch (err: any) {
+        logger.error(`[Customer PO Submission] Failed to upload file ${file.originalname}:`, err);
+      }
+    }
+  }
+
+  // 4. Generate Line Items & HTML summary
+  const items = Array.isArray(input.lineItems) ? input.lineItems : [];
+  const totalAmount = items.reduce(
+    (sum, it) => sum + (Number(it.totalPrice) || Number(it.quantity) * Number(it.targetRate) || 0),
+    0
+  );
+
+  let itemsHtml = '';
+  if (items.length > 0) {
+    itemsHtml = `
+      <div style="margin-top: 16px;">
+        <h4 style="margin: 0 0 8px 0; color: #1e293b; font-size: 13px; font-weight: 700; text-transform: uppercase;">Line Items (${items.length})</h4>
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 12px;">
+          <thead>
+            <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; text-align: left;">
+              <th style="padding: 8px 10px; color: #475569;">#</th>
+              <th style="padding: 8px 10px; color: #475569;">Item / Description</th>
+              <th style="padding: 8px 10px; color: #475569;">SKU</th>
+              <th style="padding: 8px 10px; text-align: right; color: #475569;">Qty</th>
+              <th style="padding: 8px 10px; text-align: right; color: #475569;">Expected Rate (₹)</th>
+              <th style="padding: 8px 10px; text-align: right; color: #475569;">Total (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items
+              .map(
+                (it, idx) => `
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 10px; color: #64748b;">${idx + 1}</td>
+                <td style="padding: 8px 10px; font-weight: 600; color: #0f172a;">
+                  ${it.productName}
+                  ${it.specifications ? `<br/><span style="font-size: 11px; color: #64748b; font-weight: normal;">${it.specifications}</span>` : ''}
+                </td>
+                <td style="padding: 8px 10px; color: #64748b; font-family: monospace;">${it.sku || '-'}</td>
+                <td style="padding: 8px 10px; text-align: right; font-weight: 600;">${it.quantity} ${it.unit || 'PCS'}</td>
+                <td style="padding: 8px 10px; text-align: right;">₹${Number(it.targetRate || 0).toLocaleString('en-IN')}</td>
+                <td style="padding: 8px 10px; text-align: right; font-weight: 700; color: #7c3aed;">₹${(Number(it.totalPrice) || Number(it.quantity) * Number(it.targetRate || 0)).toLocaleString('en-IN')}</td>
+              </tr>
+            `
+              )
+              .join('')}
+          </tbody>
+          ${
+            totalAmount > 0
+              ? `
+            <tfoot>
+              <tr style="background: #f8fafc; font-weight: bold; border-top: 2px solid #e2e8f0;">
+                <td colspan="5" style="padding: 8px 10px; text-align: right; color: #334155;">Estimated Total:</td>
+                <td style="padding: 8px 10px; text-align: right; color: #7c3aed; font-size: 13px;">₹${totalAmount.toLocaleString('en-IN')}</td>
+              </tr>
+            </tfoot>
+          `
+              : ''
+          }
+        </table>
+      </div>
+    `;
+  }
+
+  const formattedHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #1e293b;">
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+        <h3 style="margin: 0 0 12px 0; color: #0f172a; font-size: 15px;">Purchase Order Submission</h3>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 12px;">
+          <div><strong>PO Reference:</strong> ${poSubmissionId}</div>
+          <div><strong>Submission Channel:</strong> <span style="background: #ede9fe; color: #7c3aed; padding: 2px 6px; border-radius: 4px; font-weight: bold;">${sourceLabel}</span></div>
+          <div><strong>Customer / Contact:</strong> ${input.customerName}</div>
+          <div><strong>Email:</strong> ${input.customerEmail}</div>
+          ${input.customerPhone ? `<div><strong>Phone:</strong> ${input.customerPhone}</div>` : ''}
+          ${input.companyName ? `<div><strong>Company:</strong> ${input.companyName}</div>` : ''}
+          ${input.gstin ? `<div><strong>GSTIN:</strong> <span style="font-family: monospace;">${input.gstin}</span></div>` : ''}
+          ${input.customerPoNumber ? `<div><strong>Customer PO #:</strong> <span style="font-family: monospace; font-weight: bold;">${input.customerPoNumber}</span></div>` : ''}
+          ${input.quoteNumber ? `<div><strong>Linked Quote #:</strong> <span style="font-family: monospace;">${input.quoteNumber}</span></div>` : ''}
+          ${input.deliveryTimeline ? `<div><strong>Required Delivery:</strong> ${input.deliveryTimeline}</div>` : ''}
+          ${input.paymentTerms ? `<div><strong>Payment Terms:</strong> ${input.paymentTerms}</div>` : ''}
+        </div>
+      </div>
+
+      ${
+        input.billingAddress || input.shippingAddress
+          ? `
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; font-size: 12px;">
+          ${input.billingAddress ? `<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;"><strong>Billing Address:</strong><br/>${input.billingAddress.replace(/\n/g, '<br/>')}</div>` : ''}
+          ${input.shippingAddress ? `<div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px;"><strong>Shipping / Site Address:</strong><br/>${input.shippingAddress.replace(/\n/g, '<br/>')}</div>` : ''}
+        </div>
+      `
+          : ''
+      }
+
+      ${itemsHtml}
+
+      ${
+        input.notes
+          ? `
+        <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 12px; margin-top: 12px;">
+          <strong style="color: #92400e; font-size: 12px;">Customer Remarks & Instructions:</strong>
+          <p style="margin: 4px 0 0 0; font-size: 12px; color: #78350f; white-space: pre-line;">${input.notes}</p>
+        </div>
+      `
+          : ''
+      }
+
+      ${
+        storedAttachments.length > 0
+          ? `
+        <div style="margin-top: 16px;">
+          <h4 style="margin: 0 0 6px 0; color: #475569; font-size: 12px;">Attached Documents (${storedAttachments.length})</h4>
+          <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #2563eb;">
+            ${storedAttachments.map((a) => `<li>${a.fileName} (${(a.fileSize / 1024).toFixed(1)} KB)</li>`).join('')}
+          </ul>
+        </div>
+      `
+          : ''
+      }
+
+      <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0 12px 0;" />
+      <div style="font-size: 11px; color: #64748b;">
+        Submitted via PRC Hardware Storefront • ${new Date().toLocaleString('en-IN')}
+      </div>
+    </div>
+  `;
+
+  const plainText = `
+Purchase Order Submission (${poSubmissionId})
+Channel: ${sourceLabel}
+Customer: ${input.customerName} <${input.customerEmail}>
+Company: ${input.companyName || 'N/A'}
+Phone: ${input.customerPhone || 'N/A'}
+GSTIN: ${input.gstin || 'N/A'}
+Customer PO #: ${input.customerPoNumber || 'N/A'}
+Quote Reference: ${input.quoteNumber || 'N/A'}
+Delivery Timeline: ${input.deliveryTimeline || 'Standard'}
+Payment Terms: ${input.paymentTerms || 'Standard'}
+
+${items.length > 0 ? `Line Items:\n` + items.map((it, i) => `${i + 1}. ${it.productName} (Qty: ${it.quantity} ${it.unit || 'PCS'}) @ ₹${it.targetRate || 0} = ₹${it.totalPrice || 0}`).join('\n') : ''}
+
+Remarks:
+${input.notes || 'None'}
+  `.trim();
+
+  // 5. Atomic DB Transaction
+  const messageId = `storefront-po-${Date.now()}-${uuidv4()}@pacifichardware.com`;
+  const senderEmailNormalized = input.customerEmail.toLowerCase().trim();
+
+  const createdRecord = await prisma.$transaction(async (tx) => {
+    // A. Create PoSubmission
+    const submission = await tx.poSubmission.create({
+      data: {
+        poSubmissionId,
+        source: input.source,
+        classification: PoClassification.PO_DETECTED,
+        confidenceScore: 1.0,
+        customerPoNumber: input.customerPoNumber?.trim() || null,
+        customerName: input.customerName.trim(),
+        companyName: input.companyName?.trim() || null,
+        customerEmail: senderEmailNormalized,
+        customerPhone: input.customerPhone?.trim() || null,
+        subject: defaultSubject,
+        previewText: plainText.slice(0, 240),
+        status: PoStatus.NEW,
+        priority: input.priority || PoPriority.MEDIUM,
+        receivedAt: new Date(),
+        lastActivityAt: new Date(),
+        metadata: {
+          source: input.source,
+          quoteId: input.quoteId || null,
+          quoteNumber: input.quoteNumber || null,
+          gstin: input.gstin || null,
+          billingAddress: input.billingAddress || null,
+          shippingAddress: input.shippingAddress || null,
+          deliveryTimeline: input.deliveryTimeline || null,
+          paymentTerms: input.paymentTerms || null,
+          lineItems: items,
+          totalEstimatedValue: totalAmount,
+          submissionType: 'STOREFRONT_CUSTOMER',
+        },
+      },
+    });
+
+    // B. Create Initial Email Message Record (Threads everything into /po-detail view)
+    const emailMsg = await tx.poEmailMessage.create({
+      data: {
+        poSubmissionId: submission.id,
+        messageId,
+        threadId: submission.id,
+        direction: EmailDirection.INCOMING,
+        senderName: input.customerName,
+        senderEmail: senderEmailNormalized,
+        recipientEmail: 'po@pacifichardware.com',
+        subject: defaultSubject,
+        plainTextBody: plainText,
+        htmlBody: formattedHtml,
+        receivedAt: new Date(),
+        attachments: {
+          create: storedAttachments.map((att) => ({
+            poSubmissionId: submission.id,
+            fileName: att.fileName,
+            fileType: att.fileType,
+            fileSize: att.fileSize,
+            storagePath: att.storagePath,
+            storageUrl: att.storageUrl,
+          })),
+        },
+      },
+      include: { attachments: true },
+    });
+
+    // C. Activity Logs
+    await tx.poActivityLog.create({
+      data: {
+        poSubmissionId: submission.id,
+        activityType: 'PO_CREATED',
+        title: 'Customer PO Submitted',
+        description: `Customer ${input.customerName} submitted a purchase order via ${sourceLabel} with ${storedAttachments.length} attachment(s) and ${items.length} line item(s).`,
+        metadata: {
+          poSubmissionId,
+          source: input.source,
+          quoteNumber: input.quoteNumber,
+          customerPoNumber: input.customerPoNumber,
+          itemsCount: items.length,
+          totalAmount,
+        },
+      },
+    });
+
+    await tx.poActivityLog.create({
+      data: {
+        poSubmissionId: submission.id,
+        activityType: 'ID_GENERATED',
+        title: 'PO Submission ID Assigned',
+        description: `Internal PO reference generated: ${poSubmissionId}`,
+        newValue: poSubmissionId,
+      },
+    });
+
+    return { submission, emailMsg };
+  });
+
+  // 6. Broadcast Real-time Event to Admin Panel
+  eventBus.emitEvent('po.created', createdRecord.submission as any);
+
+  notifyAdmins(
+    `New PO Received: ${poSubmissionId}`,
+    `${customerOrCompany} submitted a new Purchase Order (${sourceLabel})`,
+    'PO_ALERT',
+    { poId: createdRecord.submission.id, poSubmissionId }
+  ).catch((err) => logger.warn('[Customer PO] Admin notification failed:', err));
+
+  // 7. Send Automated Confirmation Email to Customer
+  sendMail({
+    to: senderEmailNormalized,
+    subject: `Purchase Order Received: [${poSubmissionId}] - PRC Hardware`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #1e293b; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #0f172a; margin-top: 0;">Thank You for Your Purchase Order</h2>
+        <p>Dear ${input.customerName},</p>
+        <p>We have successfully received your Purchase Order. Our commercial & technical team is reviewing your specifications and will issue your formal Proforma Invoice (PI) / Order Confirmation shortly.</p>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin: 16px 0;">
+          <strong>Your Reference Details:</strong><br/>
+          • Internal PO Tracking ID: <span style="font-family: monospace; font-weight: bold; color: #7c3aed;">${poSubmissionId}</span><br/>
+          ${input.customerPoNumber ? `• Your PO Number: <strong>${input.customerPoNumber}</strong><br/>` : ''}
+          ${input.quoteNumber ? `• Linked Quotation: <strong>${input.quoteNumber}</strong><br/>` : ''}
+          • Status: <strong>Under Review</strong>
+        </div>
+        <p>If you have any urgent inquiries regarding this order, please reply directly to this email referencing <strong>${poSubmissionId}</strong>.</p>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px 0;" />
+        <div style="font-size: 12px; color: #64748b;">
+          <strong>PRC Hardware</strong><br/>
+          Architectural Hardware & Commercial Solutions<br/>
+          <a href="https://prchardware.com" style="color: #7c3aed; text-decoration: none;">prchardware.com</a> | sales@pacifichardware.com
+        </div>
+      </div>
+    `,
+    text: `Thank you for your Purchase Order. We have received your submission (Tracking ID: ${poSubmissionId}). Our team will review and contact you shortly.`,
+  }).catch((err) => logger.warn('[Customer PO] Confirmation email failed:', err));
+
+  return {
+    success: true,
+    message: 'Purchase Order submitted successfully! Our team will review and contact you shortly.',
+    poSubmissionId,
+    id: createdRecord.submission.id,
+    po: createdRecord.submission,
+  };
 }
