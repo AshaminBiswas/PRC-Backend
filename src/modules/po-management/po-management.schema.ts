@@ -72,3 +72,7 @@ export const InboundWebhookSchema = z.object({
     )
     .optional(),
 });
+
+export const BulkDeletePoSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, 'At least one PO ID is required for bulk deletion'),
+});

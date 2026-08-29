@@ -38,6 +38,7 @@ export interface PoClassificationResult {
   reasons: string[];
   extractedCustomerPoNumber?: string;
   extractedCompanyName?: string;
+  suggestedPriority?: PoPriority;
 }
 
 export interface PoListFilters {

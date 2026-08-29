@@ -1,4 +1,4 @@
-import { PoClassification, PoClassificationResult, EmailAttachmentPayload } from './po.types';
+import { PoClassification, PoPriority, PoClassificationResult, EmailAttachmentPayload } from './po.types';
 
 // High-confidence PO subject keywords
 const HIGH_PO_SUBJECT_REGEX = /\b(purchase\s*order|p\.?\s*o\.?\s*#?|p\.o|new\s*po|po\s*submission|po\s*attached|po\s*number|supply\s*order|work\s*order)\b/i;
@@ -112,11 +112,24 @@ export function classifyInboundEmail(
     classification = PoClassification.POSSIBLE_PO;
   }
 
+  // Determine Priority (Urgent / High / Medium)
+  const URGENT_REGEX = /\b(urgent|urgently|asap|rush\s*order|immediate\s*delivery|emergency|critical|high\s*priority|fast\s*track|immediate\s*dispatch)\b/i;
+  const HIGH_PRIORITY_REGEX = /\b(priority|express|priority\s*order|same\s*day|urgent\s*po)\b/i;
+
+  let suggestedPriority: PoPriority = PoPriority.MEDIUM;
+  if (URGENT_REGEX.test(cleanSubject) || URGENT_REGEX.test(cleanBody)) {
+    suggestedPriority = PoPriority.URGENT;
+    reasons.push('Detected urgent keywords in subject or message body');
+  } else if (HIGH_PRIORITY_REGEX.test(cleanSubject) || HIGH_PRIORITY_REGEX.test(cleanBody)) {
+    suggestedPriority = PoPriority.HIGH;
+  }
+
   return {
     classification,
     confidenceScore: finalScore,
     reasons,
     extractedCustomerPoNumber,
+    suggestedPriority,
   };
 }
 

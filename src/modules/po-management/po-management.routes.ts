@@ -11,6 +11,7 @@ import {
   UpdateCustomerPoSchema,
   AddInternalNoteSchema,
   InboundWebhookSchema,
+  BulkDeletePoSchema,
 } from './po-management.schema';
 
 const router = Router();
@@ -42,6 +43,13 @@ router.post(
   '/sync',
   authorize('orders.manage', 'quotes.manage', 'po.manage'),
   controller.syncInbound
+);
+
+router.post(
+  '/bulk-delete',
+  authorize('orders.manage', 'quotes.manage', 'po.manage'),
+  validate(BulkDeletePoSchema),
+  controller.bulkDeletePoSubmissions
 );
 
 router.get(

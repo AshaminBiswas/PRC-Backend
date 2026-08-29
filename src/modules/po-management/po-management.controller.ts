@@ -167,3 +167,14 @@ export const deletePoSubmission = async (req: Request, res: Response, next: Next
     next(error);
   }
 };
+
+export const bulkDeletePoSubmissions = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { ids } = req.body;
+    const currentUserId = req.user?.id;
+    const result = await poService.bulkDeletePoSubmissions(ids, currentUserId);
+    sendSuccess(res, result, `Successfully deleted ${result.deletedCount} PO submission(s)`);
+  } catch (error) {
+    next(error);
+  }
+};

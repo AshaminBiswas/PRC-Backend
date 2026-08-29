@@ -499,3 +499,44 @@ export async function deletePoSubmission(id: string, performedByUserId?: string)
 
   return { success: true, id: po.id };
 }
+
+/**
+ * Bulk delete multiple PO Submissions in one atomic operation
+ */
+export async function bulkDeletePoSubmissions(ids: string[], performedByUserId?: string) {
+  if (!ids || ids.length === 0) {
+    throw new AppError('BAD_REQUEST', 'No PO Submission IDs provided', 400);
+  }
+
+  const existing = await prisma.poSubmission.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, poSubmissionId: true, subject: true },
+  });
+
+  if (existing.length === 0) {
+    return { success: true, deletedCount: 0, ids: [] };
+  }
+
+  await prisma.poSubmission.deleteMany({
+    where: { id: { in: existing.map((e) => e.id) } },
+  });
+
+  // Emit po.deleted for each deleted item so all SSE connected clients remove them
+  for (const item of existing) {
+    eventBus.emitEvent('po.deleted', {
+      id: item.id,
+      poSubmissionId: item.poSubmissionId,
+      reason: 'BULK_DELETION',
+    });
+  }
+
+  logger.info(
+    `[PO Management] Bulk deleted ${existing.length} PO Submissions by user ${performedByUserId || 'system'}`
+  );
+
+  return {
+    success: true,
+    deletedCount: existing.length,
+    ids: existing.map((e) => e.id),
+  };
+}

@@ -347,7 +347,7 @@ export async function processInboundEmail(email: InboundEmailPayload) {
         subject: cleanSubject,
         previewText,
         status: PoStatus.NEW,
-        priority: PoPriority.MEDIUM,
+        priority: classificationResult.suggestedPriority || PoPriority.MEDIUM,
         receivedAt: email.receivedAt ? new Date(email.receivedAt) : new Date(),
         lastActivityAt: new Date(),
         metadata: {
