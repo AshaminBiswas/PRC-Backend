@@ -87,6 +87,11 @@ export const errorHandler = (
 // ─── Not Found Handler ────────────────────────────────────────────────────────
 
 export const notFoundHandler = (req: Request, res: Response): void => {
+  const origin = req.headers.origin;
+  if (origin && !res.getHeader('Access-Control-Allow-Origin')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
   res.status(404).json({
     success: false,
     error: {

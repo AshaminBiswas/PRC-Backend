@@ -139,79 +139,83 @@ app.use((_req, res, next) => {
 });
 
 // CORS (Allow configured origins, localhost, Vercel deployments, or reflect request origin safely)
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, server-to-server)
-      if (!origin) return callback(null, true);
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
 
-      // Extract allowed origins from env or fallback list
-      const configuredOrigins = (process.env.ALLOWED_ORIGINS || '')
-        .split(',')
-        .map((s: string) => s.trim().replace(/\/$/, ''))
-        .filter(Boolean);
+    // Extract allowed origins from env or fallback list
+    const configuredOrigins = (process.env.ALLOWED_ORIGINS || '')
+      .split(',')
+      .map((s: string) => s.trim().replace(/\/$/, ''))
+      .filter(Boolean);
 
-      const defaultAllowed = [
-        'http://localhost:5173',
-        'http://localhost:5174',
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://127.0.0.1:5173',
-        'http://127.0.0.1:5174',
-        'http://127.0.0.1:3000',
-        'http://127.0.0.1:3001',
-        'https://frontend-sage-pi-65.vercel.app',
-        'https://admin-delta-kohl.vercel.app',
-        env.frontend.url?.replace(/\/$/, ''),
-        env.frontend.adminUrl?.replace(/\/$/, ''),
-      ].filter(Boolean) as string[];
+    const defaultAllowed = [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:5174',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001',
+      'http://127.0.0.1:3002',
+      'https://frontend-sage-pi-65.vercel.app',
+      'https://admin-delta-kohl.vercel.app',
+      env.frontend.url?.replace(/\/$/, ''),
+      env.frontend.adminUrl?.replace(/\/$/, ''),
+    ].filter(Boolean) as string[];
 
-      const allAllowed = Array.from(new Set([...defaultAllowed, ...configuredOrigins]));
+    const allAllowed = Array.from(new Set([...defaultAllowed, ...configuredOrigins]));
+    const normalizedOrigin = origin.replace(/\/$/, '');
 
-      const normalizedOrigin = origin.replace(/\/$/, '');
+    // Check explicit match
+    if (allAllowed.includes(normalizedOrigin)) {
+      return callback(null, true);
+    }
 
-      // Check explicit match
-      if (allAllowed.includes(normalizedOrigin)) {
-        return callback(null, true);
-      }
+    // Allow any *.vercel.app domain (including preview branches and production deployments)
+    if (/^https:\/\/[a-zA-Z0-9_-]+\.vercel\.app$/.test(normalizedOrigin)) {
+      return callback(null, true);
+    }
 
-      // Allow any *.vercel.app domain (including preview branches and production deployments)
-      if (/^https:\/\/[a-zA-Z0-9_-]+\.vercel\.app$/.test(normalizedOrigin)) {
-        return callback(null, true);
-      }
+    // Allow localhost with any port (e.g. 5173, 5174, 5175, 3000, 3001) in all environments for local frontend/admin testing
+    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalizedOrigin)) {
+      return callback(null, true);
+    }
 
-      // Allow localhost with any port (e.g. 5173, 5174, 5175, 3000) in all environments for local frontend/admin testing
-      if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalizedOrigin)) {
-        return callback(null, true);
-      }
+    // Allow local Wi-Fi / LAN IPs (e.g. 192.168.x.x, 10.x.x.x, 172.16-31.x.x) for testing from mobile devices and other laptops
+    if (/^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(normalizedOrigin)) {
+      return callback(null, true);
+    }
 
-      // Allow local Wi-Fi / LAN IPs (e.g. 192.168.x.x, 10.x.x.x, 172.16-31.x.x) for testing from mobile devices and other laptops
-      if (/^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/.test(normalizedOrigin)) {
-        return callback(null, true);
-      }
+    // Allow official production and staging domains
+    if (/^https?:\/\/([a-zA-Z0-9_-]+\.)?(pacifichardware\.com|prchardware\.com)$/.test(normalizedOrigin)) {
+      return callback(null, true);
+    }
 
-      // Allow official production and staging domains
-      if (/^https?:\/\/([a-zA-Z0-9_-]+\.)?(pacifichardware\.com|prchardware\.com)$/.test(normalizedOrigin)) {
-        return callback(null, true);
-      }
+    // Safe permissive fallback for authenticated API calls
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers',
+  ],
+  exposedHeaders: ['X-Instance-ID', 'Content-Range', 'X-Total-Count'],
+  optionsSuccessStatus: 204,
+  maxAge: 86400,
+};
 
-      // Fail gracefully without crashing the server
-      return callback(null, false);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Requested-With',
-      'Accept',
-      'Origin',
-      'Access-Control-Request-Method',
-      'Access-Control-Request-Headers',
-    ],
-  })
-);
-app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // HTTP logging (routed through Winston — health & readiness probes are skipped)
 app.use(
