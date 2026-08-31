@@ -506,6 +506,33 @@ export const getProformaInvoiceByToken = async (token: string) => {
 };
 
 /**
+ * Customer Self-Service: Get all Proforma Invoices issued for a customer (by customerId or email).
+ */
+export const getMyCustomerProformas = async (userId: string, userEmail?: string) => {
+  const where: Prisma.ProformaInvoiceWhereInput = {
+    deletedAt: null,
+    OR: [
+      { customerId: userId },
+      ...(userEmail ? [{ customerEmail: { equals: userEmail, mode: 'insensitive' as const } }] : []),
+    ],
+  };
+
+  const proformas = await prisma.proformaInvoice.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      items: true,
+      history: {
+        orderBy: { createdAt: 'desc' },
+        take: 3,
+      },
+    },
+  });
+
+  return proformas;
+};
+
+/**
  * Update metadata and payment terms.
  */
 export const updateProformaInvoice = async (id: string, input: UpdateProformaInvoiceInput, user?: UserContext) => {

@@ -9,8 +9,28 @@ import type {
 // ─── Get Customer Pricing Matrix ─────────────────────────────────────────────
 
 export const getCustomerPricingMatrix = async (userId: string) => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId, deletedAt: null },
+  let cleanId = (userId || '').trim();
+
+  // If passed a quote reference or composite ID, try resolving the user
+  if (cleanId.startsWith('quote-')) {
+    const quoteId = cleanId.replace('quote-', '');
+    const quote = await prisma.quote.findUnique({ where: { id: quoteId } });
+    if (quote?.userId) {
+      cleanId = quote.userId;
+    } else if (quote?.email) {
+      cleanId = quote.email;
+    }
+  }
+
+  let user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { id: cleanId },
+        { email: { equals: cleanId, mode: 'insensitive' } },
+        { phone: cleanId },
+      ],
+      deletedAt: null,
+    },
     select: {
       id: true,
       email: true,
@@ -26,7 +46,32 @@ export const getCustomerPricingMatrix = async (userId: string) => {
     },
   });
 
+  if (!user) {
+    // If quote exists with this ID, check quote directly
+    const quote = await prisma.quote.findUnique({ where: { id: cleanId } });
+    if (quote?.userId) {
+      user = await prisma.user.findUnique({
+        where: { id: quote.userId, deletedAt: null },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          companyName: true,
+          gstin: true,
+          phone: true,
+          status: true,
+          userRoles: {
+            select: { role: { select: { name: true, slug: true } } },
+          },
+        },
+      });
+    }
+  }
+
   if (!user) throw new AppError('NOT_FOUND', 'Customer not found', 404);
+
+  const effectiveUserId = user.id;
 
   // Fetch all active products
   const products = await prisma.product.findMany({
@@ -49,7 +94,7 @@ export const getCustomerPricingMatrix = async (userId: string) => {
 
   // Fetch existing custom prices for this user
   const customPrices = await prisma.b2BCustomerPrice.findMany({
-    where: { userId },
+    where: { userId: effectiveUserId },
   });
 
   const customPriceMap = new Map<string, typeof customPrices[0]>();

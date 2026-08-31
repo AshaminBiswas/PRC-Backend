@@ -44,8 +44,13 @@ router.post(
   controller.submitCustomerFeedback
 );
 
-// ─── Authenticated Administrative Endpoints ───────────────────────────────────
+// ─── Authenticated Endpoints ──────────────────────────────────────────────
 router.use(authenticate);
+
+// Customer Self-Service Route: Get all PIs issued for the authenticated B2B customer profile
+router.get('/customer/my-proformas', controller.getMyCustomerProformas);
+
+// ─── Administrative Restricted Endpoints ─────────────────────────────────────
 router.use(adminLimiter);
 
 // List Proforma Invoices with pagination, filters & KPIs

@@ -249,6 +249,23 @@ export const downloadProformaPdfByToken = async (req: Request, res: Response, ne
 };
 
 /**
+ * Customer Self-Service: Retrieve all issued Proforma Invoices for logged-in B2B customer.
+ */
+export const getMyCustomerProformas = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user?.id;
+    const userEmail = req.user?.email;
+    if (!userId) {
+      throw new AppError('UNAUTHORIZED', 'Authentication required to view customer proforma invoices', 401);
+    }
+    const data = await proformaService.getMyCustomerProformas(userId, userEmail);
+    sendSuccess(res, data, 'Customer Proforma Invoices retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Email Proforma Invoice PDF to customer.
  */
 export const emailProformaInvoice = async (req: Request, res: Response, next: NextFunction) => {
