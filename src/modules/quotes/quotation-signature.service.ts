@@ -2,7 +2,15 @@ import crypto from 'crypto';
 import QRCode from 'qrcode';
 import { env } from '../../config/env';
 
-const SIGNATURE_SECRET = process.env.QUOTATION_SIGNING_SECRET || env.jwt.accessSecret || 'prc-hardware-digital-signature-secret-key-2026';
+const getSignatureSecret = (): string => {
+  return (
+    process.env.QUOTATION_SIGNING_SECRET ||
+    process.env.PROFORMA_SIGNING_SECRET ||
+    env.jwt.accessSecret ||
+    env.jwt.refreshSecret ||
+    crypto.createHash('sha256').update(String(process.env.DATABASE_URL || 'prc-backend-quote-signature')).digest('hex')
+  );
+};
 
 export interface DigitalSignaturePayload {
   referenceNo: string;
@@ -45,7 +53,7 @@ export const computeQuotationSignature = (payload: DigitalSignaturePayload): str
   ].join('|');
 
   return crypto
-    .createHmac('sha256', SIGNATURE_SECRET)
+    .createHmac('sha256', getSignatureSecret())
     .update(canonicalString)
     .digest('hex');
 };

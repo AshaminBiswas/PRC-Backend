@@ -1,13 +1,17 @@
-﻿import crypto from 'crypto';
+import crypto from 'crypto';
 import QRCode from 'qrcode';
 import { v4 as uuidv4 } from 'uuid';
 import { env } from '../../config/env';
 
-const SIGNATURE_SECRET =
-  process.env.PROFORMA_SIGNING_SECRET ||
-  process.env.QUOTATION_SIGNING_SECRET ||
-  env.jwt.accessSecret ||
-  'prc-hardware-proforma-invoice-cryptographic-signing-key-2026';
+const getSignatureSecret = (): string => {
+  return (
+    process.env.PROFORMA_SIGNING_SECRET ||
+    process.env.QUOTATION_SIGNING_SECRET ||
+    env.jwt.accessSecret ||
+    env.jwt.refreshSecret ||
+    crypto.createHash('sha256').update(String(process.env.DATABASE_URL || 'prc-backend-signature')).digest('hex')
+  );
+};
 
 export interface ProformaSignaturePayload {
   piNumber: string;
@@ -84,7 +88,7 @@ export const computeProformaSignature = (payload: ProformaSignaturePayload): str
   ].join('|');
 
   return crypto
-    .createHmac('sha256', SIGNATURE_SECRET)
+    .createHmac('sha256', getSignatureSecret())
     .update(canonicalString)
     .digest('hex');
 };
