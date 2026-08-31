@@ -482,39 +482,27 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - **Automated Customer Dispatch & Admin View**: The generated PO PDF (`PRC-PO-YYYY-XXXXXX-Commercial-PO.pdf`) is attached directly to the customer confirmation email (`sendMail`) and saved as an official `PoEmailAttachment` so it is instantly viewable and downloadable by staff in the Admin Console (`/po-management` and `/po-detail`).
             - **Streamlined 2-Channel Storefront Portal (`SubmitPoPage.tsx`)**: Refactored to two clean channels: **Option 1 (PO from Approved Quotation)** and **Option 2 (Upload Signed PO Document)**, removing obsolete custom line-item builder mode.
             - The backend marks the linked `Quote` as `status: 'CONVERTED'`, sets `convertedOrderId = submission.id`, and logs `QuoteActivityLog` and `PoActivityLog` transitions.
-    23. **Proforma Invoice (PI) Generation & Management Hub (`ProformaInvoicesPage.tsx`, `proformaService.ts`, `proformaPdfGenerator.ts`)**:
+    23. **Proforma Invoice (PI) Generation, Backend Module & Verification Hub (`proforma-invoices`, `ProformaInvoicesPage.tsx`, `proformaService.ts`, `proforma-invoice-pdf.service.ts`, `proformaPdfGenerator.ts`)**:
+          - **Dedicated Backend REST Module (`src/modules/proforma-invoices/`)**:
+            - **Controllers & Services**: `proforma-invoices.controller.ts`, `proforma-invoices.service.ts`, `proforma-invoices.routes.ts`.
+            - Full CRUD and lifecycle transitions: `GET /api/v1/proforma-invoices`, `POST /api/v1/proforma-invoices`, `GET /:id`, `PATCH /:id`, `DELETE /:id`, `POST /:id/sign`, `POST /:id/send-email`, `GET /:id/pdf`, `GET /customer/my-pis` (for B2B customer portal).
+            - **Cryptographic QR Code & Verification Engine**: `GET /api/v1/proforma-invoices/verify/:token` (public endpoint), generating high-resolution HMAC-SHA256 digital authenticity verification records and QR code images (`qrcode` library) embedded directly into the generated PDF and UI views.
           - **Dedicated Admin Console Hub (`/proforma-invoices`)**:
             - Accessible from the Admin sidebar under **Sales & Fulfillment** with route `id: "proforma-invoices"`.
             - Features high-level commercial KPIs (Total PIs Issued, Total Proforma Value ₹, Expected Advance Deposits, Active Documents), status filters (`ALL`, `SENT`, `DRAFT`, `CONVERTED`, `EXPIRED`), and dual-facility origin filters.
-          - **Inventory-Linked Origin Facility Routing (Fulfillment Facilities Hub)**:
-            - Dynamically loads and connects with registered **Fulfillment Facilities** from the multi-branch inventory engine (`inventoryApi.getBranches({ isActive: true })` / `GET /branches`).
-            - Supports **Delhi Corporate Works (`DELHI_WORKS` / `DEL`)**, **Western Regional Depot (`MUMBAI_DEPOT`)**, **Kolkata Branch (`KOL`)**, and any newly registered warehouse depots.
-            - Dynamically updates registered dispatch address, facility code badge, GSTIN, bank RTGS transfer instructions, and auto-determines Intrastate (`CGST + SGST`) vs Interstate (`IGST`) taxation based on customer Place of Supply.
-          - **B2B Customer Search & Instant Auto-Fill**:
-            - Debounced search across all registered B2B clients, legal entity names, contact persons, phone numbers, emails, and GSTINs.
-            - Instantly auto-populates legal entity name, GSTIN, contact details, place of supply (auto-decoded from first 2 digits of GSTIN), and registered billing/site shipping addresses with "Same as billing" toggle.
-          - **Catalog Product Search & Line Items Composer (Replicated from Frontend B2B Quotation Form)**:
-            - Category dropdown filter (All Categories, Restroom & Cubicle Hardware, Locker & Storage, Urinal & Partition, Shower & Glass) side-by-side with live search.
-            - Rich autocomplete product dropdown with high-res image thumbnail, product title, SKU, HSN code, category tags, B2B unit rate, stock badge, and 1-click addition (`+ Add to PI`).
-            - Smart addition logic: appends new items or increments quantity if item is already added.
-            - Interactive quantity stepper controls (`-`, number input, `+`) on both desktop table and responsive mobile touch cards.
-            - Auto-fills product name, SKU, HSN/SAC code (`83024110`), unit (`PCS/SETS`), catalog unit rate, and GST rate (18%).
-            - Supports adding custom / non-catalog line items on the fly with custom SKU generator and line total calculations.
-          - **Commercial & Financial Terms Calculation**:
-            - Sequential PI reference generator (`PRC-PI-YYYY-XXXXXX`).
-            - Configurable Issue Date, 30-day validity expiry, optional Customer PO / Quotation reference numbers, delivery dispatch timeline, and remarks.
-            - **Customizable Transportation & Shipping Charges**: Dedicated input for Freight/Shipping amount (₹) and selectable GST tax rate (18%, 12%, 5%, 0% Exempt), dynamically added to total taxable value and GST calculations.
-            - **Customizable Advance Deposit Terms**: Fully customizable percentage input (0% to 100%) paired with quick-select chip presets (`10%`, `25%`, `30%`, `50%`, `70%`, `100%`) with live calculation of Advance Payable (₹) and Balance Due at Dispatch (₹).
-          - **Production-Grade PDF Generation Matching Quotation & PO PDF Layout (`proformaPdfGenerator.ts`, `logo.base64.ts`)**:
-            - Official Proforma Invoice PDF and printable HTML documents embedded with official high-resolution **PRC Logo** in header.
-            - Rendered with PRC Hardware architectural branding, deep Obsidian Navy (`#0f172a`), Amber Gold (`#d97706`), dual-facility header, 2-column Buyer & Consignee dossier cards, itemized HSN table, transportation & freight line items, GST tax breakdown, Indian Rupee words conversion (`numberToIndianRupees`), advance payment callout, bank account details for RTGS/NEFT/UPI, commercial terms, and authorized digital stamp.
-          - **Production Email Dispatch System (`POST /api/v1/invoices/proforma/send-email`)**:
-            - Dedicated backend endpoint in `invoices.routes.ts` / `invoices.service.ts` invoking `sendMail` with branded HTML template, dynamic line-item table, and commercial terms.
-            - Interactive Email Dispatch Modal in `ProformaInvoiceDetailView.tsx` with editable recipient email, subject preview, custom payment notes, real-time dispatch state, and success toast notifications.
-            - 1-click **Download PDF**, **Print Document**, and **Email PI directly to Client**.
+            - **Parallel B2B Custom Pricing Integration**: Product selection search and inputs are locked by default until a customer is chosen. Upon selecting a B2B customer, the system immediately fetches the pre-negotiated customer contract pricing matrix via `b2bPricingApi.getCustomerPricingMatrix()`, displaying custom contract prices with `🎯 B2B CUSTOM PRICE` badges and catalog prices in strikethrough.
+          - **Customer Storefront B2B Profile Portal (`ProfilePage.tsx`, `CustomerProformaViewPage.tsx`)**:
+            - B2B customer profile includes a dedicated **"Proforma Invoices"** tab (`/profile?tab=proforma-invoices`).
+            - B2B customers can view their issued PIs, inspect commercial tax breakdowns and advance schedules, submit feedback / inquiries, and download official signed PDFs.
+          - **Exact Corporate PDF Design Mirroring Quotations & Purchase Orders (`proforma-invoice-pdf.service.ts`, `proformaPdfGenerator.ts`)**:
+            - Built with `pdfmake` (backend) and printable HTML (admin client) embedding the official high-resolution `PRC_LOGO_DATA_URL`.
+            - Exact matching typography, Obsidian Navy (`#0f172a`), Amber Gold (`#d97706`/`#f59e0b`), Emerald Green (`#047857`), vector SVG icons (mail, phone, globe, calendar, clock, user, project, listGrid, shield, mapPin, docRef, bank, signatureSvg).
+            - **Page 1**: Logo and contact header, amber accent bar, PI NO. badge, 3-column metadata strip (Issue Date, FY, Valid Until), 2-column Bill To (Buyer) & Order Details cards, `#0b1e38` Navy Dark line items table with alternating rows, digital authenticity stamp with QR code & HMAC-SHA256 hash, bank remittance box (HDFC Bank Ltd), and financial summary table (Basic, CGST/SGST/IGST, Logistics, Grand Total, Advance Payable %, and Balance Due).
+            - **Page 2**: General Terms & Conditions (1. Specifications Required for Production, 2. Other Terms & Conditions, 3. Payment Terms for Supply, 4. Special Note on Site Delay & Payment Liability, 5. Delivery Timeline, 6. Statutory Compliance, and Dual Signatures for Client Acceptance and Pacific Products and Solutions).
+            - Fixed header and footer with location pin, contact details, document reference, and dynamic page number pill (`X / Y`).
 
 ---
 
-*Last Updated: 2026-08-29 (Proforma Invoice Generation Hub, Dual-Facility Origin Routing, B2B Customer Auto-Fill, Customizable Shipping Charges & Advance %, Embedded PRC Logo PDF & Backend Email Dispatch)*
+*Last Updated: 2026-08-31 (Rewritten Proforma Invoice PDF Generator matching Quotation & PO layout with embedded logo, vector SVG icons, QR verification seal, Page 2 Terms & Conditions, B2B custom pricing auto-fetch, and zero TypeScript errors)*
 
 
