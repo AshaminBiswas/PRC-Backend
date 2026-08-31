@@ -711,6 +711,12 @@ export const deleteUser = async (id: string) => {
     `UPDATE "invoices" SET "approved_by" = NULL WHERE "approved_by" = $1`, id
   ).catch(() => {});
   await prisma.$executeRawUnsafe(
+    `UPDATE "proforma_invoices" SET "customer_id" = NULL WHERE "customer_id" = $1`, id
+  ).catch(() => {});
+  await prisma.$executeRawUnsafe(
+    `UPDATE "proforma_invoices" SET "created_by" = NULL WHERE "created_by" = $1`, id
+  ).catch(() => {});
+  await prisma.$executeRawUnsafe(
     `UPDATE "b2b_purchase_orders" SET "customer_id" = NULL WHERE "customer_id" = $1`, id
   ).catch(() => {});
   await prisma.$executeRawUnsafe(

@@ -47,6 +47,7 @@ import b2bPricingRoutes from './modules/b2b-pricing/b2b-pricing.routes';
 import auditRoutes from './modules/audit/audit.routes';
 import projectsRoutes from './modules/projects/projects.routes';
 import poManagementRoutes from './modules/po-management/po-management.routes';
+import proformaInvoicesRoutes from './modules/proforma-invoices/proforma-invoices.routes';
 import aiAgentRoutes from './modules/ai-agent/ai-agent.routes';
 import {
   branchesRouter,
@@ -359,6 +360,7 @@ app.use(`${prefix}/invoices`, invoiceRoutes);
 app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
 app.use(`${prefix}/audit`, auditRoutes);
 app.use(`${prefix}/po-management`, poManagementRoutes);
+app.use(`${prefix}/proforma-invoices`, proformaInvoicesRoutes);
 app.use(`${prefix}/ai-agent`, aiAgentRoutes);
 app.use(`${prefix}/events`, sseRoutes);
 

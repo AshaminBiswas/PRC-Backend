@@ -231,6 +231,7 @@ model User {
   assignedPoSubmissions PoSubmission[]   @relation("AssignedStaffPo")
   poInternalNotes       PoInternalNote[] @relation("PoInternalNoteAuthor")
   poActivityLogs        PoActivityLog[]  @relation("PoActivityLogPerformer")
+  proformaInvoices      ProformaInvoice[]
 
   @@index([email])
   @@index([status])
@@ -495,6 +496,7 @@ model Product {
   purchaseItems     PurchaseItem[]
   stockMovements    StockMovement[]
   transferItems     StockTransferItem[]
+  proformaInvoiceItems ProformaInvoiceItem[]
 
   @@index([slug])
   @@index([sku])
@@ -1210,6 +1212,174 @@ model InvoiceSequence {
 
   @@unique([invoiceType, financialYear, branchCode])
   @@map("invoice_sequences")
+}
+
+// ─── Dedicated B2B Proforma Invoices (PI) System ──────────────────────────────
+
+enum ProformaInvoiceStatus {
+  DRAFT
+  ISSUED
+  SENT
+  APPROVED
+  ACCEPTED
+  ADVANCE_RECEIVED
+  CONVERTED_TO_INVOICE
+  CANCELLED
+  EXPIRED
+}
+
+model ProformaInvoice {
+  id                     String                @id @default(uuid())
+  piNumber               String                @unique @map("pi_number")
+  financialYear          String                @map("financial_year")
+  sequenceNo             Int                   @default(1) @map("sequence_no")
+  status                 ProformaInvoiceStatus @default(DRAFT)
+  
+  // Relations / External References
+  quoteId                String?               @map("quote_id")
+  quoteNumber            String?               @map("quote_number")
+  poId                   String?               @map("po_id")
+  poNumber               String?               @map("po_number")
+  customerPoNumber       String?               @map("customer_po_number")
+  orderId                String?               @map("order_id")
+  customerId             String?               @map("customer_id")
+  
+  // Buyer / Customer Details
+  customerName           String                @map("customer_name")
+  companyName            String?               @map("company_name")
+  customerEmail          String                @map("customer_email")
+  customerPhone          String?               @map("customer_phone")
+  gstin                  String?               @db.VarChar(15)
+  pan                    String?
+  billingAddress         String?               @map("billing_address")
+  shippingAddress        String?               @map("shipping_address")
+  placeOfSupply          String?               @map("place_of_supply")
+  
+  // Financial Computations
+  subtotal               Decimal               @default(0) @db.Decimal(12, 2)
+  taxableAmount          Decimal               @default(0) @map("taxable_amount") @db.Decimal(12, 2)
+  cgst                   Decimal               @default(0) @db.Decimal(12, 2)
+  sgst                   Decimal               @default(0) @db.Decimal(12, 2)
+  igst                   Decimal               @default(0) @db.Decimal(12, 2)
+  cess                   Decimal               @default(0) @db.Decimal(12, 2)
+  discount               Decimal               @default(0) @db.Decimal(12, 2)
+  shippingCost           Decimal               @default(0) @map("shipping_cost") @db.Decimal(12, 2)
+  roundOff               Decimal               @default(0) @map("round_off") @db.Decimal(6, 2)
+  grandTotal             Decimal               @default(0) @map("grand_total") @db.Decimal(12, 2)
+  currency               String                @default("INR")
+  
+  // Commercial & Advance Payment Terms
+  advancePercentage      Decimal               @default(30) @map("advance_percentage") @db.Decimal(5, 2)
+  advanceAmount          Decimal               @default(0) @map("advance_amount") @db.Decimal(12, 2)
+  balanceDue             Decimal               @default(0) @map("balance_due") @db.Decimal(12, 2)
+  paymentTerms           String?               @map("payment_terms")
+  deliveryTimeline       String?               @map("delivery_timeline")
+  validUntil             DateTime?             @map("valid_until")
+  
+  // Cryptographic QR Verification & Anti-Tamper
+  verificationToken      String                @unique @default(uuid()) @map("verification_token")
+  verificationId         String                @unique @map("verification_id")
+  documentHash           String                @map("document_hash")
+  digitalSignature       String?               @map("digital_signature")
+  signedBy               String?               @map("signed_by")
+  signedAt               DateTime?             @map("signed_at")
+  qrCodeDataUrl          String?               @map("qr_code_data_url") @db.Text
+  
+  // Storage, Notes & PDF
+  pdfPath                String?               @map("pdf_path")
+  notes                  String?               @db.Text
+  termsAndConditions     String?               @map("terms_and_conditions") @db.Text
+  bankDetails            Json?                 @map("bank_details")
+  
+  // Conversion & Audit Lifecycle
+  convertedInvoiceId     String?               @map("converted_invoice_id")
+  convertedInvoiceNumber String?               @map("converted_invoice_number")
+  convertedAt            DateTime?             @map("converted_at")
+  createdBy              String?               @map("created_by")
+  updatedBy              String?               @map("updated_by")
+  approvedBy             String?               @map("approved_by")
+  approvedAt             DateTime?             @map("approved_at")
+  sentAt                 DateTime?             @map("sent_at")
+  cancelledAt            DateTime?             @map("cancelled_at")
+  cancelledReason        String?               @map("cancelled_reason")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
+  deletedAt              DateTime?             @map("deleted_at")
+
+  // Relations
+  customer               User?                 @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items                  ProformaInvoiceItem[]
+  history                ProformaInvoiceHistory[]
+
+  @@index([piNumber])
+  @@index([financialYear])
+  @@index([status])
+  @@index([customerId])
+  @@index([verificationToken])
+  @@index([quoteNumber])
+  @@index([poNumber])
+  @@map("proforma_invoices")
+}
+
+model ProformaInvoiceItem {
+  id                String          @id @default(uuid())
+  proformaInvoiceId String          @map("proforma_invoice_id")
+  productId         String?         @map("product_id")
+  sku               String
+  productName       String          @map("product_name")
+  description       String?
+  hsnCode           String?         @map("hsn_code")
+  unit              String          @default("PCS")
+  quantity          Decimal         @db.Decimal(10, 2)
+  unitRate          Decimal         @map("unit_rate") @db.Decimal(12, 2)
+  discountPercent   Decimal         @default(0) @map("discount_percent") @db.Decimal(5, 2)
+  taxableAmount     Decimal         @map("taxable_amount") @db.Decimal(12, 2)
+  cgstRate          Decimal         @default(0) @map("cgst_rate") @db.Decimal(5, 2)
+  cgstAmount        Decimal         @default(0) @map("cgst_amount") @db.Decimal(12, 2)
+  sgstRate          Decimal         @default(0) @map("sgst_rate") @db.Decimal(5, 2)
+  sgstAmount        Decimal         @default(0) @map("sgst_amount") @db.Decimal(12, 2)
+  igstRate          Decimal         @default(0) @map("igst_rate") @db.Decimal(5, 2)
+  igstAmount        Decimal         @default(0) @map("igst_amount") @db.Decimal(12, 2)
+  lineTotal         Decimal         @map("line_total") @db.Decimal(12, 2)
+  createdAt         DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  proformaInvoice   ProformaInvoice @relation(fields: [proformaInvoiceId], references: [id], onDelete: Cascade)
+  product           Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([proformaInvoiceId])
+  @@index([sku])
+  @@index([hsnCode])
+  @@map("proforma_invoice_items")
+}
+
+model ProformaInvoiceHistory {
+  id                String          @id @default(uuid())
+  proformaInvoiceId String          @map("proforma_invoice_id")
+  action            String
+  performedBy       String?         @map("performed_by")
+  details           String?
+  metadata          Json?
+  createdAt         DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  proformaInvoice   ProformaInvoice @relation(fields: [proformaInvoiceId], references: [id], onDelete: Cascade)
+
+  @@index([proformaInvoiceId])
+  @@index([action])
+  @@map("proforma_invoice_history")
+}
+
+model ProformaInvoiceSequence {
+  id            String   @id @default(uuid())
+  financialYear String   @map("financial_year")
+  branchCode    String   @default("MAIN") @map("branch_code")
+  nextNumber    Int      @default(1) @map("next_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([financialYear, branchCode])
+  @@map("proforma_invoice_sequences")
 }
 
 model ShippingRate {

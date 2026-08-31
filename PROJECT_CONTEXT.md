@@ -140,6 +140,9 @@ D:\
     - `PoInternalNote`: Staff internal communication thread attached to specific PO records.
     - `PoActivityLog`: Lifecycle audit events (`EMAIL_RECEIVED`, `PO_ID_ASSIGNED`, `STATUS_CHANGED`, `PRIORITY_CHANGED`, `RECLASSIFIED`, `CUSTOMER_PO_NUMBER_UPDATED`).
     - `PoSequence`: Atomic transaction-safe yearly sequence generator (`year`, `lastNumber`) producing `PRC-PO-YYYY-XXXXXX` IDs with automatic annual restart.
+12. **B2B Proforma Invoices (PI) & Cryptographic QR Verification Suite**:
+    - `ProformaInvoice` & `ProformaInvoiceItem`: Commercial advance demand invoices (`piNumber`, `financialYear`, `sequenceNo`, `status`, `subtotal`, `taxableAmount`, `cgst`, `sgst`, `igst`, `grandTotal`, `advancePercentage`, `advanceAmount`, `balanceDue`, `paymentTerms`, `deliveryTimeline`, `validUntil`, `verificationToken`, `verificationId`, `documentHash`, `digitalSignature`, `signedBy`, `signedAt`, `qrCodeDataUrl`, `bankDetails`).
+    - `ProformaInvoiceHistory` & `ProformaInvoiceSequence`: Atomic annual sequence tracking (`PRC/PI/2026-27/0001`) and chronological state transitions audit trail.
 
 > **Note on Removed Subsystems**: The legacy multi-tenant enterprise venture/POS subsystem was permanently removed in favor of direct SKU catalog management and this streamlined multi-branch inventory tracking suite.
 
@@ -178,6 +181,7 @@ All modules follow a uniform, production-grade layered architecture:
 | `orders` | `/api/v1/orders` | Full order lifecycle, status transitions, cancellation restock |
 | `payments` | `/api/v1/payments` | Razorpay & PhonePe checkouts, webhooks, refund processing |
 | `po-management` | `/api/v1/po-management` | Inbound business email ingestion, PO multi-factor classification, atomic sequence generator (`PRC-PO-YYYY-XXXXXX`), email threading, PO dossier management, customer storefront submissions (`POST /customer-submit` for Quotation-linked POs, Custom Form line-item composer, and Direct PO document uploads). |
+| `proforma-invoices` | `/api/v1/proforma-invoices` | Dedicated B2B Proforma Invoice (PI) lifecycle suite, atomic sequence generator (`PRC/PI/YYYY-YY/XXXX`), Quotation/PO/Order conversion, automated Indian GST computation, advance payment terms schedule, HMAC-SHA256 digital signing, high-density vector QR code generation, public anti-tamper QR verification resolver, and vector-branded A4 PDF export. |
 | `products` | `/api/v1/products` | Hardware SKU catalog, prices, specs, tags, filters |
 | `quotes` | `/api/v1/quotes` | B2B bulk quotations, negotiations, approvals, PDF quotes |
 | `reports` | `/api/v1/reports` | Financial & sales data exports (CSV, XLSX, PDF) |
