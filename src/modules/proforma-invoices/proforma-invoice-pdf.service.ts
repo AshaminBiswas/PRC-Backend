@@ -1,19 +1,22 @@
 /**
  * proforma-invoice-pdf.service.ts
  *
- * Production-grade PDF generator for Commercial Proforma Invoices (PI) using pdfmake.
- * Matches exact executive branding, layout, color palette, logo, vector SVG icons,
- * line items table, digital signature seal with QR code, bank remittance box,
- * and Page 2 Terms & Conditions from Quotation & PO PDF generation.
+ * Exact 1:1 visual clone of the official Pacific Products and Solutions
+ * Commercial Proforma Invoice (PI) layout.
+ *
+ * Clean monochrome typography, bordered logo box, top-right bordered QR verification,
+ * distinct horizontal dividing rules, 2-column dossier with center vertical divider,
+ * fully-bordered line items table, bank remittance box, financial summary with
+ * advance/balance breakdown, and bottom-left authorised signatory block.
  */
 
 import path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfmake = require('pdfmake');
-import type { TDocumentDefinitions, Content, StyleDictionary, TableCell } from 'pdfmake/interfaces';
+import type { TDocumentDefinitions, Content, StyleDictionary, TableCell, Alignment } from 'pdfmake/interfaces';
 import { PRC_LOGO_DATA_URL } from '../../assets/logo.base64';
 
-// ── Configure fonts from pdfmake package ──────────────────────────────────────
+// ── Configure Roboto Fonts from pdfmake package ──────────────────────────────
 try {
   const pdfmakeDir = path.dirname(require.resolve('pdfmake/package.json'));
   pdfmake.addFonts({
@@ -28,51 +31,14 @@ try {
   console.warn('[PI PDF Service] Font initialization warning:', e?.message || e);
 }
 
-// ── Website Brand Palette ─────────────────────────────────────────────────────
-const NAVY = '#0f172a';
-const NAVY_DARK = '#0b1e38';
-const AMBER = '#f59e0b';
-const AMBER_DARK = '#d97706';
-const GREEN = '#047857';
-const LIGHT_BG = '#f8fafc';
-const BORDER_DARK = '#1e293b';
-const BORDER_LIGHT = '#cbd5e1';
-const BORDER_SUBTLE = '#e2e8f0';
-const GRAY = '#475569';
-const DARK_GRAY = '#1e293b';
-
-// ── Crisp Vector SVG Icons ───────────────────────────────────────────────────
-const ICONS = {
-  mail: (color = AMBER_DARK) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>`,
-  phone: (color = AMBER_DARK) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
-  globe: (color = AMBER_DARK) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`,
-  calendar: (color = GRAY) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>`,
-  clock: (color = GRAY) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
-  user: (color = AMBER_DARK) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>`,
-  project: (color = AMBER_DARK) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>`,
-  listGrid: (color = AMBER_DARK) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>`,
-  shield: (color = AMBER_DARK) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>`,
-  mapPin: (color = AMBER_DARK) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`,
-  docRef: (color = GRAY) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`,
-  bank: (color = AMBER_DARK) =>
-    `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 10-5 10 5v2H2z"/><path d="M4 10v9"/><path d="M8 10v9"/><path d="M16 10v9"/><path d="M20 10v9"/><path d="M2 21h20"/></svg>`,
-  signatureSvg: `
-    <svg viewBox="0 0 110 32" fill="none" stroke="#0f172a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M6 24 C 14 6, 18 4, 26 21 C 30 28, 36 8, 44 16 C 52 24, 58 6, 68 20 C 76 12, 86 16, 98 22" />
-      <line x1="2" y1="30" x2="108" y2="30" stroke="#94a3b8" stroke-width="0.75" />
-    </svg>`,
-};
+// ── Monochrome Palette ────────────────────────────────────────────────────────
+const INK = '#000000';
+const INK_MUTED = '#1f2937';
+const GRAY_TEXT = '#4b5563';
+const LIGHT_TEXT = '#6b7280';
+const BORDER_DARK = '#000000';
+const BORDER_GRAY = '#9ca3af';
+const BORDER_LIGHT = '#d1d5db';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function formatINR(value: number | null | undefined): string {
@@ -93,9 +59,8 @@ function makeCell(
   text: string,
   options: {
     bold?: boolean;
-    align?: 'left' | 'center' | 'right';
+    align?: Alignment;
     color?: string;
-    fillColor?: string;
     fontSize?: number;
     colSpan?: number;
     margin?: [number, number, number, number];
@@ -106,8 +71,7 @@ function makeCell(
     text,
     bold: options.bold ?? false,
     alignment: options.align || 'left',
-    color: options.color || NAVY,
-    fillColor: options.fillColor,
+    color: options.color || INK,
     fontSize: options.fontSize || 8,
     colSpan: options.colSpan,
     margin: options.margin || [4, 4, 4, 4],
@@ -184,6 +148,7 @@ export interface ProformaPdfData {
 
 /**
  * Main Proforma Invoice PDF Generator
+ * Exact clone of the official Pacific Products and Solutions template.
  */
 export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> {
   const items = pi.items || [];
@@ -192,27 +157,27 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
   const customerName = pi.customerName || pi.companyName || 'Valued B2B Client';
   const advancePct = Number(pi.advancePercentage || 50);
 
-  // Default Bank Details
+  // Default Official Bank Remittance Details
   const bank = pi.bankDetails || {
     bankName: 'HDFC Bank Ltd.',
     accountName: 'Pacific Products and Solutions',
     accountNumber: '50200012345678',
     ifsc: 'HDFC0001234',
-    branch: 'Mandoli Industrial Area, Delhi',
+    branch: 'Mandoli, Delhi',
     upiId: 'pacificproducts@hdfcbank',
   };
 
   // ── Line Items Table Body ───────────────────────────────────────────────────
   const tableRows: TableCell[][] = [
     [
-      makeCell('#', { bold: true, align: 'center', color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
-      makeCell('DESCRIPTION / PRODUCT SPECIFICATION', { bold: true, color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
-      makeCell('HSN/SAC', { bold: true, align: 'center', color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
-      makeCell('UNIT', { bold: true, align: 'center', color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
-      makeCell('QTY', { bold: true, align: 'center', color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
-      makeCell('RATE (\u20B9)', { bold: true, align: 'right', color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
-      makeCell(isInterstate ? 'IGST (\u20B9)' : 'GST (\u20B9)', { bold: true, align: 'right', color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
-      makeCell('TOTAL (\u20B9)', { bold: true, align: 'right', color: '#ffffff', fillColor: NAVY_DARK, fontSize: 8 }),
+      makeCell('#', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
+      makeCell('DESCRIPTION / PRODUCT SPECIFICATION', { bold: true, fontSize: 7.5, color: INK }),
+      makeCell('HSN / SAC', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
+      makeCell('UNIT', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
+      makeCell('QTY', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
+      makeCell('RATE (\u20B9)', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
+      makeCell(isInterstate ? 'IGST (\u20B9)' : 'GST (\u20B9)', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
+      makeCell('TOTAL (\u20B9)', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
     ],
   ];
 
@@ -221,538 +186,108 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
       {
         text: 'No line items listed in proforma invoice',
         colSpan: 8,
-        alignment: 'center',
-        color: GRAY,
+        alignment: 'center' as Alignment,
+        color: GRAY_TEXT,
         italics: true,
-        margin: [4, 10, 4, 10],
+        margin: [4, 10, 4, 10] as [number, number, number, number],
       } as TableCell,
       ...Array(7).fill({ text: '' } as TableCell),
     ]);
   } else {
     items.forEach((item, idx) => {
-      const rowBg = idx % 2 === 0 ? '#ffffff' : LIGHT_BG;
       const taxAmt = isInterstate
         ? Number(item.igstAmount || 0)
         : Number(item.cgstAmount || 0) + Number(item.sgstAmount || 0);
 
       tableRows.push([
-        makeCell(String(idx + 1), { align: 'center', fillColor: rowBg, fontSize: 8 }),
+        makeCell(String(idx + 1), { align: 'center', fontSize: 8, color: INK }),
         {
           stack: [
-            { text: String(item.productName || 'HARDWARE FITTING').toUpperCase(), bold: true, fontSize: 8, color: NAVY },
-            { text: `SKU: ${item.sku || 'N/A'}${item.description ? `  |  ${item.description}` : ''}`, fontSize: 7, color: GRAY },
+            { text: String(item.productName || 'HARDWARE FITTING').toUpperCase(), bold: true, fontSize: 8, color: INK },
+            { text: `SKU: ${item.sku || 'N/A'}${item.description ? `  |  ${item.description}` : ''}`, fontSize: 7.2, color: INK_MUTED, margin: [0, 1.5, 0, 0] as [number, number, number, number] },
           ],
-          fillColor: rowBg,
-          margin: [4, 3.5, 4, 3.5],
-        },
-        makeCell(item.hsnCode || '8302', { align: 'center', fillColor: rowBg, fontSize: 8 }),
-        makeCell(item.unit || 'PCS', { align: 'center', fillColor: rowBg, fontSize: 8 }),
-        makeCell(String(Number(item.quantity || 1)), { align: 'center', fillColor: rowBg, fontSize: 8, bold: true }),
-        makeCell(Number(item.unitRate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'right', fillColor: rowBg, fontSize: 8 }),
-        makeCell(taxAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'right', fillColor: rowBg, fontSize: 8 }),
-        makeCell(Number(item.lineTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'right', bold: true, fillColor: rowBg, fontSize: 8, color: NAVY }),
+          margin: [4, 4, 4, 4] as [number, number, number, number],
+        } as TableCell,
+        makeCell(item.hsnCode || '83024110', { align: 'center', fontSize: 8, color: INK }),
+        makeCell(item.unit || 'PCS', { align: 'center', fontSize: 8, color: INK }),
+        makeCell(String(Number(item.quantity || 1)), { align: 'center', fontSize: 8, color: INK }),
+        makeCell(Number(item.unitRate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'center', fontSize: 8, color: INK }),
+        makeCell(taxAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'center', fontSize: 8, color: INK }),
+        makeCell(Number(item.lineTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'center', fontSize: 8, color: INK }),
       ]);
     });
   }
 
-  // ── QR Code Section (for signature verification) ───────────────────────────
-  const qrSection: Content = pi.qrCodeDataUrl
-    ? {
-        columns: [
-          {
-            image: pi.qrCodeDataUrl,
-            width: 55,
-            height: 55,
-          },
-          {
-            width: '*',
-            stack: [
-              { text: isSigned ? 'Verified Authenticity' : 'Official Verification Record', fontSize: 8.5, bold: true, color: isSigned ? GREEN : NAVY, margin: [6, 0, 0, 2] },
-              { text: `Signed By: ${pi.signedBy || 'PRC Commercial Desk'}`, fontSize: 7.5, color: DARK_GRAY, margin: [6, 0, 0, 1] },
-              { text: `Date: ${formatDate(pi.signedAt || pi.createdAt)}`, fontSize: 7.5, color: DARK_GRAY, margin: [6, 0, 0, 1] },
-              { text: `SHA256: ${(pi.documentHash || '').slice(0, 20)}...`, fontSize: 7, color: GRAY, margin: [6, 0, 0, 0] },
-            ],
-          },
-        ],
-        margin: [0, 2, 0, 0],
-      }
-    : {
-        text: 'Awaiting digital signature & verification stamp',
-        fontSize: 7.5,
-        italics: true,
-        color: GRAY,
-        margin: [0, 8, 0, 8],
-      };
-
+  // ── Document Definition ────────────────────────────────────────────────────
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A4',
-    pageMargins: [34, 30, 34, 40],
-    defaultStyle: { font: 'Roboto', fontSize: 8.5, color: NAVY },
+    pageMargins: [32, 26, 32, 30],
+    defaultStyle: { font: 'Roboto', fontSize: 8, color: INK },
 
-    // ── Fixed Footer across all pages with Vector Icons ────────────────────────
+    // ── Fixed Footer across all pages ──────────────────────────────────────────
     footer: (currentPage: number, pageCount: number): Content => ({
       stack: [
         {
           canvas: [
             {
               type: 'line',
-              x1: 34,
+              x1: 32,
               y1: 0,
-              x2: 561,
+              x2: 563,
               y2: 0,
               lineWidth: 0.5,
               lineColor: BORDER_LIGHT,
             },
           ],
-          margin: [0, 0, 0, 5],
+          margin: [0, 0, 0, 6] as [number, number, number, number],
         },
         {
           columns: [
-            // Left: Location Pin Icon & Address
             {
-              width: '42%',
-              columns: [
-                { svg: ICONS.mapPin(AMBER_DARK), width: 11, height: 11, margin: [0, 1, 0, 0] },
-                {
-                  text: 'H -3, J.R. COMPLEX GATE NO 4,\nMELA RAM FARM, MANDOLI,\nDELHI 110093, INDIA',
-                  fontSize: 6.8,
-                  color: DARK_GRAY,
-                  lineHeight: 1.25,
-                  margin: [4, 0, 0, 0],
-                },
-              ],
+              width: '*',
+              text: `Ref: PI #${pi.piNumber}   |   Computer Generated`,
+              fontSize: 7.5,
+              color: GRAY_TEXT,
+              alignment: 'center' as Alignment,
             },
-            // Center: Support Email Icon & Address
             {
-              width: '28%',
-              columns: [
-                { svg: ICONS.mail(AMBER_DARK), width: 11, height: 11, margin: [0, 3, 0, 0] },
-                {
-                  text: 'billing@pacifichardware.com\n+91 98185 92113',
-                  fontSize: 7,
-                  color: DARK_GRAY,
-                  margin: [4, 0, 0, 0],
-                },
-              ],
-            },
-            // Right: Ref Document Icon & Computer-Generated Notice
-            {
-              width: '24%',
-              columns: [
-                { svg: ICONS.docRef(GRAY), width: 11, height: 11, margin: [0, 1, 0, 0] },
-                {
-                  stack: [
-                    { text: `PI: ${pi.piNumber}`, fontSize: 7, bold: true, color: DARK_GRAY },
-                    { text: 'Official Commercial Proforma Invoice', fontSize: 6.2, color: GRAY },
-                  ],
-                  margin: [4, 0, 0, 0],
-                },
-              ],
-            },
-            // Page Number Pill
-            {
-              width: '6%',
-              table: {
-                widths: ['*'],
-                body: [
-                  [
-                    {
-                      text: `${currentPage} / ${pageCount}`,
-                      fontSize: 7.5,
-                      bold: true,
-                      color: NAVY,
-                      alignment: 'center',
-                      fillColor: '#ffffff',
-                      margin: [1, 2, 1, 2],
-                    },
-                  ],
-                ],
-              },
-              layout: {
-                hLineColor: () => BORDER_LIGHT,
-                vLineColor: () => BORDER_LIGHT,
-                hLineWidth: () => 0.5,
-                vLineWidth: () => 0.5,
-              },
+              width: 50,
+              text: `${currentPage} / ${pageCount}`,
+              fontSize: 7.5,
+              color: INK,
+              alignment: 'right' as Alignment,
             },
           ],
-          margin: [34, 0, 34, 0],
+          margin: [32, 0, 32, 0] as [number, number, number, number],
         },
       ],
     }),
 
     content: [
       // ═════════════════════════════════════════════════════════════════════════
-      // ─── PAGE 1: COMMERCIAL PROFORMA INVOICE (BALANCED ELEGANT BORDERS) ──────
+      // ─── PAGE 1: COMMERCIAL PROFORMA INVOICE ─────────────────────────────────
       // ═════════════════════════════════════════════════════════════════════════
 
-      // ── Top Header: Brand Left & Contact Info Right ─────────────────────────
+      // ── 1. Header: Bordered Logo Box + Company Details Left | QR Code & PI No Right
       {
         columns: [
-          // Left: Logo + Company Name & Address
+          // Left: Bordered Logo Box & Company Details
           {
             width: '*',
             columns: [
+              // Bordered Square Logo Box
               {
-                image: PRC_LOGO_DATA_URL,
-                width: 44,
-                height: 44,
-                margin: [0, 0, 10, 0],
-              },
-              {
-                stack: [
-                  { text: 'PRC Hardware', fontSize: 18, bold: true, color: NAVY, characterSpacing: 0.5 },
-                  {
-                    text: 'H -3, J.R. COMPLEX GATE NO 4, MELA RAM FARM,',
-                    fontSize: 7.2,
-                    bold: true,
-                    color: DARK_GRAY,
-                    margin: [0, 2, 0, 0],
-                  },
-                  { text: 'MANDOLI, DELHI 110093, INDIA', fontSize: 7.2, bold: true, color: DARK_GRAY },
-                ],
-              },
-            ],
-          },
-          // Right: Contact Stack with Amber Icons
-          {
-            width: 175,
-            stack: [
-              {
-                columns: [
-                  { svg: ICONS.mail(AMBER_DARK), width: 11, height: 11, margin: [0, 1, 0, 0] },
-                  { text: 'billing@pacifichardware.com', fontSize: 7.5, color: NAVY, margin: [4, 0, 0, 0] },
-                ],
-                margin: [0, 0, 0, 2],
-              },
-              {
-                columns: [
-                  { svg: ICONS.phone(AMBER_DARK), width: 11, height: 11, margin: [0, 1, 0, 0] },
-                  { text: '+91 98185 92113', fontSize: 7.5, color: NAVY, margin: [4, 0, 0, 0] },
-                ],
-                margin: [0, 0, 0, 2],
-              },
-              {
-                columns: [
-                  { svg: ICONS.globe(AMBER_DARK), width: 11, height: 11, margin: [0, 1, 0, 0] },
-                  { text: 'www.pacifichardware.com', fontSize: 7.5, color: NAVY, margin: [4, 0, 0, 0] },
-                ],
-              },
-            ],
-          },
-        ],
-        margin: [0, 0, 0, 8],
-      },
-
-      // ── Website Amber Accent Underline ───────────────────────────────────────
-      {
-        canvas: [{ type: 'rect', x: 0, y: 0, w: 527, h: 1.6, color: AMBER }],
-        margin: [0, 0, 0, 9],
-      },
-
-      // ── PROFORMA INVOICE Title & PI No Pill Row ──────────────────────────────
-      {
-        columns: [
-          // Left: Title
-          {
-            text: 'PROFORMA INVOICE',
-            fontSize: 17,
-            bold: true,
-            color: NAVY,
-            characterSpacing: 0.5,
-            width: '*',
-            margin: [0, 2, 0, 0],
-          },
-          // Right: PI NO. Badge with Crisp Frame
-          {
-            width: 185,
-            table: {
-              widths: [55, '*'],
-              body: [
-                [
-                  {
-                    text: 'PI NO.',
-                    fontSize: 7.5,
-                    bold: true,
-                    color: NAVY,
-                    alignment: 'center',
-                    fillColor: '#ffffff',
-                    margin: [4, 4, 4, 4],
-                  },
-                  {
-                    text: pi.piNumber,
-                    fontSize: 8.5,
-                    bold: true,
-                    color: AMBER_DARK,
-                    alignment: 'center',
-                    fillColor: '#ffffff',
-                    margin: [4, 4, 4, 4],
-                  },
-                ],
-              ],
-            },
-            layout: {
-              hLineColor: () => BORDER_DARK,
-              vLineColor: () => BORDER_DARK,
-              hLineWidth: () => 0.75,
-              vLineWidth: () => 0.75,
-            },
-          },
-        ],
-        margin: [0, 0, 0, 8],
-      },
-
-      // ── 3-Column Metadata Strip (Fine 0.5pt Border) ──────────────────────────
-      {
-        table: {
-          widths: ['33.33%', '33.33%', '33.34%'],
-          body: [
-            [
-              // Issue Date with Calendar SVG Icon
-              {
-                columns: [
-                  { svg: ICONS.calendar(AMBER_DARK), width: 13, height: 13, margin: [0, 2, 0, 0] },
-                  {
-                    stack: [
-                      { text: 'ISSUE DATE', fontSize: 7, bold: true, color: GRAY },
-                      { text: formatDate(pi.createdAt), fontSize: 8.5, bold: true, color: NAVY },
-                    ],
-                    margin: [4, 0, 0, 0],
-                  },
-                ],
-                margin: [6, 4, 6, 4],
-              },
-              // Financial Year with Clock/Calendar SVG Icon
-              {
-                columns: [
-                  { svg: ICONS.clock(AMBER_DARK), width: 13, height: 13, margin: [0, 2, 0, 0] },
-                  {
-                    stack: [
-                      { text: 'FINANCIAL YEAR', fontSize: 7, bold: true, color: GRAY },
-                      { text: pi.financialYear || '2026-27', fontSize: 8.5, bold: true, color: NAVY },
-                    ],
-                    margin: [4, 0, 0, 0],
-                  },
-                ],
-                margin: [6, 4, 6, 4],
-              },
-              // Valid Until with Clock SVG Icon
-              {
-                columns: [
-                  { svg: ICONS.clock(AMBER_DARK), width: 13, height: 13, margin: [0, 2, 0, 0] },
-                  {
-                    stack: [
-                      { text: 'VALID UNTIL', fontSize: 7, bold: true, color: GRAY },
-                      {
-                        text: pi.validUntil ? formatDate(pi.validUntil) : '30 days from date',
-                        fontSize: 8.5,
-                        bold: true,
-                        color: NAVY,
-                      },
-                    ],
-                    margin: [4, 0, 0, 0],
-                  },
-                ],
-                margin: [6, 4, 6, 4],
-              },
-            ],
-          ],
-        },
-        layout: {
-          defaultBorder: true,
-          hLineColor: () => BORDER_LIGHT,
-          vLineColor: () => BORDER_LIGHT,
-          hLineWidth: () => 0.5,
-          vLineWidth: () => 0.5,
-        },
-        margin: [0, 0, 0, 9],
-      },
-
-      // ── BILL TO & PROJECT DETAILS (Fine 0.5pt Border) ────────────────────────
-      {
-        columns: [
-          // Left: BILL TO Card
-          {
-            width: '49%',
-            table: {
-              widths: ['*'],
-              body: [
-                [
-                  {
-                    stack: [
-                      {
-                        columns: [
-                          { svg: ICONS.user(AMBER_DARK), width: 11, height: 11, margin: [0, 1, 0, 0] },
-                          { text: 'BILL TO (BUYER)', fontSize: 8, bold: true, color: AMBER_DARK, margin: [4, 0, 0, 0] },
-                        ],
-                        margin: [0, 0, 0, 2],
-                      },
-                      { text: customerName, fontSize: 9.5, bold: true, color: NAVY, margin: [0, 1, 0, 2] },
-                      { text: pi.companyName || '', fontSize: 8, color: DARK_GRAY, margin: [0, 0, 0, 1] },
-                      {
-                        text: pi.gstin ? `GSTIN: ${pi.gstin}` : '',
-                        fontSize: 8,
-                        bold: true,
-                        color: NAVY,
-                        margin: [0, 0, 0, 1],
-                      },
-                      { text: pi.customerEmail || '', fontSize: 8, color: DARK_GRAY, margin: [0, 0, 0, 1] },
-                      { text: pi.customerPhone ? `Ph: ${pi.customerPhone}` : '', fontSize: 8, color: DARK_GRAY },
-                      ...(pi.billingAddress ? [{ text: `Billing: ${pi.billingAddress}`, fontSize: 7.5, color: GRAY, margin: [0, 2, 0, 0] as [number, number, number, number] }] : []),
-                    ],
-                    fillColor: '#ffffff',
-                    margin: [8, 6, 8, 6],
-                  },
-                ],
-              ],
-            },
-            layout: {
-              hLineColor: () => BORDER_LIGHT,
-              vLineColor: () => BORDER_LIGHT,
-              hLineWidth: () => 0.5,
-              vLineWidth: () => 0.5,
-            },
-          },
-          // Spacer
-          { width: '2%', text: '' },
-          // Right: ORDER & PROJECT DETAILS Card
-          {
-            width: '49%',
-            table: {
-              widths: ['*'],
-              body: [
-                [
-                  {
-                    stack: [
-                      {
-                        columns: [
-                          { svg: ICONS.project(AMBER_DARK), width: 11, height: 11, margin: [0, 1, 0, 0] },
-                          { text: 'ORDER & PROJECT DETAILS', fontSize: 8, bold: true, color: AMBER_DARK, margin: [4, 0, 0, 0] },
-                        ],
-                        margin: [0, 0, 0, 2],
-                      },
-                      {
-                        text: pi.quoteNumber ? `Linked Quote #${pi.quoteNumber}` : (pi.customerPoNumber ? `Client PO #${pi.customerPoNumber}` : 'Commercial Supply Project'),
-                        fontSize: 9.5,
-                        bold: true,
-                        color: NAVY,
-                        margin: [0, 1, 0, 4],
-                      },
-                      {
-                        table: {
-                          widths: [65, 8, '*'],
-                          body: [
-                            [
-                              { text: 'FY', fontSize: 8, color: GRAY },
-                              { text: ':', fontSize: 8, color: GRAY },
-                              { text: pi.financialYear || '2026-27', fontSize: 8, bold: true, color: NAVY },
-                            ],
-                            [
-                              { text: 'PI Number', fontSize: 8, color: GRAY },
-                              { text: ':', fontSize: 8, color: GRAY },
-                              { text: pi.piNumber, fontSize: 8, bold: true, color: NAVY },
-                            ],
-                            [
-                              { text: 'Payment Terms', fontSize: 8, color: GRAY },
-                              { text: ':', fontSize: 8, color: GRAY },
-                              {
-                                text: `${advancePct}% Advance, Balance at Dispatch`,
-                                fontSize: 8,
-                                bold: true,
-                                color: AMBER_DARK,
-                              },
-                            ],
-                            [
-                              { text: 'Place of Supply', fontSize: 8, color: GRAY },
-                              { text: ':', fontSize: 8, color: GRAY },
-                              { text: pi.placeOfSupply || 'Delhi (07)', fontSize: 8, bold: true, color: NAVY },
-                            ],
-                          ],
-                        },
-                        layout: 'noBorders',
-                      },
-                      ...(pi.shippingAddress ? [{ text: `Delivery: ${pi.shippingAddress}`, fontSize: 7.5, color: GRAY, margin: [0, 2, 0, 0] as [number, number, number, number] }] : []),
-                    ],
-                    fillColor: '#ffffff',
-                    margin: [8, 6, 8, 6],
-                  },
-                ],
-              ],
-            },
-            layout: {
-              hLineColor: () => BORDER_LIGHT,
-              vLineColor: () => BORDER_LIGHT,
-              hLineWidth: () => 0.5,
-              vLineWidth: () => 0.5,
-            },
-          },
-        ],
-        margin: [0, 0, 0, 9],
-      },
-
-      // ── LINE ITEMS Section Header with Grid Icon ─────────────────────────────
-      {
-        columns: [
-          { svg: ICONS.listGrid(AMBER_DARK), width: 11, height: 11, margin: [0, 1, 0, 0] },
-          { text: 'LINE ITEMS & TAX BREAKDOWN', fontSize: 8.5, bold: true, color: AMBER_DARK, margin: [4, 0, 0, 0] },
-        ],
-        margin: [0, 0, 0, 4],
-      },
-
-      // ── Line Items Table (Clean 0.5pt subtle row dividers) ───────────────────
-      {
-        table: {
-          headerRows: 1,
-          widths: [20, '*', 45, 30, 26, 56, 52, 62],
-          body: tableRows,
-        },
-        layout: {
-          hLineWidth: (i: number, node: any) => (i === 0 || i === node.table.body.length ? 0.75 : 0.5),
-          vLineWidth: () => 0.5,
-          hLineColor: (i: number, node: any) => (i === 0 || i === node.table.body.length ? BORDER_DARK : BORDER_SUBTLE),
-          vLineColor: () => BORDER_SUBTLE,
-        },
-        margin: [0, 0, 0, 9],
-      },
-
-      // ── Lower Section: Digital Signature & Pricing Summary ───────────────────
-      {
-        columns: [
-          // Left: Digital Signature Seal & Signatory Stack
-          {
-            width: '*',
-            stack: [
-              // Digital Signature Box with Crisp 0.75pt Frame
-              {
+                width: 48,
                 table: {
-                  widths: ['*'],
+                  widths: [40],
                   body: [
                     [
                       {
-                        stack: [
-                          {
-                            columns: [
-                              {
-                                columns: [
-                                  { svg: ICONS.shield(AMBER_DARK), width: 11, height: 11, margin: [0, 1, 0, 0] },
-                                  { text: 'DIGITALLY SIGNED', color: AMBER_DARK, bold: true, fontSize: 8, margin: [4, 0, 0, 0] },
-                                ],
-                                width: '*',
-                              },
-                              {
-                                text: 'HMAC-SHA256',
-                                fontSize: 7.5,
-                                color: GRAY,
-                                alignment: 'right',
-                                width: 'auto',
-                              },
-                            ],
-                            margin: [0, 0, 0, 4],
-                          },
-                          qrSection,
-                        ],
-                        margin: [8, 6, 8, 6],
-                        fillColor: '#ffffff',
+                        image: PRC_LOGO_DATA_URL,
+                        width: 36,
+                        height: 36,
+                        alignment: 'center' as Alignment,
+                        margin: [2, 2, 2, 2] as [number, number, number, number],
                       },
                     ],
                   ],
@@ -763,261 +298,428 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                   hLineWidth: () => 0.75,
                   vLineWidth: () => 0.75,
                 },
+                margin: [0, 0, 10, 0] as [number, number, number, number],
               },
-
-              // Bank Remittance Card with Fine 0.5pt Border
+              // Company Name and Legal Contact Info
               {
-                table: {
-                  widths: ['*'],
-                  body: [
-                    [
-                      {
-                        stack: [
-                          {
-                            columns: [
-                              { svg: ICONS.bank(AMBER_DARK), width: 11, height: 11, margin: [0, 1, 0, 0] },
-                              { text: 'BANK RTGS / NEFT REMITTANCE DETAILS', fontSize: 7.5, bold: true, color: AMBER_DARK, margin: [4, 0, 0, 0] },
-                            ],
-                            margin: [0, 0, 0, 2],
-                          },
-                          {
-                            table: {
-                              widths: [65, 6, '*'],
-                              body: [
-                                [
-                                  { text: 'Bank Name', fontSize: 7, color: GRAY },
-                                  { text: ':', fontSize: 7, color: GRAY },
-                                  { text: bank.bankName || 'HDFC Bank Ltd.', fontSize: 7, bold: true, color: NAVY },
-                                ],
-                                [
-                                  { text: 'Account Name', fontSize: 7, color: GRAY },
-                                  { text: ':', fontSize: 7, color: GRAY },
-                                  { text: bank.accountName || 'Pacific Products and Solutions', fontSize: 7, bold: true, color: NAVY },
-                                ],
-                                [
-                                  { text: 'Account No.', fontSize: 7, color: GRAY },
-                                  { text: ':', fontSize: 7, color: GRAY },
-                                  { text: bank.accountNumber || '50200012345678', fontSize: 7.2, bold: true, color: AMBER_DARK },
-                                ],
-                                [
-                                  { text: 'IFSC Code', fontSize: 7, color: GRAY },
-                                  { text: ':', fontSize: 7, color: GRAY },
-                                  { text: bank.ifsc || 'HDFC0001234', fontSize: 7.2, bold: true, color: NAVY },
-                                ],
-                                [
-                                  { text: 'UPI / VPA', fontSize: 7, color: GRAY },
-                                  { text: ':', fontSize: 7, color: GRAY },
-                                  { text: bank.upiId || 'pacificproducts@hdfcbank', fontSize: 7, color: DARK_GRAY },
-                                ],
-                              ],
-                            },
-                            layout: 'noBorders',
-                          },
-                        ],
-                        margin: [6, 5, 6, 5],
-                        fillColor: '#ffffff',
-                      },
-                    ],
-                  ],
-                },
-                layout: {
-                  hLineColor: () => BORDER_LIGHT,
-                  vLineColor: () => BORDER_LIGHT,
-                  hLineWidth: () => 0.5,
-                  vLineWidth: () => 0.5,
-                },
-                margin: [0, 6, 0, 0],
-              },
-
-              // Signatory & Callout Row
-              {
-                columns: [
-                  // Authorised Signatory Seal with Vector Signature
-                  {
-                    width: 110,
-                    stack: [
-                      { text: 'Authorised Signatory', fontSize: 7.5, bold: true, color: NAVY, margin: [0, 6, 0, 2] },
-                      { svg: ICONS.signatureSvg, width: 95, height: 26, margin: [0, 0, 0, 2] },
-                      { text: 'PRC Hardware', fontSize: 8, bold: true, color: NAVY },
-                    ],
-                  },
-                  // Official Notice Card with Fine 0.5pt Border
-                  {
-                    width: '*',
-                    table: {
-                      widths: ['*'],
-                      body: [
-                        [
-                          {
-                            columns: [
-                              { svg: ICONS.mail(AMBER_DARK), width: 13, height: 13, margin: [0, 2, 0, 0] },
-                              {
-                                text: 'This proforma invoice is an official advance commercial offer generated by Pacific Products and Solutions.',
-                                fontSize: 6.8,
-                                color: DARK_GRAY,
-                                lineHeight: 1.25,
-                                margin: [4, 0, 0, 0],
-                                width: '*',
-                              },
-                            ],
-                            margin: [5, 5, 5, 5],
-                            fillColor: '#ffffff',
-                          },
-                        ],
-                      ],
-                    },
-                    layout: {
-                      hLineColor: () => BORDER_LIGHT,
-                      vLineColor: () => BORDER_LIGHT,
-                      hLineWidth: () => 0.5,
-                      vLineWidth: () => 0.5,
-                    },
-                    margin: [6, 6, 0, 0],
-                  },
+                width: '*',
+                stack: [
+                  { text: 'Pacific Products and Solutions', fontSize: 11, bold: true, color: INK, margin: [0, 0, 0, 3] as [number, number, number, number] },
+                  { text: 'H -3, J.R. Complex Gate No 4, Mela Ram Farm,', fontSize: 7.2, color: INK_MUTED },
+                  { text: 'Mandoli, Delhi 110093, India', fontSize: 7.2, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] },
+                  { text: 'GSTIN: 07AADFP3948F1Z1', fontSize: 7.2, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] },
+                  { text: 'Email: billing@pacifichardware.com', fontSize: 7.2, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] },
+                  { text: 'Phone: +91 98185 92113 | Website: www.pacifichardware.com', fontSize: 7.2, color: INK_MUTED },
                 ],
               },
             ],
           },
-
-          // Spacer
-          { width: 10, text: '' },
-
-          // Right: Pricing Summary Table with Clean 0.5pt Borders
+          // Right: QR Code Box + QR VERIFICATION + PI No.
           {
-            width: 235,
+            width: 170,
+            stack: [
+              pi.qrCodeDataUrl
+                ? {
+                    stack: [
+                      {
+                        table: {
+                          widths: [52],
+                          body: [
+                            [
+                              {
+                                image: pi.qrCodeDataUrl,
+                                width: 48,
+                                height: 48,
+                                alignment: 'center' as Alignment,
+                                margin: [2, 2, 2, 2] as [number, number, number, number],
+                              },
+                            ],
+                          ],
+                        },
+                        layout: {
+                          hLineColor: () => BORDER_DARK,
+                          vLineColor: () => BORDER_DARK,
+                          hLineWidth: () => 0.6,
+                          vLineWidth: () => 0.6,
+                        },
+                        alignment: 'right' as Alignment,
+                        margin: [0, 0, 0, 2] as [number, number, number, number],
+                      },
+                      { text: 'QR VERIFICATION', fontSize: 6.2, bold: true, color: GRAY_TEXT, alignment: 'right' as Alignment, margin: [0, 0, 8, 6] as [number, number, number, number] },
+                    ],
+                  }
+                : {
+                    text: 'QR Verification Record',
+                    fontSize: 7,
+                    color: LIGHT_TEXT,
+                    alignment: 'right' as Alignment,
+                    margin: [0, 10, 0, 10] as [number, number, number, number],
+                  },
+              {
+                text: [
+                  { text: 'PI No.: ', bold: true, fontSize: 10, color: INK },
+                  { text: pi.piNumber, bold: true, fontSize: 10, color: INK },
+                ],
+                alignment: 'right' as Alignment,
+                margin: [0, 2, 0, 0] as [number, number, number, number],
+              },
+            ],
+          },
+        ],
+        margin: [0, 0, 0, 8] as [number, number, number, number],
+      },
+
+      // ── 2. Horizontal Divider 1 (Thick Line) ─────────────────────────────────
+      {
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1.2, lineColor: BORDER_DARK }],
+        margin: [0, 0, 0, 9] as [number, number, number, number],
+      },
+
+      // ── 3. Title & Date Strip ────────────────────────────────────────────────
+      {
+        columns: [
+          // Left: PROFORMA INVOICE
+          {
+            text: 'PROFORMA INVOICE',
+            fontSize: 16,
+            bold: true,
+            color: INK,
+            characterSpacing: 0.5,
+            width: '*',
+            margin: [0, 2, 0, 0] as [number, number, number, number],
+          },
+          // Right: Issue Date & Financial Year
+          {
+            width: 160,
             table: {
-              widths: ['*', 95],
+              widths: [75, 8, '*'],
               body: [
                 [
-                  makeCell('Taxable Value (Basic)', { align: 'left', fillColor: '#ffffff', fontSize: 8 }),
-                  makeCell(formatINR(pi.taxableAmount || pi.subtotal), {
-                    align: 'right',
-                    fillColor: '#ffffff',
-                    fontSize: 8,
-                  }),
-                ],
-                ...(Number(pi.discount || 0) > 0
-                  ? [
-                      [
-                        makeCell('Trade Discount', { align: 'left', fillColor: '#ffffff', fontSize: 8 }),
-                        makeCell(`- ${formatINR(pi.discount)}`, { align: 'right', fillColor: '#ffffff', fontSize: 8 }),
-                      ],
-                    ]
-                  : []),
-                ...(isInterstate
-                  ? [
-                      [
-                        makeCell('Integrated GST (IGST 18%)', { align: 'left', fillColor: '#ffffff', fontSize: 8 }),
-                        makeCell(formatINR(pi.igst), { align: 'right', fillColor: '#ffffff', fontSize: 8 }),
-                      ],
-                    ]
-                  : [
-                      [
-                        makeCell('Central GST (CGST 9%)', { align: 'left', fillColor: '#ffffff', fontSize: 8 }),
-                        makeCell(formatINR(pi.cgst), { align: 'right', fillColor: '#ffffff', fontSize: 8 }),
-                      ],
-                      [
-                        makeCell('State GST (SGST 9%)', { align: 'left', fillColor: '#ffffff', fontSize: 8 }),
-                        makeCell(formatINR(pi.sgst), { align: 'right', fillColor: '#ffffff', fontSize: 8 }),
-                      ],
-                    ]),
-                ...(Number(pi.shippingCost || 0) > 0
-                  ? [
-                      [
-                        makeCell('Logistics & Freight', { align: 'left', fillColor: '#ffffff', fontSize: 8 }),
-                        makeCell(formatINR(pi.shippingCost), { align: 'right', fillColor: '#ffffff', fontSize: 8 }),
-                      ],
-                    ]
-                  : []),
-                ...(Number(pi.roundOff || 0) !== 0
-                  ? [
-                      [
-                        makeCell('Round Off Adjustment', { align: 'left', fillColor: '#ffffff', fontSize: 8 }),
-                        makeCell(formatINR(pi.roundOff), { align: 'right', fillColor: '#ffffff', fontSize: 8 }),
-                      ],
-                    ]
-                  : []),
-                // GRAND TOTAL (Deep Navy & Amber Value)
-                [
-                  {
-                    text: 'GRAND TOTAL',
-                    bold: true,
-                    alignment: 'left',
-                    color: '#ffffff',
-                    fillColor: NAVY_DARK,
-                    fontSize: 9,
-                    margin: [4, 5, 4, 5],
-                  } as TableCell,
-                  {
-                    text: formatINR(pi.grandTotal),
-                    bold: true,
-                    alignment: 'right',
-                    color: AMBER,
-                    fillColor: NAVY_DARK,
-                    fontSize: 9.5,
-                    margin: [4, 5, 4, 5],
-                  } as TableCell,
+                  makeCell('Issue Date', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                  makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                  makeCell(formatDate(pi.createdAt), { fontSize: 8, color: INK, align: 'right', margin: [0, 1, 0, 1] }),
                 ],
                 [
-                  makeCell(`Advance Payable (${advancePct}%)`, {
-                    align: 'left',
-                    bold: true,
-                    color: AMBER_DARK,
-                    fillColor: '#ffffff',
-                    fontSize: 8,
-                  }),
-                  makeCell(formatINR(pi.advanceAmount), {
-                    align: 'right',
-                    bold: true,
-                    color: AMBER_DARK,
-                    fillColor: '#ffffff',
-                    fontSize: 8,
-                  }),
-                ],
-                [
-                  makeCell(`Balance on Dispatch (${100 - advancePct}%)`, {
-                    align: 'left',
-                    color: NAVY,
-                    fillColor: '#ffffff',
-                    fontSize: 8,
-                  }),
-                  makeCell(formatINR(pi.balanceDue), {
-                    align: 'right',
-                    color: NAVY,
-                    fillColor: '#ffffff',
-                    fontSize: 8,
-                  }),
+                  makeCell('Financial Year', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                  makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                  makeCell(pi.financialYear || '2026-2027', { fontSize: 8, color: INK, align: 'right', margin: [0, 1, 0, 1] }),
                 ],
               ],
             },
-            layout: {
-              hLineColor: () => BORDER_LIGHT,
-              vLineColor: () => BORDER_LIGHT,
-              hLineWidth: () => 0.5,
-              vLineWidth: () => 0.5,
-            },
+            layout: 'noBorders',
           },
         ],
-        margin: [0, 0, 0, 0],
+        margin: [0, 0, 0, 8] as [number, number, number, number],
+      },
+
+      // ── 4. Horizontal Divider 2 (Thin Line) ──────────────────────────────────
+      {
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 0.6, lineColor: BORDER_GRAY }],
+        margin: [0, 0, 0, 9] as [number, number, number, number],
+      },
+
+      // ── 5. Two-Column Dossier with Center Vertical Line ──────────────────────
+      {
+        columns: [
+          // Left Column: BILL TO (BUYER)
+          {
+            width: '48%',
+            stack: [
+              { text: 'BILL TO (BUYER)', fontSize: 8, bold: true, color: INK, margin: [0, 0, 0, 4] as [number, number, number, number] },
+              { text: customerName, fontSize: 9.5, bold: true, color: INK, margin: [0, 0, 0, 2] as [number, number, number, number] },
+              ...(pi.companyName && pi.companyName !== customerName
+                ? [{ text: pi.companyName, fontSize: 8, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] }]
+                : []),
+              ...(pi.gstin
+                ? [{ text: `GSTIN: ${pi.gstin}`, fontSize: 8, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] }]
+                : []),
+              {
+                text: [
+                  { text: pi.customerEmail || '' },
+                  ...(pi.customerPhone ? [{ text: ` | Ph: ${pi.customerPhone}` }] : []),
+                ],
+                fontSize: 8,
+                color: INK_MUTED,
+                margin: [0, 0, 0, 4] as [number, number, number, number],
+              },
+              { text: 'Billing Address:', fontSize: 8, bold: true, color: INK, margin: [0, 2, 0, 1] as [number, number, number, number] },
+              {
+                text: pi.billingAddress || 'As per client profile records',
+                fontSize: 7.8,
+                color: '#374151',
+                lineHeight: 1.25,
+              },
+            ],
+          },
+          // Center Vertical Divider Line
+          {
+            width: '4%',
+            canvas: [
+              {
+                type: 'line',
+                x1: 10,
+                y1: 0,
+                x2: 10,
+                y2: 95,
+                lineWidth: 0.6,
+                lineColor: BORDER_LIGHT,
+              },
+            ],
+          },
+          // Right Column: ORDER & PROJECT DETAILS
+          {
+            width: '48%',
+            stack: [
+              { text: 'ORDER & PROJECT DETAILS', fontSize: 8, bold: true, color: INK, margin: [0, 0, 0, 4] as [number, number, number, number] },
+              {
+                table: {
+                  widths: [80, 8, '*'],
+                  body: [
+                    [
+                      makeCell('Order Type', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(pi.quoteNumber ? `Linked Quote #${pi.quoteNumber}` : (pi.customerPoNumber ? `Client PO #${pi.customerPoNumber}` : 'Commercial Supply Order'), { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                    [
+                      makeCell('FY', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(pi.financialYear || '2026-2027', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                    [
+                      makeCell('PI Number', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(pi.piNumber, { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                    [
+                      makeCell('Payment Terms', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(`${advancePct}% Advance, Balance at Dispatch`, { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                    [
+                      makeCell('Delivery Address', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(pi.shippingAddress || pi.billingAddress || 'To be confirmed prior to dispatch', { fontSize: 7.8, color: '#374151', margin: [0, 1, 0, 1] }),
+                    ],
+                  ],
+                },
+                layout: 'noBorders',
+              },
+            ],
+          },
+        ],
+        margin: [0, 0, 0, 10] as [number, number, number, number],
+      },
+
+      // ── 6. Line Items Table (Box with thin black cell borders) ───────────────
+      {
+        table: {
+          headerRows: 1,
+          widths: [24, '*', 55, 36, 32, 58, 52, 60],
+          body: tableRows,
+        },
+        layout: {
+          hLineWidth: () => 0.5,
+          vLineWidth: () => 0.5,
+          hLineColor: () => BORDER_DARK,
+          vLineColor: () => BORDER_DARK,
+          paddingLeft: () => 5,
+          paddingRight: () => 5,
+          paddingTop: () => 5,
+          paddingBottom: () => 5,
+        },
+        margin: [0, 0, 0, 12] as [number, number, number, number],
+      },
+
+      // ── 7. Lower Split Section: Bank Account Details Left | Summary Right ────
+      {
+        columns: [
+          // Left Column: Bank Account Details
+          {
+            width: '52%',
+            stack: [
+              { text: 'BANK ACCOUNT DETAILS FOR RTGS / NEFT / IMPS', fontSize: 8, bold: true, color: INK, margin: [0, 0, 0, 6] as [number, number, number, number] },
+              {
+                table: {
+                  widths: [80, 8, '*'],
+                  body: [
+                    [
+                      makeCell('Bank Name', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.bankName || 'HDFC Bank Ltd.', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                    [
+                      makeCell('Account Name', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.accountName || 'Pacific Products and Solutions', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                    [
+                      makeCell('Account No.', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.accountNumber || '50200012345678', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                    [
+                      makeCell('IFSC Code', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.ifsc || 'HDFC0001234', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                    [
+                      makeCell('Branch', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.branch || 'Mandoli, Delhi', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                    [
+                      makeCell('UPI / VPA', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.upiId || 'pacificproducts@hdfcbank', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                    ],
+                  ],
+                },
+                layout: 'noBorders',
+              },
+            ],
+          },
+          // Right Column: Summary Breakdown
+          {
+            width: '48%',
+            stack: [
+              {
+                table: {
+                  widths: ['*', 90],
+                  body: [
+                    [
+                      makeCell('Taxable Value (Basic)', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
+                      makeCell(formatINR(pi.taxableAmount || pi.subtotal), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                    ],
+                    ...(Number(pi.discount || 0) > 0
+                      ? [
+                          [
+                            makeCell('Trade Discount', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(`- ${formatINR(pi.discount)}`, { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                          ],
+                        ]
+                      : []),
+                    ...(isInterstate
+                      ? [
+                          [
+                            makeCell('IGST (18%)', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.igst), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                          ],
+                        ]
+                      : [
+                          [
+                            makeCell('CGST (9%)', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.cgst), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                          ],
+                          [
+                            makeCell('SGST (9%)', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.sgst), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                          ],
+                        ]),
+                    ...(Number(pi.shippingCost || 0) > 0
+                      ? [
+                          [
+                            makeCell('Logistics & Freight', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.shippingCost), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                          ],
+                        ]
+                      : []),
+                    ...(Number(pi.roundOff || 0) !== 0
+                      ? [
+                          [
+                            makeCell('Round Off Adjustment', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.roundOff), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                          ],
+                        ]
+                      : []),
+                  ],
+                },
+                layout: 'noBorders',
+              },
+              // Line above Grand Total
+              {
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 245, y2: 0, lineWidth: 1, lineColor: BORDER_DARK }],
+                margin: [0, 4, 0, 4] as [number, number, number, number],
+              },
+              {
+                table: {
+                  widths: ['*', 90],
+                  body: [
+                    [
+                      makeCell('GRAND TOTAL', { fontSize: 9.5, bold: true, color: INK, margin: [0, 2, 0, 2] }),
+                      makeCell(formatINR(pi.grandTotal), { fontSize: 9.5, bold: true, align: 'right', color: INK, margin: [0, 2, 0, 2] }),
+                    ],
+                  ],
+                },
+                layout: 'noBorders',
+              },
+              // Line below Grand Total
+              {
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 245, y2: 0, lineWidth: 0.6, lineColor: BORDER_GRAY }],
+                margin: [0, 4, 0, 4] as [number, number, number, number],
+              },
+              {
+                table: {
+                  widths: ['*', 90],
+                  body: [
+                    [
+                      makeCell(`Advance Payable (${advancePct}%)`, { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
+                      makeCell(formatINR(pi.advanceAmount), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                    ],
+                    [
+                      makeCell(`Balance on Dispatch (${100 - advancePct}%)`, { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
+                      makeCell(formatINR(pi.balanceDue), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                    ],
+                  ],
+                },
+                layout: 'noBorders',
+              },
+            ],
+          },
+        ],
+        margin: [0, 8, 0, 16] as [number, number, number, number],
+      },
+
+      // ── 8. Authorised Signatory Block (Bottom Left) ──────────────────────────
+      {
+        columns: [
+          {
+            width: 220,
+            stack: [
+              { text: 'Authorised Signatory', fontSize: 8.5, bold: true, color: INK, margin: [0, 0, 0, 2] as [number, number, number, number] },
+              { text: 'For Pacific Products and Solutions', fontSize: 8, color: INK, margin: [0, 0, 0, 24] as [number, number, number, number] },
+              {
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 150, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
+                margin: [0, 0, 0, 3] as [number, number, number, number],
+              },
+              { text: `(${pi.signedBy || 'Executive Desk'})`, fontSize: 8, color: INK },
+            ],
+          },
+        ],
+        margin: [0, 0, 0, 8] as [number, number, number, number],
       },
 
       // ═════════════════════════════════════════════════════════════════════════
-      // ─── PAGE 2: GENERAL TERMS & CONDITIONS (BORDERLESS + CLEAN TYPOGRAPHY) ──
+      // ─── PAGE 2: GENERAL TERMS & CONDITIONS (OFFICIAL DOCUMENT TERMS) ────────
       // ═════════════════════════════════════════════════════════════════════════
       {
-        text: 'GENERAL TERMS & CONDITIONS',
-        style: 'page2Title',
+        text: 'Pacific Products and Solutions',
+        fontSize: 10,
+        bold: true,
+        color: INK,
         pageBreak: 'before',
-        margin: [0, 0, 0, 3],
+        margin: [0, 0, 0, 2] as [number, number, number, number],
       },
       {
-        text: 'Official Commercial, Operational, Manufacturing & Statutory Compliance Guidelines \u2022 Pacific Products and Solutions',
-        style: 'page2Subtitle',
-        margin: [0, 0, 0, 8],
+        text: 'GENERAL TERMS & CONDITIONS',
+        fontSize: 14,
+        bold: true,
+        color: INK,
+        characterSpacing: 0.4,
+        margin: [0, 0, 0, 4] as [number, number, number, number],
       },
       {
-        canvas: [{ type: 'rect', x: 0, y: 0, w: 527, h: 1.6, color: AMBER }],
-        margin: [0, 0, 0, 12],
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1, lineColor: BORDER_DARK }],
+        margin: [0, 0, 0, 10] as [number, number, number, number],
       },
 
       // ── 1. Specifications Required for Production ──
@@ -1025,7 +727,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
       {
         text: 'The following technical parameters and approvals are strictly required prior to commencing manufacturing:',
         style: 'termsText',
-        margin: [0, 0, 0, 4],
+        margin: [0, 0, 0, 3] as [number, number, number, number],
       },
       {
         ol: [
@@ -1034,7 +736,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           'Written approval and selection of colors for compact laminate boards and hardware finishes.',
         ],
         style: 'termsList',
-        margin: [0, 0, 0, 10],
+        margin: [0, 0, 0, 8] as [number, number, number, number],
       },
 
       // ── 2. Commercial & Operational Terms ──
@@ -1053,7 +755,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           'Freight charge will be extra as actual.',
         ],
         style: 'termsList',
-        margin: [0, 0, 0, 10],
+        margin: [0, 0, 0, 8] as [number, number, number, number],
       },
 
       // ── 3. Payment Terms for Supply ──
@@ -1064,15 +766,15 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           'Payments are to be made by the client based on the agreed terms and conditions with us, failing to do the same Pacific Products & Solutions reserves the right to cancel the order.',
         ],
         style: 'termsList',
-        margin: [0, 0, 0, 10],
+        margin: [0, 0, 0, 8] as [number, number, number, number],
       },
 
-      // ── 4. Special Note: Site Hold & Payment Policy ──
-      { text: '4. SPECIAL NOTE (SITE DELAY & PAYMENT LIABILITY)', style: 'termsSectionHeader', color: AMBER_DARK },
+      // ── 4. Special Note: Site Delay & Payment Liability ──
+      { text: '4. SPECIAL NOTE (SITE DELAY & PAYMENT LIABILITY)', style: 'termsSectionHeader' },
       {
         text: 'If your site gets prolonged or is put on hold for whatever reason for more than 30 days from the date of delivery of material at your site, then we will be liable for 100% payment against material. You cannot delay our payment on account of unfinished project. However we will extend all help in installation etc. when you are ready for the same & we will provide you back up for the quality assurance therefore please do not hold back our payment for any reason in the interest of speedy supply to you.',
         style: 'termsText',
-        margin: [0, 0, 0, 10],
+        margin: [0, 0, 0, 8] as [number, number, number, number],
       },
 
       // ── 5. Delivery & 6. Statutory Compliance ──
@@ -1088,7 +790,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                 style: 'termsText',
               },
             ],
-            margin: [0, 0, 6, 0],
+            margin: [0, 0, 6, 0] as [number, number, number, number],
           },
           { width: '2%', text: '' },
           // Statutory Compliance
@@ -1099,7 +801,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
               {
                 text: 'a) For SEZ sale: GST, Service Tax is exempted against the submission of the following certificates:',
                 style: 'termsText',
-                margin: [0, 0, 0, 3],
+                margin: [0, 0, 0, 3] as [number, number, number, number],
               },
               {
                 ol: [
@@ -1109,10 +811,10 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                 style: 'termsList',
               },
             ],
-            margin: [6, 0, 0, 0],
+            margin: [6, 0, 0, 0] as [number, number, number, number],
           },
         ],
-        margin: [0, 0, 0, 14],
+        margin: [0, 0, 0, 12] as [number, number, number, number],
       },
 
       // ── Dual Signatures on Page 2 ──
@@ -1123,23 +825,23 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
             width: '48%',
             stack: [
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
-                margin: [0, 16, 0, 4],
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 180, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
+                margin: [0, 16, 0, 4] as [number, number, number, number],
               },
               {
                 text: isSigned
                   ? `\u2714 Digitally Accepted by: ${customerName}`
                   : 'Client Acceptance & Confirmed Signature',
-                fontSize: 8.5,
+                fontSize: 8,
                 bold: true,
-                color: isSigned ? GREEN : NAVY,
+                color: INK,
               },
               {
                 text: isSigned
                   ? `Date: ${formatDate(pi.signedAt || pi.createdAt)} \u2022 Company Seal`
                   : 'Name, Designation & Company Official Stamp',
-                fontSize: 8,
-                color: DARK_GRAY,
+                fontSize: 7.5,
+                color: GRAY_TEXT,
               },
             ],
           },
@@ -1149,53 +851,43 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
             width: '48%',
             stack: [
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 200, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
-                margin: [0, 16, 0, 4],
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 180, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
+                margin: [0, 16, 0, 4] as [number, number, number, number],
               },
               {
                 text: 'For Pacific Products and Solutions, Delhi',
-                fontSize: 8.5,
+                fontSize: 8,
                 bold: true,
-                color: NAVY,
+                color: INK,
               },
               {
                 text: `Authorised Signatory (${pi.signedBy || 'Executive Desk'})`,
-                fontSize: 8,
-                color: DARK_GRAY,
+                fontSize: 7.5,
+                color: GRAY_TEXT,
               },
             ],
           },
         ],
-        margin: [0, 6, 0, 0],
+        margin: [0, 4, 0, 0] as [number, number, number, number],
       },
     ],
 
     styles: {
-      page2Title: {
-        fontSize: 15,
-        bold: true,
-        color: NAVY,
-        characterSpacing: 0.5,
-      },
-      page2Subtitle: {
-        fontSize: 8.5,
-        color: GRAY,
-      },
       termsSectionHeader: {
-        fontSize: 9.5,
+        fontSize: 8.8,
         bold: true,
-        color: NAVY,
-        margin: [0, 4, 0, 3],
+        color: INK,
+        margin: [0, 3, 0, 2] as [number, number, number, number],
       },
       termsList: {
-        fontSize: 8.2,
-        color: DARK_GRAY,
-        lineHeight: 1.38,
+        fontSize: 7.8,
+        color: INK_MUTED,
+        lineHeight: 1.3,
       },
       termsText: {
-        fontSize: 8.2,
-        color: DARK_GRAY,
-        lineHeight: 1.38,
+        fontSize: 7.8,
+        color: INK_MUTED,
+        lineHeight: 1.3,
       },
     } as StyleDictionary,
   };
