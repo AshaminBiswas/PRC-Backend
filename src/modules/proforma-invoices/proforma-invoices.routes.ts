@@ -12,6 +12,7 @@ import {
   listProformaInvoicesQuerySchema,
   sendProformaInvoiceEmailSchema,
   verifySignatureSchema,
+  customerFeedbackSchema,
 } from './proforma-invoices.schema';
 
 const router = Router();
@@ -34,6 +35,14 @@ router.get('/public/:token', publicTrackingLimiter, controller.getProformaInvoic
 
 // Public Customer PDF Download by Token
 router.get('/public/:token/pdf', publicTrackingLimiter, controller.downloadProformaPdfByToken);
+
+// Public Customer Feedback / Acceptance / Advance Payment Submission
+router.post(
+  '/public/:token/feedback',
+  publicTrackingLimiter,
+  validate(customerFeedbackSchema),
+  controller.submitCustomerFeedback
+);
 
 // ─── Authenticated Administrative Endpoints ───────────────────────────────────
 router.use(authenticate);

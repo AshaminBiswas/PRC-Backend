@@ -1,4 +1,4 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 
 export const proformaItemSchema = z.object({
   productId: z.string().optional().nullable(),
@@ -117,6 +117,17 @@ export const verifySignatureSchema = z.object({
   digitalSignature: z.string().min(1, 'Digital signature string is required'),
 });
 
+export const customerFeedbackSchema = z.object({
+  action: z.enum(['ACCEPT', 'REQUEST_CHANGE', 'QUERY', 'PAYMENT_SUBMITTED'], {
+    errorMap: () => ({ message: 'Action must be ACCEPT, REQUEST_CHANGE, QUERY, or PAYMENT_SUBMITTED' }),
+  }),
+  feedbackComments: z.string().min(3, 'Feedback comments must be at least 3 characters long'),
+  advancePaymentRef: z.string().optional().nullable(),
+  paymentReceiptUrl: z.string().optional().nullable(),
+  contactPhone: z.string().optional().nullable(),
+  customerName: z.string().optional().nullable(),
+});
+
 export type ProformaItemInput = z.infer<typeof proformaItemSchema>;
 export type CreateProformaInvoiceInput = z.infer<typeof createProformaInvoiceSchema>;
 export type UpdateProformaInvoiceInput = z.infer<typeof updateProformaInvoiceSchema>;
@@ -126,3 +137,5 @@ export type SignProformaInvoiceInput = z.infer<typeof signProformaInvoiceSchema>
 export type ListProformaInvoicesQuery = z.infer<typeof listProformaInvoicesQuerySchema>;
 export type SendProformaInvoiceEmailInput = z.infer<typeof sendProformaInvoiceEmailSchema>;
 export type VerifySignatureInput = z.infer<typeof verifySignatureSchema>;
+export type CustomerFeedbackInput = z.infer<typeof customerFeedbackSchema>;
+

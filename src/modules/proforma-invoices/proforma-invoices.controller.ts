@@ -338,3 +338,16 @@ export const deleteProformaInvoice = async (req: Request, res: Response, next: N
     next(error);
   }
 };
+
+/**
+ * Public: Customer Submits Feedback / Acceptance / Advance Payment Reference.
+ */
+export const submitCustomerFeedback = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await proformaService.submitCustomerFeedback(req.params.token, req.body);
+    sendSuccess(res, result.data, result.message);
+  } catch (error) {
+    next(error);
+  }
+};
+

@@ -948,3 +948,83 @@ export const deleteProformaInvoice = async (id: string, user?: UserContext) => {
 
   return { success: true, message: `Proforma Invoice ${pi.piNumber} deleted successfully.` };
 };
+
+/**
+ * Public: Customer Submits Feedback / Acceptance / Advance Payment Reference for an Issued PI.
+ * (Customers cannot generate or create a PI from storefront; they can only view, download, and respond to an issued PI).
+ */
+export const submitCustomerFeedback = async (
+  token: string,
+  input: {
+    action: 'ACCEPT' | 'REQUEST_CHANGE' | 'QUERY' | 'PAYMENT_SUBMITTED';
+    feedbackComments: string;
+    advancePaymentRef?: string | null;
+    paymentReceiptUrl?: string | null;
+    contactPhone?: string | null;
+    customerName?: string | null;
+  }
+) => {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { verificationToken: token, deletedAt: null },
+    include: { items: true },
+  });
+
+  if (!pi) {
+    throw new AppError('NOT_FOUND', 'Proforma Invoice not found or link has expired.', 404);
+  }
+
+  // Determine updated status
+  let newStatus: ProformaInvoiceStatus = pi.status;
+  if (input.action === 'ACCEPT') {
+    newStatus = ProformaInvoiceStatus.ACCEPTED;
+  } else if (input.action === 'PAYMENT_SUBMITTED' || (input.advancePaymentRef && input.advancePaymentRef.trim())) {
+    newStatus = ProformaInvoiceStatus.ADVANCE_RECEIVED;
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const res = await tx.proformaInvoice.update({
+      where: { id: pi.id },
+      data: {
+        status: newStatus,
+        customerPhone: input.contactPhone || pi.customerPhone,
+        notes: pi.notes
+          ? `${pi.notes}\n[Customer Feedback - ${new Date().toLocaleDateString('en-IN')}]: ${input.feedbackComments}${input.advancePaymentRef ? ` (Advance Ref: ${input.advancePaymentRef})` : ''}`
+          : `[Customer Feedback - ${new Date().toLocaleDateString('en-IN')}]: ${input.feedbackComments}${input.advancePaymentRef ? ` (Advance Ref: ${input.advancePaymentRef})` : ''}`,
+      },
+      include: { items: true, history: true },
+    });
+
+    await tx.proformaInvoiceHistory.create({
+      data: {
+        proformaInvoiceId: pi.id,
+        action: `CUSTOMER_${input.action}`,
+        performedBy: input.customerName || pi.customerName || 'Customer',
+        details: `Customer submitted feedback for PI ${pi.piNumber}. Action: ${input.action}. Comments: ${input.feedbackComments}.${input.advancePaymentRef ? ` Advance Payment UTR: ${input.advancePaymentRef}.` : ''}`,
+        metadata: {
+          action: input.action,
+          feedbackComments: input.feedbackComments,
+          advancePaymentRef: input.advancePaymentRef || null,
+          paymentReceiptUrl: input.paymentReceiptUrl || null,
+          previousStatus: pi.status,
+          newStatus,
+        },
+      },
+    });
+
+    return res;
+  });
+
+  let message = 'Thank you! Your feedback has been submitted successfully to PRC Hardware.';
+  if (input.action === 'ACCEPT') {
+    message = 'Proforma Invoice accepted successfully. Our commercial team has been notified.';
+  } else if (input.action === 'PAYMENT_SUBMITTED' || input.advancePaymentRef) {
+    message = `Advance payment reference (${input.advancePaymentRef}) submitted successfully. Our accounts desk will verify the remittance.`;
+  }
+
+  return {
+    success: true,
+    data: updated,
+    message,
+  };
+};
+
