@@ -434,21 +434,23 @@ The Storefront was architected and optimized for native app-like responsiveness 
   ### 4.7 B2B Proforma Invoice (PI) Management Module
   - **Backend Endpoints (`/api/v1/proforma-invoices`)**:
     - `GET /`: Admin list with pagination, search, status filters, and executive financial KPI metrics.
-    - `POST /`: Create commercial Proforma Invoice directly into PostgreSQL (`ProformaInvoice` and `ProformaInvoiceItem` models).
+    - `POST /`: Create commercial Proforma Invoice directly into PostgreSQL (`ProformaInvoice` and `ProformaInvoiceItem` models) with automated GST calculation (Intra-state Delhi: CGST 9% + SGST 9%; Inter-state: IGST 18%).
     - `GET /customer/my-proformas`: Authenticated B2B Customer self-service endpoint querying all issued PIs by customer ID or email.
     - `POST /:id/email`: Dispatches high-contrast monochrome Black & White PDF attachment to customer with email history logging.
     - `GET /:id/pdf`: Streams binary PDF generated on-the-fly via `pdfmake` in strict Monochrome (Black & White).
     - `POST /:id/convert-to-invoice`: Converts approved/advance-paid PI into official GST Tax Invoice.
-    - `GET /verify/:token`: Public cryptographic verification resolver.
+    - `GET /verify/:token`: Public cryptographic verification resolver with tamper detection.
+    - `DELETE /:id`: Exclusive super admin void/delete endpoint for proforma records.
   - **Admin Console (`D:\admin`)**:
-    - `ProformaInvoicesPage.tsx`: Full operational pipeline with 4 KPI cards, multi-facility routing, direct server binary PDF download, and print view.
-    - `ProformaInvoiceCreateView.tsx`: Enterprise creation form with B2B customer search, live customer custom pricing lookup, and GST calculation.
-    - `ProformaInvoiceDetailView.tsx`: Full PI dossier with customer details, items breakdown, direct PDF download, and SMTP email dispatch modal.
+    - `ProformaInvoicesPage.tsx`: Full operational pipeline with 4 KPI cards, multi-facility routing, direct server binary PDF download, super admin delete button, and print view.
+    - `ProformaInvoiceCreateView.tsx`: Enterprise creation form with B2B customer search, live customer custom pricing lookup, automatic customer address fetching, and GST calculation (CGST 9% + SGST 9% for Delhi; IGST 18% for other states).
+    - `ProformaInvoiceDetailView.tsx`: Full PI dossier with customer details, items breakdown, direct PDF download, super admin delete action, and SMTP email dispatch modal.
     - `proformaService.ts`: Robust API integration, server-side data mapping (`transformBackendInvoiceToPI`), and binary PDF streaming.
   - **Storefront (`D:\frontend`)**:
     - `UserProfilePage.tsx`: Integrated B2B Proforma Invoices tab with search, status filters, financial breakdown, and 1-tap PDF downloads.
-    - `CustomerProformaViewPage.tsx`: Public/authenticated verification and acceptance page.
-    - `proformaInvoiceService.ts`: Direct client API service for fetching customer PIs and streaming PDFs.
+    - `CustomerProformaViewPage.tsx`: Public/authenticated verification and acceptance page (`/proforma/:token`).
+    - `VerifyProformaInvoicePage.tsx`: Public QR-code scan verification landing portal (`/verify/pi/:token`) checking cryptographic signature, tamper status, item summary, and financial authenticity.
+    - `proformaInvoiceService.ts`: Direct client API service for fetching customer PIs, verifying QR scan tokens, and streaming PDFs.
 
    20. **National Architectural Portfolio & Interactive India Map Hub (`projects.service.ts`, `projects.seed.ts`, `ProjectsPage.tsx`, `IndiaMap.tsx`, `ProjectFilterBar.tsx`, `ProjectDetailModal.tsx`)**:
           - **Master Dataset & Database Synchronization**:

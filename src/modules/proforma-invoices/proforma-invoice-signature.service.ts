@@ -95,16 +95,17 @@ export const computeProformaSignature = (payload: ProformaSignaturePayload): str
 
 /**
  * Generates a high-resolution base64 PNG QR code data URI.
- * Error correction level 'H' ensures optimal camera readability even when printed or on screen.
+ * Error correction level 'H' (30% redundancy) ensures optimal camera readability even when printed or on screen.
+ * Width 400px gives sharp output at A4 print DPI with the 70pt display size.
  */
 export const generateProformaQrCode = async (verificationUrl: string): Promise<string> => {
   try {
     const qrDataUrl = await QRCode.toDataURL(verificationUrl, {
       errorCorrectionLevel: 'H',
       margin: 1,
-      width: 280,
+      width: 400,
       color: {
-        dark: '#0f172a',
+        dark: '#000000',   // Pure black for maximum print contrast
         light: '#ffffff',
       },
     });
@@ -114,6 +115,7 @@ export const generateProformaQrCode = async (verificationUrl: string): Promise<s
     return '';
   }
 };
+
 
 /**
  * Generates verification bundle (token, ID, hash, QR code) on PI creation.

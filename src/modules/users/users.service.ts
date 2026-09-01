@@ -210,6 +210,8 @@ export const listUsers = async (query: ListUsersQuery) => {
     status: u.status,
     lastLoginAt: u.lastLoginAt,
     createdAt: u.createdAt,
+    addresses: u.addresses || [],
+    SavedAddress: (u as any).SavedAddress || [],
   }));
 
   return { data, pagination: buildPagination(page, limit, totalItems) };
@@ -228,7 +230,12 @@ export const getUserById = async (id: string) => {
           },
         },
       },
-      addresses: true,
+      addresses: {
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+      },
+      SavedAddress: {
+        orderBy: [{ isDefaultBilling: 'desc' }, { createdAt: 'desc' }],
+      } as any,
     },
   });
 
@@ -256,7 +263,8 @@ export const getUserById = async (id: string) => {
       : null,
     status: user.status,
     isVerified: user.isVerified,
-    addresses: user.addresses,
+    addresses: user.addresses || [],
+    SavedAddress: (user as any).SavedAddress || [],
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,

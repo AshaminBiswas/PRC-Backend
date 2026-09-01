@@ -311,16 +311,16 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
               },
             ],
           },
-          // Right: QR Code at exact Top-Right Corner (No Border, Enlarged to 70x70)
+          // Right: QR Code at exact Top-Right Corner (No Border, Enlarged to 75x75)
           {
-            width: 140,
+            width: 145,
             alignment: 'right' as Alignment,
             stack: [
               pi.qrCodeDataUrl
                 ? {
                     image: pi.qrCodeDataUrl,
-                    width: 70,
-                    height: 70,
+                    width: 75,
+                    height: 75,
                     alignment: 'right' as Alignment,
                     margin: [0, 0, 0, 2] as [number, number, number, number],
                   }
@@ -329,10 +329,17 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                     margin: [0, 0, 0, 0] as [number, number, number, number],
                   },
               {
-                text: 'QR VERIFICATION',
-                fontSize: 7,
+                text: 'SCAN TO VERIFY AUTHENTICITY',
+                fontSize: 6.2,
                 bold: true,
                 color: BLACK,
+                alignment: 'right' as Alignment,
+                margin: [0, 1, 0, 0] as [number, number, number, number],
+              },
+              {
+                text: 'pacifichardware.com/verify/pi',
+                fontSize: 6,
+                color: MUTED_GRAY,
                 alignment: 'right' as Alignment,
                 margin: [0, 1, 0, 0] as [number, number, number, number],
               },
@@ -342,7 +349,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                   { text: pi.piNumber, bold: true, fontSize: 10, color: BLACK },
                 ],
                 alignment: 'right' as Alignment,
-                margin: [0, 2, 0, 0] as [number, number, number, number],
+                margin: [0, 3, 0, 0] as [number, number, number, number],
               },
             ],
           },
