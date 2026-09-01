@@ -173,7 +173,7 @@ export const createProformaInvoice = async (input: CreateProformaInvoiceInput, u
         customerId: input.customerId || null,
         customerName: input.customerName.trim(),
         companyName: input.companyName?.trim() || null,
-        customerEmail: input.customerEmail.trim(),
+        customerEmail: (input.customerEmail || '').trim() || 'billing@pacifichardware.com',
         customerPhone: input.customerPhone?.trim() || null,
         gstin: input.gstin?.trim()?.toUpperCase() || null,
         pan: input.pan?.trim()?.toUpperCase() || null,
@@ -509,11 +509,15 @@ export const getProformaInvoiceByToken = async (token: string) => {
  * Customer Self-Service: Get all Proforma Invoices issued for a customer (by customerId or email).
  */
 export const getMyCustomerProformas = async (userId: string, userEmail?: string) => {
+  const emailCondition = userEmail && userEmail.trim()
+    ? [{ customerEmail: { equals: userEmail.trim(), mode: 'insensitive' as const } }]
+    : [];
+
   const where: Prisma.ProformaInvoiceWhereInput = {
     deletedAt: null,
     OR: [
       { customerId: userId },
-      ...(userEmail ? [{ customerEmail: { equals: userEmail, mode: 'insensitive' as const } }] : []),
+      ...emailCondition,
     ],
   };
 
@@ -940,7 +944,7 @@ export const verifyProformaInvoiceSignature = async (input: VerifySignatureInput
 
   return verifyProformaSignatureRecord({
     ...pi,
-    digitalSignature: input.digitalSignature,
+    digitalSignature: input.digitalSignature || input.signature || pi.digitalSignature || '',
   });
 };
 

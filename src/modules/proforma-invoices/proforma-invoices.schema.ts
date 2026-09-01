@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const proformaItemSchema = z.object({
   productId: z.string().optional().nullable(),
-  sku: z.string().min(1, 'SKU is required'),
+  sku: z.string().min(1, 'SKU is required').default('SKU-001'),
   productName: z.string().min(1, 'Product name is required'),
   description: z.string().optional().nullable(),
   hsnCode: z.string().optional().nullable().default('8302'),
@@ -21,17 +21,17 @@ export const createProformaInvoiceSchema = z.object({
   customerPoNumber: z.string().optional().nullable(),
   orderId: z.string().optional().nullable(),
   customerId: z.string().optional().nullable(),
-  customerName: z.string().min(2, 'Customer name must be at least 2 characters'),
+  customerName: z.string().min(1, 'Customer name is required'),
   companyName: z.string().optional().nullable(),
-  customerEmail: z.string().email('Valid customer email is required'),
+  customerEmail: z.string().email('Valid customer email is required').or(z.literal('')).optional().nullable().default('billing@pacifichardware.com'),
   customerPhone: z.string().optional().nullable(),
   gstin: z.string().max(15).optional().nullable(),
   pan: z.string().max(10).optional().nullable(),
   billingAddress: z.string().optional().nullable(),
   shippingAddress: z.string().optional().nullable(),
-  placeOfSupply: z.string().optional().default('Karnataka'),
+  placeOfSupply: z.string().optional().default('Delhi'),
   supplierState: z.string().optional().default('Delhi'),
-  branchCode: z.string().optional().default('MAIN'),
+  branchCode: z.string().optional().default('DELHI_WORKS'),
   advancePercentage: z.number().min(0).max(100).optional().default(30),
   paymentTerms: z.string().optional().nullable(),
   deliveryTimeline: z.string().optional().nullable(),
@@ -44,9 +44,9 @@ export const createProformaInvoiceSchema = z.object({
 });
 
 export const updateProformaInvoiceSchema = z.object({
-  customerName: z.string().min(2).optional(),
+  customerName: z.string().min(1).optional(),
   companyName: z.string().optional().nullable(),
-  customerEmail: z.string().email().optional(),
+  customerEmail: z.string().email().or(z.literal('')).optional().nullable(),
   customerPhone: z.string().optional().nullable(),
   gstin: z.string().max(15).optional().nullable(),
   pan: z.string().max(10).optional().nullable(),
@@ -107,21 +107,23 @@ export const listProformaInvoicesQuerySchema = z.object({
 });
 
 export const sendProformaInvoiceEmailSchema = z.object({
-  email: z.string().email().optional(),
-  message: z.string().optional().nullable(),
-  cc: z.array(z.string().email()).or(z.string().email()).optional(),
+  email: z.string().email('Valid recipient email is required').optional(),
+  cc: z.array(z.string().email()).optional(),
+  message: z.string().max(1000).optional(),
+  subject: z.string().max(200).optional(),
 });
 
 export const verifySignatureSchema = z.object({
-  piNumber: z.string().min(1, 'PI number is required'),
-  digitalSignature: z.string().min(1, 'Digital signature string is required'),
+  piNumber: z.string().min(1),
+  documentHash: z.string().min(1),
+  signature: z.string().min(1).optional(),
+  digitalSignature: z.string().min(1).optional(),
+  signedAt: z.string().or(z.date()).optional(),
 });
 
 export const customerFeedbackSchema = z.object({
-  action: z.enum(['ACCEPT', 'REQUEST_CHANGE', 'QUERY', 'PAYMENT_SUBMITTED'], {
-    errorMap: () => ({ message: 'Action must be ACCEPT, REQUEST_CHANGE, QUERY, or PAYMENT_SUBMITTED' }),
-  }),
-  feedbackComments: z.string().min(3, 'Feedback comments must be at least 3 characters long'),
+  action: z.enum(['ACCEPT', 'REQUEST_CHANGE', 'QUERY', 'PAYMENT_SUBMITTED']),
+  feedbackComments: z.string().min(1, 'Comments are required'),
   advancePaymentRef: z.string().optional().nullable(),
   paymentReceiptUrl: z.string().optional().nullable(),
   contactPhone: z.string().optional().nullable(),
@@ -138,4 +140,3 @@ export type ListProformaInvoicesQuery = z.infer<typeof listProformaInvoicesQuery
 export type SendProformaInvoiceEmailInput = z.infer<typeof sendProformaInvoiceEmailSchema>;
 export type VerifySignatureInput = z.infer<typeof verifySignatureSchema>;
 export type CustomerFeedbackInput = z.infer<typeof customerFeedbackSchema>;
-
