@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Production-style Proforma Invoice PDF Generator
-Matches the reference layout: A4 portrait, minimal corporate design, QR verification,
+Production-style Proforma Invoice PDF Generator (Strict Black & White)
+Matches reference layout: A4 portrait, monochrome design, QR verification,
 buyer/project split, product table, bank details, totals, signature, and footer.
 
 Install:
@@ -41,9 +41,9 @@ def as_decimal(value: Any) -> Decimal:
 
 class ProformaInvoiceGenerator:
     MARGIN = 28
-    DARK = colors.HexColor("#20242A")
-    LINE = colors.HexColor("#70757A")
-    LIGHT = colors.HexColor("#F5F6F7")
+    DARK = colors.black
+    LINE = colors.black
+    LIGHT = colors.HexColor("#F2F2F2")
 
     def __init__(self, data: Dict[str, Any]):
         self.data = data
@@ -496,8 +496,6 @@ class ProformaInvoiceGenerator:
 # ---------------- CLI ENTRY POINT ----------------
 
 if __name__ == "__main__":
-    import os
-
     data = None
     if len(sys.argv) > 1 and Path(sys.argv[1]).exists():
         with open(sys.argv[1], "r", encoding="utf-8") as f:
