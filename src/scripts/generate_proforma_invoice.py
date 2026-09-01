@@ -379,10 +379,7 @@ class ProformaInvoiceGenerator:
 
             desc_x = positions[1][0] + 9
             prod_name = item.get("description", item.get("productName", "HARDWARE FITTING"))
-            self.text(c, desc_x, current_y + 30, str(prod_name), 8.5, True)
-            sku = item.get("sku", "")
-            if sku:
-                self.text(c, desc_x, current_y + 14, f"SKU: {sku}", 7.2)
+            self.text(c, desc_x, current_y + 20, str(prod_name), 8.5, True)
 
             self.center_text(c, *positions[2], current_y + 20, item.get("hsn", item.get("hsnCode", "83024110")), 8.5)
             self.center_text(c, *positions[3], current_y + 20, item.get("unit", "PCS"), 8.5)

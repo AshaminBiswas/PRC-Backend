@@ -219,7 +219,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
         {
           stack: [
             { text: String(item.productName || 'HARDWARE FITTING').toUpperCase(), bold: true, fontSize: 8.5, color: BLACK },
-            { text: `SKU: ${item.sku || 'N/A'}${item.description ? `  |  ${item.description}` : ''}`, fontSize: 7.2, color: MUTED_GRAY, margin: [0, 1.5, 0, 0] as [number, number, number, number] },
+            ...(item.description ? [{ text: String(item.description), fontSize: 7.2, color: MUTED_GRAY, margin: [0, 1.5, 0, 0] as [number, number, number, number] }] : []),
           ],
           margin: [4, 4, 4, 4] as [number, number, number, number],
         } as TableCell,
