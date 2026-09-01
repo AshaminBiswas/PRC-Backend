@@ -283,36 +283,18 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
       // ─── PAGE 1: COMMERCIAL PROFORMA INVOICE ─────────────────────────────────
       // ═════════════════════════════════════════════════════════════════════════
 
-      // ── 1. Header: Logo Box + Company Details Left | QR Code & PI No Right
+      // ── 1. Header: Logo (No Border, Enlarged) + Company Details Left | QR Code (Top Right Corner, No Border, Enlarged)
       {
         columns: [
-          // Left: Bordered Logo Box & Company Details
+          // Left: Company Logo (No Border, Enlarged to 68x68) + Details
           {
             width: '*',
             columns: [
-              // Bordered Square Logo Box
+              // Logo (No Border, Enlarged)
               {
-                width: 54,
-                table: {
-                  widths: [44],
-                  body: [
-                    [
-                      {
-                        image: PRC_LOGO_DATA_URL,
-                        width: 40,
-                        height: 40,
-                        alignment: 'center' as Alignment,
-                        margin: [2, 2, 2, 2] as [number, number, number, number],
-                      },
-                    ],
-                  ],
-                },
-                layout: {
-                  hLineColor: () => BORDER_BLACK,
-                  vLineColor: () => BORDER_BLACK,
-                  hLineWidth: () => 0.8,
-                  vLineWidth: () => 0.8,
-                },
+                image: PRC_LOGO_DATA_URL,
+                width: 68,
+                height: 68,
                 margin: [0, 0, 10, 0] as [number, number, number, number],
               },
               // Company Name and Legal Contact Info
@@ -329,51 +311,35 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
               },
             ],
           },
-          // Right: QR Code Box + QR VERIFICATION + PI No.
+          // Right: QR Code at exact Top-Right Corner (No Border, Enlarged to 70x70)
           {
-            width: 170,
+            width: 140,
+            alignment: 'right' as Alignment,
             stack: [
               pi.qrCodeDataUrl
                 ? {
-                    stack: [
-                      {
-                        table: {
-                          widths: [56],
-                          body: [
-                            [
-                              {
-                                image: pi.qrCodeDataUrl,
-                                width: 52,
-                                height: 52,
-                                alignment: 'center' as Alignment,
-                                margin: [2, 2, 2, 2] as [number, number, number, number],
-                              },
-                            ],
-                          ],
-                        },
-                        layout: {
-                          hLineColor: () => BORDER_BLACK,
-                          vLineColor: () => BORDER_BLACK,
-                          hLineWidth: () => 0.8,
-                          vLineWidth: () => 0.8,
-                        },
-                        alignment: 'right' as Alignment,
-                        margin: [0, 0, 0, 2] as [number, number, number, number],
-                      },
-                      { text: 'QR VERIFICATION', fontSize: 7.5, bold: true, color: BLACK, alignment: 'right' as Alignment, margin: [0, 0, 6, 6] as [number, number, number, number] },
-                    ],
+                    image: pi.qrCodeDataUrl,
+                    width: 70,
+                    height: 70,
+                    alignment: 'right' as Alignment,
+                    margin: [0, 0, 0, 2] as [number, number, number, number],
                   }
                 : {
-                    text: 'QR Verification Record',
-                    fontSize: 7.5,
-                    color: MUTED_GRAY,
-                    alignment: 'right' as Alignment,
-                    margin: [0, 10, 0, 10] as [number, number, number, number],
+                    text: '',
+                    margin: [0, 0, 0, 0] as [number, number, number, number],
                   },
               {
+                text: 'QR VERIFICATION',
+                fontSize: 7,
+                bold: true,
+                color: BLACK,
+                alignment: 'right' as Alignment,
+                margin: [0, 1, 0, 0] as [number, number, number, number],
+              },
+              {
                 text: [
-                  { text: 'PI No.: ', bold: true, fontSize: 10.5, color: BLACK },
-                  { text: pi.piNumber, bold: true, fontSize: 10.5, color: BLACK },
+                  { text: 'PI No.: ', bold: true, fontSize: 10, color: BLACK },
+                  { text: pi.piNumber, bold: true, fontSize: 10, color: BLACK },
                 ],
                 alignment: 'right' as Alignment,
                 margin: [0, 2, 0, 0] as [number, number, number, number],

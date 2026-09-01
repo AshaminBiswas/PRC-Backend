@@ -176,15 +176,12 @@ class ProformaInvoiceGenerator:
         logo_path = company.get("logo")
         if logo_path and Path(logo_path).exists():
             c.drawImage(
-                logo_path, self.MARGIN + 8, y - 54,
-                width=54, height=54,
+                logo_path, self.MARGIN, y - 68,
+                width=68, height=68,
                 preserveAspectRatio=True, mask="auto"
             )
-        else:
-            c.rect(self.MARGIN + 8, y - 54, 54, 54)
-            self.center_text(c, self.MARGIN + 8, self.MARGIN + 62, y - 34, "LOGO", 8, True)
 
-        left_x = self.MARGIN + 74
+        left_x = self.MARGIN + 78
         self.text(c, left_x, y - 8, company.get("name", "Pacific Products and Solutions"), 13, True)
 
         yy = y - 28
@@ -207,17 +204,17 @@ class ProformaInvoiceGenerator:
         self.text(c, left_x, yy - 42, f"Phone: {phone}  |  Website: {website}", 8.5)
 
         qr_path = self.make_qr()
-        qr_size = 66
-        qr_x = PAGE_W - self.MARGIN - qr_size - 18
-        c.drawImage(qr_path, qr_x, y - 58, qr_size, qr_size)
-        self.center_text(c, qr_x, qr_x + qr_size, y - 72, "QR VERIFICATION", 7.5)
+        qr_size = 70
+        qr_x = PAGE_W - self.MARGIN - qr_size
+        c.drawImage(qr_path, qr_x, y - 68, qr_size, qr_size)
+        self.center_text(c, qr_x, qr_x + qr_size, y - 76, "QR VERIFICATION", 7.0, True)
 
         pi_num = invoice.get("pi_number", invoice.get("piNumber", ""))
         self.right_text(
             c, PAGE_W - self.MARGIN,
-            y - 94,
+            y - 92,
             f"PI No.: {pi_num}",
-            10.5, True
+            10.0, True
         )
 
         separator_y = y - 114
