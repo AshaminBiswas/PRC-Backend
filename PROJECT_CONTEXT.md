@@ -503,6 +503,6 @@ The Storefront was architected and optimized for native app-like responsiveness 
 
 ---
 
-*Last Updated: 2026-08-31 (Rewritten Proforma Invoice PDF Generator matching Quotation & PO layout with embedded logo, vector SVG icons, QR verification seal, Page 2 Terms & Conditions, B2B custom pricing auto-fetch, and zero TypeScript errors)*
+*Last Updated: 2026-09-01 (Fixed PO services inbound email ingestion so automated alert emails are not sent to admin accounts like ejaj@pacificproduct.in; in-app notifications and real-time SSE events remain fully active for Admin Console)*
 
 

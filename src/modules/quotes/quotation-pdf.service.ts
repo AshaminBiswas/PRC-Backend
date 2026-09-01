@@ -256,7 +256,7 @@ export async function generateQuotationPdf(quote: QuotePdfData): Promise<Buffer>
             stack: [
               { text: 'Verified Authenticity', fontSize: 8.5, bold: true, color: NAVY, margin: [6, 0, 0, 2] },
               {
-                text: `Signed By: ${quote.signedBy || 'ejaj@pacificproduct.in'}`,
+                text: `Signed By: ${quote.signedBy || 'Authorised Signatory'}`,
                 fontSize: 7.5,
                 color: DARK_GRAY,
                 margin: [6, 0, 0, 2],
