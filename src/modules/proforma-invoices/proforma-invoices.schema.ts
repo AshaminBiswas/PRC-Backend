@@ -130,6 +130,16 @@ export const customerFeedbackSchema = z.object({
   customerName: z.string().optional().nullable(),
 });
 
+export const validateTamperSchema = z.object({
+  query: z.string().min(1, 'Token, verification ID, hash, or invoice number is required'),
+  claimedTotal: z.number().optional(),
+  claimedAdvance: z.number().optional(),
+  claimedGstin: z.string().optional(),
+  claimedCustomer: z.string().optional(),
+  claimedItemsCount: z.number().optional(),
+  claimedSignature: z.string().optional(),
+});
+
 export type ProformaItemInput = z.infer<typeof proformaItemSchema>;
 export type CreateProformaInvoiceInput = z.infer<typeof createProformaInvoiceSchema>;
 export type UpdateProformaInvoiceInput = z.infer<typeof updateProformaInvoiceSchema>;
@@ -140,3 +150,5 @@ export type ListProformaInvoicesQuery = z.infer<typeof listProformaInvoicesQuery
 export type SendProformaInvoiceEmailInput = z.infer<typeof sendProformaInvoiceEmailSchema>;
 export type VerifySignatureInput = z.infer<typeof verifySignatureSchema>;
 export type CustomerFeedbackInput = z.infer<typeof customerFeedbackSchema>;
+export type ValidateTamperInput = z.infer<typeof validateTamperSchema>;
+

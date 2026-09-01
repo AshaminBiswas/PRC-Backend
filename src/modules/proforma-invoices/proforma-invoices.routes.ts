@@ -13,14 +13,23 @@ import {
   sendProformaInvoiceEmailSchema,
   verifySignatureSchema,
   customerFeedbackSchema,
+  validateTamperSchema,
 } from './proforma-invoices.schema';
 
 const router = Router();
 
 // ─── Public Endpoints (No Authentication Required) ────────────────────────────
 
-// QR Code Scan Verification Resolver
+// QR Code Scan Verification Resolver (Supports token, verification ID, PI number, document hash, or full URL)
 router.get('/verify/:token', publicTrackingLimiter, controller.verifyTokenPublic);
+
+// Comprehensive Document Tamper Validation (Used by Admin QR Scanner & Public Verifier)
+router.post(
+  '/validate-tamper',
+  publicTrackingLimiter,
+  validate(validateTamperSchema),
+  controller.validateDocumentTamper
+);
 
 // Cryptographic Signature Tamper Verification
 router.post(

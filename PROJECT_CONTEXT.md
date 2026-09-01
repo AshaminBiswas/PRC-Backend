@@ -431,7 +431,7 @@ The Storefront was architected and optimized for native app-like responsiveness 
            - Added an industry-standard 30-second concurrency grace period to `refreshTokens`: if a rotated token was revoked within the last 30 seconds by a concurrent request from the same client session, the backend safely reuses the newest active token rather than rejecting with 401.
          - **Unauthenticated Route Guarding**:
            - Updated `fetchB2BPricingMatrix` and `useB2BPricing` to verify `isAuthenticated && getStoredToken()` before issuing requests to protected endpoints (`/b2b-pricing/customer/:userId`), gracefully falling back to local cache for guest or expired sessions.
-  ### 4.7 B2B Proforma Invoice (PI) Management Module
+  ### 4.7 B2B Proforma Invoice (PI) & QR Tamper Validation Module
   - **Backend Endpoints (`/api/v1/proforma-invoices`)**:
     - `GET /`: Admin list with pagination, search, status filters, and executive financial KPI metrics.
     - `POST /`: Create commercial Proforma Invoice directly into PostgreSQL (`ProformaInvoice` and `ProformaInvoiceItem` models) with automated GST calculation (Intra-state Delhi: CGST 9% + SGST 9%; Inter-state: IGST 18%).
@@ -439,13 +439,20 @@ The Storefront was architected and optimized for native app-like responsiveness 
     - `POST /:id/email`: Dispatches high-contrast monochrome Black & White PDF attachment to customer with email history logging.
     - `GET /:id/pdf`: Streams binary PDF generated on-the-fly via `pdfmake` in strict Monochrome (Black & White).
     - `POST /:id/convert-to-invoice`: Converts approved/advance-paid PI into official GST Tax Invoice.
-    - `GET /verify/:token`: Public cryptographic verification resolver with tamper detection.
+    - `GET /verify/:token`: Public cryptographic verification resolver with multi-identifier resolution (supports token UUID, verification ID, PI number, document hash, or full URL).
+    - `POST /validate-tamper`: Comprehensive Document Tamper Analysis Engine. Evaluates physical paper claims against database records and digital signatures, returning structured integrity verdicts (`AUTHENTIC`, `MANIPULATED`, `UNSIGNED_DRAFT`, `DOCUMENT_NOT_FOUND`).
     - `DELETE /:id`: Exclusive super admin void/delete endpoint for proforma records.
   - **Admin Console (`D:\admin`)**:
-    - `ProformaInvoicesPage.tsx`: Full operational pipeline with 4 KPI cards, multi-facility routing, direct server binary PDF download, super admin delete button, and print view.
+    - `QRDocumentValidatorPage.tsx` (`/qr-validator`): Full-featured QR Scanner & Document Tamper Validation Hub:
+      - Live Camera Scanner (`navigator.mediaDevices` + `jsQR`) with viewfinder crosshair radar.
+      - Image / Screenshot drag-and-drop QR decoding.
+      - Physical Paper Forgery Inspector matrix (compares printed Total, Advance, GSTIN, Customer Name, and Item Count against database).
+      - System-wide QR Registry of all issued commercial invoices with high-res 400px QR modal, print badges, and PDF download.
+      - Real-time scan verification audit trail.
+    - `ProformaInvoicesPage.tsx`: Full operational pipeline with 4 KPI cards, multi-facility routing, direct server binary PDF download, quick QR Scanner launcher button, super admin delete action, and print view.
     - `ProformaInvoiceCreateView.tsx`: Enterprise creation form with B2B customer search, live customer custom pricing lookup, automatic customer address fetching, and GST calculation (CGST 9% + SGST 9% for Delhi; IGST 18% for other states).
     - `ProformaInvoiceDetailView.tsx`: Full PI dossier with customer details, items breakdown, direct PDF download, super admin delete action, and SMTP email dispatch modal.
-    - `proformaService.ts`: Robust API integration, server-side data mapping (`transformBackendInvoiceToPI`), and binary PDF streaming.
+    - `proformaService.ts`: Robust API integration, server-side data mapping (`transformBackendInvoiceToPI`), binary PDF streaming, and tamper validation.
   - **Storefront (`D:\frontend`)**:
     - `UserProfilePage.tsx`: Integrated B2B Proforma Invoices tab with search, status filters, financial breakdown, and 1-tap PDF downloads.
     - `CustomerProformaViewPage.tsx`: Public/authenticated verification and acceptance page (`/proforma/:token`).

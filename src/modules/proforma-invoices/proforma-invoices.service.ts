@@ -21,6 +21,7 @@ import type {
   SendProformaInvoiceEmailInput,
   VerifySignatureInput,
   ProformaItemInput,
+  ValidateTamperInput,
 } from './proforma-invoices.schema';
 
 export interface UserContext {
@@ -915,15 +916,33 @@ export const convertToTaxInvoice = async (id: string, user?: UserContext) => {
 
 /**
  * Public QR Code Scan Verification Resolver.
+ * Resolves by verificationToken, verificationId, piNumber, documentHash, or full URL containing a token.
  */
-export const verifyProformaInvoiceToken = async (token: string): Promise<ProformaVerificationResult> => {
+export const verifyProformaInvoiceToken = async (rawInput: string): Promise<ProformaVerificationResult> => {
+  let q = (rawInput || '').trim();
+
+  // Extract token from full URL if pasted
+  const urlMatch = q.match(/\/verify\/pi\/([a-zA-Z0-9_-]+)/i) || q.match(/\/proforma\/([a-zA-Z0-9_-]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    q = urlMatch[1];
+  }
+
   const pi = await prisma.proformaInvoice.findFirst({
-    where: { verificationToken: token, deletedAt: null },
+    where: {
+      deletedAt: null,
+      OR: [
+        { verificationToken: q },
+        { verificationId: { equals: q, mode: 'insensitive' } },
+        { piNumber: { equals: q, mode: 'insensitive' } },
+        { documentHash: { equals: q, mode: 'insensitive' } },
+        { id: q },
+      ],
+    },
     include: { items: true },
   });
 
   if (!pi) {
-    throw new AppError('NOT_FOUND', 'Invalid or expired Proforma Invoice verification QR code.', 404);
+    throw new AppError('NOT_FOUND', 'No official Proforma Invoice found matching this verification token or identifier.', 404);
   }
 
   return verifyProformaSignatureRecord(pi);
@@ -946,6 +965,261 @@ export const verifyProformaInvoiceSignature = async (input: VerifySignatureInput
     ...pi,
     digitalSignature: input.digitalSignature || input.signature || pi.digitalSignature || '',
   });
+};
+
+/**
+ * Comprehensive Document Tamper Analysis Engine for Admin Panel.
+ * Validates whether a printed or scanned document has been manipulated by comparing
+ * claimed physical/PDF attributes against the immutable database record & cryptographic signature.
+ */
+export const validateDocumentTamper = async (input: ValidateTamperInput, user?: UserContext) => {
+  let q = (input.query || '').trim();
+
+  const urlMatch = q.match(/\/verify\/pi\/([a-zA-Z0-9_-]+)/i) || q.match(/\/proforma\/([a-zA-Z0-9_-]+)/i);
+  if (urlMatch && urlMatch[1]) {
+    q = urlMatch[1];
+  }
+
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: {
+      deletedAt: null,
+      OR: [
+        { verificationToken: q },
+        { verificationId: { equals: q, mode: 'insensitive' } },
+        { piNumber: { equals: q, mode: 'insensitive' } },
+        { documentHash: { equals: q, mode: 'insensitive' } },
+        { id: q },
+      ],
+    },
+    include: {
+      items: true,
+      customer: {
+        select: { id: true, firstName: true, lastName: true, companyName: true, email: true, phone: true, gstin: true },
+      },
+    },
+  });
+
+  if (!pi) {
+    return {
+      success: false,
+      verdict: 'DOCUMENT_NOT_FOUND',
+      isTampered: true,
+      message: 'Unknown document. No record with this token, verification ID, hash, or invoice number exists in PRC Hardware registry.',
+      discrepancies: [
+        {
+          field: 'DOCUMENT_RECORD',
+          originalValue: 'EXISTS',
+          claimedValue: 'NOT_FOUND',
+          status: 'MISMATCH',
+          message: 'This document was not issued by Pacific Products and Solutions or may be completely forged.',
+        },
+      ],
+    };
+  }
+
+  const cryptoResult = verifyProformaSignatureRecord(pi);
+  const discrepancies: Array<{
+    field: string;
+    originalValue: any;
+    claimedValue: any;
+    status: 'MATCH' | 'MISMATCH';
+    message: string;
+  }> = [];
+
+  // Check 1: Grand Total
+  if (input.claimedTotal !== undefined && input.claimedTotal !== null) {
+    const origTotal = Number(pi.grandTotal || 0);
+    const claimedTotal = Number(input.claimedTotal);
+    if (Math.abs(origTotal - claimedTotal) > 0.01) {
+      discrepancies.push({
+        field: 'GRAND_TOTAL',
+        originalValue: `₹${origTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        claimedValue: `₹${claimedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        status: 'MISMATCH',
+        message: `Grand Total discrepancy: Original is ₹${origTotal.toFixed(2)}, but document claims ₹${claimedTotal.toFixed(2)}.`,
+      });
+    } else {
+      discrepancies.push({
+        field: 'GRAND_TOTAL',
+        originalValue: `₹${origTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        claimedValue: `₹${claimedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        status: 'MATCH',
+        message: 'Grand Total matches official ledger.',
+      });
+    }
+  }
+
+  // Check 2: Advance Amount
+  if (input.claimedAdvance !== undefined && input.claimedAdvance !== null) {
+    const origAdv = Number(pi.advanceAmount || 0);
+    const claimedAdv = Number(input.claimedAdvance);
+    if (Math.abs(origAdv - claimedAdv) > 0.01) {
+      discrepancies.push({
+        field: 'ADVANCE_AMOUNT',
+        originalValue: `₹${origAdv.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        claimedValue: `₹${claimedAdv.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        status: 'MISMATCH',
+        message: `Advance Amount discrepancy: Original is ₹${origAdv.toFixed(2)}, but document claims ₹${claimedAdv.toFixed(2)}.`,
+      });
+    } else {
+      discrepancies.push({
+        field: 'ADVANCE_AMOUNT',
+        originalValue: `₹${origAdv.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        claimedValue: `₹${claimedAdv.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        status: 'MATCH',
+        message: 'Advance Amount matches official ledger.',
+      });
+    }
+  }
+
+  // Check 3: GSTIN
+  if (input.claimedGstin) {
+    const origGstin = (pi.gstin || '').trim().toUpperCase();
+    const claimedGstin = input.claimedGstin.trim().toUpperCase();
+    if (origGstin && origGstin !== claimedGstin) {
+      discrepancies.push({
+        field: 'GSTIN',
+        originalValue: origGstin || 'None',
+        claimedValue: claimedGstin,
+        status: 'MISMATCH',
+        message: `Customer GSTIN mismatch: Original registered GSTIN is ${origGstin}, claimed is ${claimedGstin}.`,
+      });
+    } else if (origGstin) {
+      discrepancies.push({
+        field: 'GSTIN',
+        originalValue: origGstin,
+        claimedValue: claimedGstin,
+        status: 'MATCH',
+        message: 'Customer GSTIN matches official ledger.',
+      });
+    }
+  }
+
+  // Check 4: Customer / Company Name
+  if (input.claimedCustomer) {
+    const origCustomer = (pi.customerName || pi.companyName || '').trim().toLowerCase();
+    const claimedCustomer = input.claimedCustomer.trim().toLowerCase();
+    if (!origCustomer.includes(claimedCustomer) && !claimedCustomer.includes(origCustomer)) {
+      discrepancies.push({
+        field: 'CUSTOMER_NAME',
+        originalValue: pi.customerName || pi.companyName || 'N/A',
+        claimedValue: input.claimedCustomer,
+        status: 'MISMATCH',
+        message: `Buyer entity mismatch: Issued to '${pi.customerName}', claimed is '${input.claimedCustomer}'.`,
+      });
+    } else {
+      discrepancies.push({
+        field: 'CUSTOMER_NAME',
+        originalValue: pi.customerName || pi.companyName || 'N/A',
+        claimedValue: input.claimedCustomer,
+        status: 'MATCH',
+        message: 'Buyer entity name matches.',
+      });
+    }
+  }
+
+  // Check 5: Items Count
+  if (input.claimedItemsCount !== undefined && input.claimedItemsCount !== null) {
+    const origCount = pi.items.length;
+    const claimedCount = Number(input.claimedItemsCount);
+    if (origCount !== claimedCount) {
+      discrepancies.push({
+        field: 'ITEMS_COUNT',
+        originalValue: `${origCount} line items`,
+        claimedValue: `${claimedCount} line items`,
+        status: 'MISMATCH',
+        message: `Line items count mismatch: Original invoice has ${origCount} items, document claims ${claimedCount}.`,
+      });
+    } else {
+      discrepancies.push({
+        field: 'ITEMS_COUNT',
+        originalValue: `${origCount} line items`,
+        claimedValue: `${claimedCount} line items`,
+        status: 'MATCH',
+        message: 'Line items count matches.',
+      });
+    }
+  }
+
+  const hasFieldMismatch = discrepancies.some((d) => d.status === 'MISMATCH');
+  const isTampered = cryptoResult.tamperDetected || hasFieldMismatch;
+
+  let verdict: 'AUTHENTIC' | 'MANIPULATED' | 'UNSIGNED_DRAFT' = 'AUTHENTIC';
+  if (isTampered) {
+    verdict = 'MANIPULATED';
+  } else if (!cryptoResult.isValid) {
+    verdict = 'UNSIGNED_DRAFT';
+  }
+
+  // Audit this scan
+  await prisma.proformaInvoiceHistory.create({
+    data: {
+      proformaInvoiceId: pi.id,
+      action: 'ADMIN_QR_VALIDATED',
+      performedBy: user?.id || 'admin-scan',
+      details: `Admin QR Scanner executed tamper check. Verdict: ${verdict}. Tamper Detected: ${isTampered}.`,
+      metadata: {
+        verdict,
+        isTampered,
+        scannedBy: user?.email || user?.id || 'system',
+        discrepanciesCount: discrepancies.filter((d) => d.status === 'MISMATCH').length,
+      },
+    },
+  });
+
+  return {
+    success: true,
+    verdict,
+    isTampered,
+    cryptoResult,
+    discrepancies,
+    document: {
+      id: pi.id,
+      piNumber: pi.piNumber,
+      financialYear: pi.financialYear,
+      status: pi.status,
+      customerName: pi.customerName,
+      companyName: pi.companyName,
+      customerEmail: pi.customerEmail,
+      customerPhone: pi.customerPhone,
+      gstin: pi.gstin,
+      billingAddress: pi.billingAddress,
+      shippingAddress: pi.shippingAddress,
+      placeOfSupply: pi.placeOfSupply,
+      subtotal: Number(pi.subtotal || 0),
+      taxableAmount: Number(pi.taxableAmount || 0),
+      cgst: Number(pi.cgst || 0),
+      sgst: Number(pi.sgst || 0),
+      igst: Number(pi.igst || 0),
+      grandTotal: Number(pi.grandTotal || 0),
+      advancePercentage: Number(pi.advancePercentage || 30),
+      advanceAmount: Number(pi.advanceAmount || 0),
+      balanceDue: Number(pi.balanceDue || 0),
+      verificationId: pi.verificationId,
+      verificationToken: pi.verificationToken,
+      documentHash: pi.documentHash,
+      digitalSignature: pi.digitalSignature,
+      signedBy: pi.signedBy,
+      signedAt: pi.signedAt ? pi.signedAt.toISOString() : null,
+      qrCodeDataUrl: pi.qrCodeDataUrl,
+      createdAt: pi.createdAt.toISOString(),
+      validUntil: pi.validUntil ? pi.validUntil.toISOString() : null,
+      items: pi.items.map((it) => ({
+        id: it.id,
+        sku: it.sku,
+        productName: it.productName,
+        quantity: Number(it.quantity),
+        unit: it.unit,
+        unitRate: Number(it.unitRate),
+        lineTotal: Number(it.lineTotal),
+      })),
+    },
+    message: isTampered
+      ? '🚨 TAMPER DETECTED! Discrepancies found between document claims and official cryptographic ledger.'
+      : verdict === 'UNSIGNED_DRAFT'
+      ? '⚠️ Document is a valid draft record in database but has not yet been digitally signed.'
+      : '✅ AUTHENTIC DOCUMENT. Cryptographically verified against official PRC Hardware digital trust database.',
+  };
 };
 
 /**

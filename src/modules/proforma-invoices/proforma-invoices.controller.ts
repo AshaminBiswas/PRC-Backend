@@ -368,3 +368,17 @@ export const submitCustomerFeedback = async (req: Request, res: Response, next: 
   }
 };
 
+/**
+ * Admin Panel & Verification: Comprehensive Document Tamper Validation.
+ */
+export const validateDocumentTamper = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await proformaService.validateDocumentTamper(req.body, req.user);
+    sendSuccess(res, result, result.message);
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
