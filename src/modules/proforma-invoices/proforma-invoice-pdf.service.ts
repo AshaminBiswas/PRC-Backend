@@ -1,13 +1,9 @@
 /**
  * proforma-invoice-pdf.service.ts
  *
- * Exact 1:1 visual clone of the official Pacific Products and Solutions
- * Commercial Proforma Invoice (PI) layout.
- *
- * Clean monochrome typography, bordered logo box, top-right bordered QR verification,
- * distinct horizontal dividing rules, 2-column dossier with center vertical divider,
- * fully-bordered line items table, bank remittance box, financial summary with
- * advance/balance breakdown, and bottom-left authorised signatory block.
+ * Production-grade Proforma Invoice PDF Generator for Pacific Products & Solutions.
+ * Matches exact ReportLab A4 layout, colors (#20242A, #70757A, #F5F6F7), column widths,
+ * QR verification, buyer/project split, product table, bank details, and totals.
  */
 
 import path from 'path';
@@ -31,14 +27,11 @@ try {
   console.warn('[PI PDF Service] Font initialization warning:', e?.message || e);
 }
 
-// ── Monochrome Palette ────────────────────────────────────────────────────────
-const INK = '#000000';
-const INK_MUTED = '#1f2937';
-const GRAY_TEXT = '#4b5563';
-const LIGHT_TEXT = '#6b7280';
-const BORDER_DARK = '#000000';
-const BORDER_GRAY = '#9ca3af';
-const BORDER_LIGHT = '#d1d5db';
+// ── Exact Design Tokens from Reference Specification ─────────────────────────
+const DARK = '#20242A';
+const LINE = '#70757A';
+const LIGHT = '#F5F6F7';
+const MUTED = '#4B5563';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function formatINR(value: number | null | undefined): string {
@@ -61,6 +54,7 @@ function makeCell(
     bold?: boolean;
     align?: Alignment;
     color?: string;
+    fillColor?: string;
     fontSize?: number;
     colSpan?: number;
     margin?: [number, number, number, number];
@@ -71,8 +65,9 @@ function makeCell(
     text,
     bold: options.bold ?? false,
     alignment: options.align || 'left',
-    color: options.color || INK,
-    fontSize: options.fontSize || 8,
+    color: options.color || DARK,
+    fillColor: options.fillColor,
+    fontSize: options.fontSize || 8.5,
     colSpan: options.colSpan,
     margin: options.margin || [4, 4, 4, 4],
     italics: options.italics,
@@ -85,6 +80,17 @@ export interface ProformaPdfData {
   financialYear: string;
   sequenceNo?: number;
   status: string;
+  facility?: {
+    name?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    gstin?: string;
+    email?: string;
+    phone?: string;
+    bankDetails?: Record<string, any>;
+  };
   quoteNumber?: string | null;
   poNumber?: string | null;
   customerPoNumber?: string | null;
@@ -148,17 +154,24 @@ export interface ProformaPdfData {
 
 /**
  * Main Proforma Invoice PDF Generator
- * Exact clone of the official Pacific Products and Solutions template.
+ * Dynamically converts Admin UI & Database Proforma Invoice records into
+ * the exact reference design.
  */
 export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> {
   const items = pi.items || [];
   const isSigned = Boolean(pi.digitalSignature && pi.signedBy);
   const isInterstate = Number(pi.igst || 0) > 0;
-  const customerName = pi.customerName || pi.companyName || 'Valued B2B Client';
+  const customerName = pi.customerName || pi.companyName || 'Valued Commercial Client';
   const advancePct = Number(pi.advancePercentage || 50);
 
-  // Default Official Bank Remittance Details
-  const bank = pi.bankDetails || {
+  // Facility & Company Branding
+  const companyName = pi.facility?.name || 'Pacific Products and Solutions';
+  const companyGstin = pi.facility?.gstin || '07AADFP3948F1Z1';
+  const companyEmail = pi.facility?.email || 'billing@pacifichardware.com';
+  const companyPhone = pi.facility?.phone || '+91 98185 92113';
+
+  // Bank Remittance Details
+  const bank = pi.bankDetails || pi.facility?.bankDetails || {
     bankName: 'HDFC Bank Ltd.',
     accountName: 'Pacific Products and Solutions',
     accountNumber: '50200012345678',
@@ -170,14 +183,14 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
   // ── Line Items Table Body ───────────────────────────────────────────────────
   const tableRows: TableCell[][] = [
     [
-      makeCell('#', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
-      makeCell('DESCRIPTION / PRODUCT SPECIFICATION', { bold: true, fontSize: 7.5, color: INK }),
-      makeCell('HSN / SAC', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
-      makeCell('UNIT', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
-      makeCell('QTY', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
-      makeCell('RATE (\u20B9)', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
-      makeCell(isInterstate ? 'IGST (\u20B9)' : 'GST (\u20B9)', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
-      makeCell('TOTAL (\u20B9)', { bold: true, align: 'center', fontSize: 7.5, color: INK }),
+      makeCell('#', { bold: true, align: 'center', fontSize: 7.4, fillColor: LIGHT, color: DARK }),
+      makeCell('DESCRIPTION / PRODUCT SPECIFICATION', { bold: true, fontSize: 7.4, fillColor: LIGHT, color: DARK }),
+      makeCell('HSN / SAC', { bold: true, align: 'center', fontSize: 7.4, fillColor: LIGHT, color: DARK }),
+      makeCell('UNIT', { bold: true, align: 'center', fontSize: 7.4, fillColor: LIGHT, color: DARK }),
+      makeCell('QTY', { bold: true, align: 'center', fontSize: 7.4, fillColor: LIGHT, color: DARK }),
+      makeCell('RATE (\u20B9)', { bold: true, align: 'center', fontSize: 7.4, fillColor: LIGHT, color: DARK }),
+      makeCell(isInterstate ? 'IGST (\u20B9)' : 'GST (\u20B9)', { bold: true, align: 'center', fontSize: 7.4, fillColor: LIGHT, color: DARK }),
+      makeCell('TOTAL (\u20B9)', { bold: true, align: 'center', fontSize: 7.4, fillColor: LIGHT, color: DARK }),
     ],
   ];
 
@@ -187,9 +200,9 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
         text: 'No line items listed in proforma invoice',
         colSpan: 8,
         alignment: 'center' as Alignment,
-        color: GRAY_TEXT,
+        color: MUTED,
         italics: true,
-        margin: [4, 10, 4, 10] as [number, number, number, number],
+        margin: [4, 12, 4, 12] as [number, number, number, number],
       } as TableCell,
       ...Array(7).fill({ text: '' } as TableCell),
     ]);
@@ -200,20 +213,20 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
         : Number(item.cgstAmount || 0) + Number(item.sgstAmount || 0);
 
       tableRows.push([
-        makeCell(String(idx + 1), { align: 'center', fontSize: 8, color: INK }),
+        makeCell(String(idx + 1), { align: 'center', fontSize: 8.5, color: DARK }),
         {
           stack: [
-            { text: String(item.productName || 'HARDWARE FITTING').toUpperCase(), bold: true, fontSize: 8, color: INK },
-            { text: `SKU: ${item.sku || 'N/A'}${item.description ? `  |  ${item.description}` : ''}`, fontSize: 7.2, color: INK_MUTED, margin: [0, 1.5, 0, 0] as [number, number, number, number] },
+            { text: String(item.productName || 'HARDWARE FITTING').toUpperCase(), bold: true, fontSize: 8.5, color: DARK },
+            { text: `SKU: ${item.sku || 'N/A'}${item.description ? `  |  ${item.description}` : ''}`, fontSize: 7.2, color: MUTED, margin: [0, 1.5, 0, 0] as [number, number, number, number] },
           ],
           margin: [4, 4, 4, 4] as [number, number, number, number],
         } as TableCell,
-        makeCell(item.hsnCode || '83024110', { align: 'center', fontSize: 8, color: INK }),
-        makeCell(item.unit || 'PCS', { align: 'center', fontSize: 8, color: INK }),
-        makeCell(String(Number(item.quantity || 1)), { align: 'center', fontSize: 8, color: INK }),
-        makeCell(Number(item.unitRate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'center', fontSize: 8, color: INK }),
-        makeCell(taxAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'center', fontSize: 8, color: INK }),
-        makeCell(Number(item.lineTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'center', fontSize: 8, color: INK }),
+        makeCell(item.hsnCode || '83024110', { align: 'center', fontSize: 8.5, color: DARK }),
+        makeCell(item.unit || 'PCS', { align: 'center', fontSize: 8.5, color: DARK }),
+        makeCell(String(Number(item.quantity || 1)), { align: 'center', fontSize: 8.5, color: DARK }),
+        makeCell(Number(item.unitRate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'right', fontSize: 8.5, color: DARK }),
+        makeCell(taxAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'right', fontSize: 8.5, color: DARK }),
+        makeCell(Number(item.lineTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), { align: 'right', fontSize: 8.5, color: DARK }),
       ]);
     });
   }
@@ -221,8 +234,8 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
   // ── Document Definition ────────────────────────────────────────────────────
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A4',
-    pageMargins: [32, 26, 32, 30],
-    defaultStyle: { font: 'Roboto', fontSize: 8, color: INK },
+    pageMargins: [28, 26, 28, 28],
+    defaultStyle: { font: 'Roboto', fontSize: 8.5, color: DARK },
 
     // ── Fixed Footer across all pages ──────────────────────────────────────────
     footer: (currentPage: number, pageCount: number): Content => ({
@@ -231,12 +244,12 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           canvas: [
             {
               type: 'line',
-              x1: 32,
+              x1: 28,
               y1: 0,
-              x2: 563,
+              x2: 567,
               y2: 0,
-              lineWidth: 0.5,
-              lineColor: BORDER_LIGHT,
+              lineWidth: 0.9,
+              lineColor: LINE,
             },
           ],
           margin: [0, 0, 0, 6] as [number, number, number, number],
@@ -245,20 +258,20 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           columns: [
             {
               width: '*',
-              text: `Ref: PI #${pi.piNumber}   |   Computer Generated`,
+              text: `Ref: PI #${pi.piNumber}    |    Computer Generated`,
               fontSize: 7.5,
-              color: GRAY_TEXT,
+              color: DARK,
               alignment: 'center' as Alignment,
             },
             {
               width: 50,
               text: `${currentPage} / ${pageCount}`,
-              fontSize: 7.5,
-              color: INK,
+              fontSize: 8,
+              color: DARK,
               alignment: 'right' as Alignment,
             },
           ],
-          margin: [32, 0, 32, 0] as [number, number, number, number],
+          margin: [28, 0, 28, 0] as [number, number, number, number],
         },
       ],
     }),
@@ -268,7 +281,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
       // ─── PAGE 1: COMMERCIAL PROFORMA INVOICE ─────────────────────────────────
       // ═════════════════════════════════════════════════════════════════════════
 
-      // ── 1. Header: Bordered Logo Box + Company Details Left | QR Code & PI No Right
+      // ── 1. Header: Logo Box + Company Details Left | QR Code & PI No Right
       {
         columns: [
           // Left: Bordered Logo Box & Company Details
@@ -277,15 +290,15 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
             columns: [
               // Bordered Square Logo Box
               {
-                width: 48,
+                width: 54,
                 table: {
-                  widths: [40],
+                  widths: [44],
                   body: [
                     [
                       {
                         image: PRC_LOGO_DATA_URL,
-                        width: 36,
-                        height: 36,
+                        width: 40,
+                        height: 40,
                         alignment: 'center' as Alignment,
                         margin: [2, 2, 2, 2] as [number, number, number, number],
                       },
@@ -293,10 +306,10 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                   ],
                 },
                 layout: {
-                  hLineColor: () => BORDER_DARK,
-                  vLineColor: () => BORDER_DARK,
-                  hLineWidth: () => 0.75,
-                  vLineWidth: () => 0.75,
+                  hLineColor: () => LINE,
+                  vLineColor: () => LINE,
+                  hLineWidth: () => 0.8,
+                  vLineWidth: () => 0.8,
                 },
                 margin: [0, 0, 10, 0] as [number, number, number, number],
               },
@@ -304,12 +317,12 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
               {
                 width: '*',
                 stack: [
-                  { text: 'Pacific Products and Solutions', fontSize: 11, bold: true, color: INK, margin: [0, 0, 0, 3] as [number, number, number, number] },
-                  { text: 'H -3, J.R. Complex Gate No 4, Mela Ram Farm,', fontSize: 7.2, color: INK_MUTED },
-                  { text: 'Mandoli, Delhi 110093, India', fontSize: 7.2, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] },
-                  { text: 'GSTIN: 07AADFP3948F1Z1', fontSize: 7.2, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] },
-                  { text: 'Email: billing@pacifichardware.com', fontSize: 7.2, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] },
-                  { text: 'Phone: +91 98185 92113 | Website: www.pacifichardware.com', fontSize: 7.2, color: INK_MUTED },
+                  { text: companyName, fontSize: 13, bold: true, color: DARK, margin: [0, 0, 0, 2] as [number, number, number, number] },
+                  { text: 'H -3, J.R. Complex Gate No 4, Mela Ram Farm,', fontSize: 8.5, color: DARK },
+                  { text: 'Mandoli, Delhi 110093, India', fontSize: 8.5, color: DARK, margin: [0, 0, 0, 2] as [number, number, number, number] },
+                  { text: `GSTIN: ${companyGstin}`, fontSize: 8.5, color: DARK, margin: [0, 0, 0, 2] as [number, number, number, number] },
+                  { text: `Email: ${companyEmail}`, fontSize: 8.5, color: DARK, margin: [0, 0, 0, 2] as [number, number, number, number] },
+                  { text: `Phone: ${companyPhone}  |  Website: www.pacifichardware.com`, fontSize: 8.5, color: DARK },
                 ],
               },
             ],
@@ -323,13 +336,13 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                     stack: [
                       {
                         table: {
-                          widths: [52],
+                          widths: [56],
                           body: [
                             [
                               {
                                 image: pi.qrCodeDataUrl,
-                                width: 48,
-                                height: 48,
+                                width: 52,
+                                height: 52,
                                 alignment: 'center' as Alignment,
                                 margin: [2, 2, 2, 2] as [number, number, number, number],
                               },
@@ -337,28 +350,28 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                           ],
                         },
                         layout: {
-                          hLineColor: () => BORDER_DARK,
-                          vLineColor: () => BORDER_DARK,
-                          hLineWidth: () => 0.6,
-                          vLineWidth: () => 0.6,
+                          hLineColor: () => LINE,
+                          vLineColor: () => LINE,
+                          hLineWidth: () => 0.8,
+                          vLineWidth: () => 0.8,
                         },
                         alignment: 'right' as Alignment,
                         margin: [0, 0, 0, 2] as [number, number, number, number],
                       },
-                      { text: 'QR VERIFICATION', fontSize: 6.2, bold: true, color: GRAY_TEXT, alignment: 'right' as Alignment, margin: [0, 0, 8, 6] as [number, number, number, number] },
+                      { text: 'QR VERIFICATION', fontSize: 7.5, bold: true, color: DARK, alignment: 'right' as Alignment, margin: [0, 0, 6, 6] as [number, number, number, number] },
                     ],
                   }
                 : {
                     text: 'QR Verification Record',
-                    fontSize: 7,
-                    color: LIGHT_TEXT,
+                    fontSize: 7.5,
+                    color: MUTED,
                     alignment: 'right' as Alignment,
                     margin: [0, 10, 0, 10] as [number, number, number, number],
                   },
               {
                 text: [
-                  { text: 'PI No.: ', bold: true, fontSize: 10, color: INK },
-                  { text: pi.piNumber, bold: true, fontSize: 10, color: INK },
+                  { text: 'PI No.: ', bold: true, fontSize: 10.5, color: DARK },
+                  { text: pi.piNumber, bold: true, fontSize: 10.5, color: DARK },
                 ],
                 alignment: 'right' as Alignment,
                 margin: [0, 2, 0, 0] as [number, number, number, number],
@@ -369,40 +382,39 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
         margin: [0, 0, 0, 8] as [number, number, number, number],
       },
 
-      // ── 2. Horizontal Divider 1 (Thick Line) ─────────────────────────────────
+      // ── 2. Horizontal Divider 1 (1.2pt Line) ─────────────────────────────────
       {
-        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1.2, lineColor: BORDER_DARK }],
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 539, y2: 0, lineWidth: 1.2, lineColor: LINE }],
         margin: [0, 0, 0, 9] as [number, number, number, number],
       },
 
       // ── 3. Title & Date Strip ────────────────────────────────────────────────
       {
         columns: [
-          // Left: PROFORMA INVOICE
+          // Left: PROFORMA INVOICE (19pt Bold)
           {
             text: 'PROFORMA INVOICE',
-            fontSize: 16,
+            fontSize: 19,
             bold: true,
-            color: INK,
-            characterSpacing: 0.5,
+            color: DARK,
             width: '*',
-            margin: [0, 2, 0, 0] as [number, number, number, number],
+            margin: [2, 0, 0, 0] as [number, number, number, number],
           },
           // Right: Issue Date & Financial Year
           {
-            width: 160,
+            width: 175,
             table: {
-              widths: [75, 8, '*'],
+              widths: [80, 8, '*'],
               body: [
                 [
-                  makeCell('Issue Date', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                  makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                  makeCell(formatDate(pi.createdAt), { fontSize: 8, color: INK, align: 'right', margin: [0, 1, 0, 1] }),
+                  makeCell('Issue Date', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                  makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                  makeCell(formatDate(pi.createdAt), { fontSize: 9.5, color: DARK, align: 'right', margin: [0, 1, 0, 1] }),
                 ],
                 [
-                  makeCell('Financial Year', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                  makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                  makeCell(pi.financialYear || '2026-2027', { fontSize: 8, color: INK, align: 'right', margin: [0, 1, 0, 1] }),
+                  makeCell('Financial Year', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                  makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                  makeCell(pi.financialYear || '2026-2027', { fontSize: 9.5, color: DARK, align: 'right', margin: [0, 1, 0, 1] }),
                 ],
               ],
             },
@@ -412,46 +424,46 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
         margin: [0, 0, 0, 8] as [number, number, number, number],
       },
 
-      // ── 4. Horizontal Divider 2 (Thin Line) ──────────────────────────────────
+      // ── 4. Horizontal Divider 2 (0.9pt Line) ──────────────────────────────────
       {
-        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 0.6, lineColor: BORDER_GRAY }],
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 539, y2: 0, lineWidth: 0.9, lineColor: LINE }],
         margin: [0, 0, 0, 9] as [number, number, number, number],
       },
 
-      // ── 5. Two-Column Dossier with Center Vertical Line ──────────────────────
+      // ── 5. Two-Column Party Details with Center Vertical Split ────────────────
       {
         columns: [
           // Left Column: BILL TO (BUYER)
           {
             width: '48%',
             stack: [
-              { text: 'BILL TO (BUYER)', fontSize: 8, bold: true, color: INK, margin: [0, 0, 0, 4] as [number, number, number, number] },
-              { text: customerName, fontSize: 9.5, bold: true, color: INK, margin: [0, 0, 0, 2] as [number, number, number, number] },
+              { text: 'BILL TO (BUYER)', fontSize: 8.5, bold: true, color: DARK, margin: [0, 0, 0, 4] as [number, number, number, number] },
+              { text: customerName, fontSize: 10, bold: true, color: DARK, margin: [0, 0, 0, 2] as [number, number, number, number] },
               ...(pi.companyName && pi.companyName !== customerName
-                ? [{ text: pi.companyName, fontSize: 8, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] }]
+                ? [{ text: pi.companyName, fontSize: 8.5, color: DARK, margin: [0, 0, 0, 2] as [number, number, number, number] }]
                 : []),
               ...(pi.gstin
-                ? [{ text: `GSTIN: ${pi.gstin}`, fontSize: 8, color: INK_MUTED, margin: [0, 0, 0, 2] as [number, number, number, number] }]
+                ? [{ text: `GSTIN: ${pi.gstin}`, fontSize: 8.5, color: DARK, margin: [0, 0, 0, 2] as [number, number, number, number] }]
                 : []),
               {
                 text: [
                   { text: pi.customerEmail || '' },
-                  ...(pi.customerPhone ? [{ text: ` | Ph: ${pi.customerPhone}` }] : []),
+                  ...(pi.customerPhone ? [{ text: `  |  Ph: ${pi.customerPhone}` }] : []),
                 ],
-                fontSize: 8,
-                color: INK_MUTED,
+                fontSize: 8.5,
+                color: DARK,
                 margin: [0, 0, 0, 4] as [number, number, number, number],
               },
-              { text: 'Billing Address:', fontSize: 8, bold: true, color: INK, margin: [0, 2, 0, 1] as [number, number, number, number] },
+              { text: 'Billing Address:', fontSize: 8.5, bold: true, color: DARK, margin: [0, 2, 0, 1] as [number, number, number, number] },
               {
                 text: pi.billingAddress || 'As per client profile records',
-                fontSize: 7.8,
-                color: '#374151',
-                lineHeight: 1.25,
+                fontSize: 8.5,
+                color: DARK,
+                lineHeight: 1.3,
               },
             ],
           },
-          // Center Vertical Divider Line
+          // Center Vertical Divider Line (0.7pt)
           {
             width: '4%',
             canvas: [
@@ -460,9 +472,9 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                 x1: 10,
                 y1: 0,
                 x2: 10,
-                y2: 95,
-                lineWidth: 0.6,
-                lineColor: BORDER_LIGHT,
+                y2: 105,
+                lineWidth: 0.7,
+                lineColor: LINE,
               },
             ],
           },
@@ -470,35 +482,35 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           {
             width: '48%',
             stack: [
-              { text: 'ORDER & PROJECT DETAILS', fontSize: 8, bold: true, color: INK, margin: [0, 0, 0, 4] as [number, number, number, number] },
+              { text: 'ORDER & PROJECT DETAILS', fontSize: 8.5, bold: true, color: DARK, margin: [0, 0, 0, 4] as [number, number, number, number] },
               {
                 table: {
-                  widths: [80, 8, '*'],
+                  widths: [82, 8, '*'],
                   body: [
                     [
-                      makeCell('Order Type', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(pi.quoteNumber ? `Linked Quote #${pi.quoteNumber}` : (pi.customerPoNumber ? `Client PO #${pi.customerPoNumber}` : 'Commercial Supply Order'), { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('Order Type', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(pi.quoteNumber ? `Linked Quote #${pi.quoteNumber}` : (pi.customerPoNumber ? `Client PO #${pi.customerPoNumber}` : 'Commercial Supply Order'), { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                     [
-                      makeCell('FY', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(pi.financialYear || '2026-2027', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('FY', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(pi.financialYear || '2026-2027', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                     [
-                      makeCell('PI Number', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(pi.piNumber, { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('PI Number', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(pi.piNumber, { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                     [
-                      makeCell('Payment Terms', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(`${advancePct}% Advance, Balance at Dispatch`, { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('Payment Terms', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(pi.paymentTerms || `${advancePct}% Advance, Balance at Dispatch`, { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                     [
-                      makeCell('Delivery Address', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(pi.shippingAddress || pi.billingAddress || 'To be confirmed prior to dispatch', { fontSize: 7.8, color: '#374151', margin: [0, 1, 0, 1] }),
+                      makeCell('Delivery Address', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(pi.shippingAddress || pi.billingAddress || 'To be confirmed prior to dispatch', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                   ],
                 },
@@ -510,7 +522,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
         margin: [0, 0, 0, 10] as [number, number, number, number],
       },
 
-      // ── 6. Line Items Table (Box with thin black cell borders) ───────────────
+      // ── 6. Line Items Table (Box with #70757A borders & #F5F6F7 header) ──────
       {
         table: {
           headerRows: 1,
@@ -518,10 +530,10 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           body: tableRows,
         },
         layout: {
-          hLineWidth: () => 0.5,
-          vLineWidth: () => 0.5,
-          hLineColor: () => BORDER_DARK,
-          vLineColor: () => BORDER_DARK,
+          hLineWidth: () => 0.8,
+          vLineWidth: () => 0.8,
+          hLineColor: () => LINE,
+          vLineColor: () => LINE,
           paddingLeft: () => 5,
           paddingRight: () => 5,
           paddingTop: () => 5,
@@ -537,40 +549,40 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           {
             width: '52%',
             stack: [
-              { text: 'BANK ACCOUNT DETAILS FOR RTGS / NEFT / IMPS', fontSize: 8, bold: true, color: INK, margin: [0, 0, 0, 6] as [number, number, number, number] },
+              { text: 'BANK ACCOUNT DETAILS FOR RTGS / NEFT / IMPS', fontSize: 8.5, bold: true, color: DARK, margin: [0, 0, 0, 6] as [number, number, number, number] },
               {
                 table: {
                   widths: [80, 8, '*'],
                   body: [
                     [
-                      makeCell('Bank Name', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(bank.bankName || 'HDFC Bank Ltd.', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('Bank Name', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.bankName || 'HDFC Bank Ltd.', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                     [
-                      makeCell('Account Name', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(bank.accountName || 'Pacific Products and Solutions', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('Account Name', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.accountName || 'Pacific Products and Solutions', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                     [
-                      makeCell('Account No.', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(bank.accountNumber || '50200012345678', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('Account No.', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.accountNumber || '50200012345678', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                     [
-                      makeCell('IFSC Code', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(bank.ifsc || 'HDFC0001234', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('IFSC Code', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.ifsc || 'HDFC0001234', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                     [
-                      makeCell('Branch', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(bank.branch || 'Mandoli, Delhi', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('Branch', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.branch || 'Mandoli, Delhi', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                     [
-                      makeCell('UPI / VPA', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
-                      makeCell(bank.upiId || 'pacificproducts@hdfcbank', { fontSize: 7.8, color: INK, margin: [0, 1, 0, 1] }),
+                      makeCell('UPI / VPA', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(':', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.upiId || 'pacificproducts@hdfcbank', { fontSize: 8.5, color: DARK, margin: [0, 1, 0, 1] }),
                     ],
                   ],
                 },
@@ -587,47 +599,47 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                   widths: ['*', 90],
                   body: [
                     [
-                      makeCell('Taxable Value (Basic)', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
-                      makeCell(formatINR(pi.taxableAmount || pi.subtotal), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                      makeCell('Taxable Value (Basic)', { fontSize: 8.5, color: DARK, margin: [0, 1.5, 0, 1.5] }),
+                      makeCell(formatINR(pi.taxableAmount || pi.subtotal), { fontSize: 8.5, align: 'right', color: DARK, margin: [0, 1.5, 0, 1.5] }),
                     ],
                     ...(Number(pi.discount || 0) > 0
                       ? [
                           [
-                            makeCell('Trade Discount', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
-                            makeCell(`- ${formatINR(pi.discount)}`, { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell('Trade Discount', { fontSize: 8.5, color: DARK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(`- ${formatINR(pi.discount)}`, { fontSize: 8.5, align: 'right', color: DARK, margin: [0, 1.5, 0, 1.5] }),
                           ],
                         ]
                       : []),
                     ...(isInterstate
                       ? [
                           [
-                            makeCell('IGST (18%)', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
-                            makeCell(formatINR(pi.igst), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell('IGST (18%)', { fontSize: 8.5, color: DARK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.igst), { fontSize: 8.5, align: 'right', color: DARK, margin: [0, 1.5, 0, 1.5] }),
                           ],
                         ]
                       : [
                           [
-                            makeCell('CGST (9%)', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
-                            makeCell(formatINR(pi.cgst), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell('CGST (9%)', { fontSize: 8.5, color: DARK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.cgst), { fontSize: 8.5, align: 'right', color: DARK, margin: [0, 1.5, 0, 1.5] }),
                           ],
                           [
-                            makeCell('SGST (9%)', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
-                            makeCell(formatINR(pi.sgst), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell('SGST (9%)', { fontSize: 8.5, color: DARK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.sgst), { fontSize: 8.5, align: 'right', color: DARK, margin: [0, 1.5, 0, 1.5] }),
                           ],
                         ]),
                     ...(Number(pi.shippingCost || 0) > 0
                       ? [
                           [
-                            makeCell('Logistics & Freight', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
-                            makeCell(formatINR(pi.shippingCost), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell('Logistics & Freight', { fontSize: 8.5, color: DARK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.shippingCost), { fontSize: 8.5, align: 'right', color: DARK, margin: [0, 1.5, 0, 1.5] }),
                           ],
                         ]
                       : []),
                     ...(Number(pi.roundOff || 0) !== 0
                       ? [
                           [
-                            makeCell('Round Off Adjustment', { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
-                            makeCell(formatINR(pi.roundOff), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell('Round Off Adjustment', { fontSize: 8.5, color: DARK, margin: [0, 1.5, 0, 1.5] }),
+                            makeCell(formatINR(pi.roundOff), { fontSize: 8.5, align: 'right', color: DARK, margin: [0, 1.5, 0, 1.5] }),
                           ],
                         ]
                       : []),
@@ -635,9 +647,9 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                 },
                 layout: 'noBorders',
               },
-              // Line above Grand Total
+              // Line above Grand Total (0.8pt)
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 245, y2: 0, lineWidth: 1, lineColor: BORDER_DARK }],
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 245, y2: 0, lineWidth: 0.8, lineColor: LINE }],
                 margin: [0, 4, 0, 4] as [number, number, number, number],
               },
               {
@@ -645,16 +657,16 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                   widths: ['*', 90],
                   body: [
                     [
-                      makeCell('GRAND TOTAL', { fontSize: 9.5, bold: true, color: INK, margin: [0, 2, 0, 2] }),
-                      makeCell(formatINR(pi.grandTotal), { fontSize: 9.5, bold: true, align: 'right', color: INK, margin: [0, 2, 0, 2] }),
+                      makeCell('GRAND TOTAL', { fontSize: 10, bold: true, color: DARK, margin: [0, 2, 0, 2] }),
+                      makeCell(formatINR(pi.grandTotal), { fontSize: 10, bold: true, align: 'right', color: DARK, margin: [0, 2, 0, 2] }),
                     ],
                   ],
                 },
                 layout: 'noBorders',
               },
-              // Line below Grand Total
+              // Line below Grand Total (0.8pt)
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 245, y2: 0, lineWidth: 0.6, lineColor: BORDER_GRAY }],
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 245, y2: 0, lineWidth: 0.8, lineColor: LINE }],
                 margin: [0, 4, 0, 4] as [number, number, number, number],
               },
               {
@@ -662,12 +674,12 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                   widths: ['*', 90],
                   body: [
                     [
-                      makeCell(`Advance Payable (${advancePct}%)`, { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
-                      makeCell(formatINR(pi.advanceAmount), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                      makeCell(`Advance Payable (${advancePct}%)`, { fontSize: 8.5, color: DARK, margin: [0, 1.5, 0, 1.5] }),
+                      makeCell(formatINR(pi.advanceAmount), { fontSize: 8.5, align: 'right', color: DARK, margin: [0, 1.5, 0, 1.5] }),
                     ],
                     [
-                      makeCell(`Balance on Dispatch (${100 - advancePct}%)`, { fontSize: 8, color: INK, margin: [0, 1.5, 0, 1.5] }),
-                      makeCell(formatINR(pi.balanceDue), { fontSize: 8, align: 'right', color: INK, margin: [0, 1.5, 0, 1.5] }),
+                      makeCell(`Balance on Dispatch (${100 - advancePct}%)`, { fontSize: 8.5, color: DARK, margin: [0, 1.5, 0, 1.5] }),
+                      makeCell(formatINR(pi.balanceDue), { fontSize: 8.5, align: 'right', color: DARK, margin: [0, 1.5, 0, 1.5] }),
                     ],
                   ],
                 },
@@ -685,13 +697,13 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           {
             width: 220,
             stack: [
-              { text: 'Authorised Signatory', fontSize: 8.5, bold: true, color: INK, margin: [0, 0, 0, 2] as [number, number, number, number] },
-              { text: 'For Pacific Products and Solutions', fontSize: 8, color: INK, margin: [0, 0, 0, 24] as [number, number, number, number] },
+              { text: 'Authorised Signatory', fontSize: 8.5, bold: true, color: DARK, margin: [0, 0, 0, 2] as [number, number, number, number] },
+              { text: `For ${companyName}`, fontSize: 8.5, color: DARK, margin: [0, 0, 0, 24] as [number, number, number, number] },
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 150, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 135, y2: 0, lineWidth: 0.8, lineColor: LINE }],
                 margin: [0, 0, 0, 3] as [number, number, number, number],
               },
-              { text: `(${pi.signedBy || 'Executive Desk'})`, fontSize: 8, color: INK },
+              { text: `(${pi.signedBy || 'Executive Desk'})`, fontSize: 8.5, color: DARK },
             ],
           },
         ],
@@ -702,10 +714,10 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
       // ─── PAGE 2: GENERAL TERMS & CONDITIONS (OFFICIAL DOCUMENT TERMS) ────────
       // ═════════════════════════════════════════════════════════════════════════
       {
-        text: 'Pacific Products and Solutions',
+        text: companyName,
         fontSize: 10,
         bold: true,
-        color: INK,
+        color: DARK,
         pageBreak: 'before',
         margin: [0, 0, 0, 2] as [number, number, number, number],
       },
@@ -713,12 +725,12 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
         text: 'GENERAL TERMS & CONDITIONS',
         fontSize: 14,
         bold: true,
-        color: INK,
+        color: DARK,
         characterSpacing: 0.4,
         margin: [0, 0, 0, 4] as [number, number, number, number],
       },
       {
-        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 531, y2: 0, lineWidth: 1, lineColor: BORDER_DARK }],
+        canvas: [{ type: 'line', x1: 0, y1: 0, x2: 539, y2: 0, lineWidth: 1, lineColor: LINE }],
         margin: [0, 0, 0, 10] as [number, number, number, number],
       },
 
@@ -825,23 +837,23 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
             width: '48%',
             stack: [
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 180, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 180, y2: 0, lineWidth: 0.8, lineColor: LINE }],
                 margin: [0, 16, 0, 4] as [number, number, number, number],
               },
               {
                 text: isSigned
                   ? `\u2714 Digitally Accepted by: ${customerName}`
                   : 'Client Acceptance & Confirmed Signature',
-                fontSize: 8,
+                fontSize: 8.5,
                 bold: true,
-                color: INK,
+                color: DARK,
               },
               {
                 text: isSigned
                   ? `Date: ${formatDate(pi.signedAt || pi.createdAt)} \u2022 Company Seal`
                   : 'Name, Designation & Company Official Stamp',
                 fontSize: 7.5,
-                color: GRAY_TEXT,
+                color: MUTED,
               },
             ],
           },
@@ -851,19 +863,19 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
             width: '48%',
             stack: [
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 180, y2: 0, lineWidth: 0.75, lineColor: BORDER_DARK }],
+                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 180, y2: 0, lineWidth: 0.8, lineColor: LINE }],
                 margin: [0, 16, 0, 4] as [number, number, number, number],
               },
               {
-                text: 'For Pacific Products and Solutions, Delhi',
-                fontSize: 8,
+                text: `For ${companyName}, Delhi`,
+                fontSize: 8.5,
                 bold: true,
-                color: INK,
+                color: DARK,
               },
               {
                 text: `Authorised Signatory (${pi.signedBy || 'Executive Desk'})`,
                 fontSize: 7.5,
-                color: GRAY_TEXT,
+                color: MUTED,
               },
             ],
           },
@@ -876,17 +888,17 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
       termsSectionHeader: {
         fontSize: 8.8,
         bold: true,
-        color: INK,
+        color: DARK,
         margin: [0, 3, 0, 2] as [number, number, number, number],
       },
       termsList: {
         fontSize: 7.8,
-        color: INK_MUTED,
+        color: DARK,
         lineHeight: 1.3,
       },
       termsText: {
         fontSize: 7.8,
-        color: INK_MUTED,
+        color: DARK,
         lineHeight: 1.3,
       },
     } as StyleDictionary,
