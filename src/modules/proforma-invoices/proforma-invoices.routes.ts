@@ -15,6 +15,7 @@ import {
   verifySignatureSchema,
   customerFeedbackSchema,
   validateTamperSchema,
+  recordProformaPaymentSchema,
 } from './proforma-invoices.schema';
 
 const storage = multer.memoryStorage();
@@ -150,6 +151,14 @@ router.patch(
   authorize('invoices.edit', 'invoices.approve', 'finance.manage'),
   validate(updateProformaInvoiceStatusSchema),
   controller.updateProformaInvoiceStatus
+);
+
+// Record / Confirm Advance Payment & Update Lifecycle
+router.post(
+  '/:id/record-payment',
+  authorize('invoices.edit', 'invoices.approve', 'finance.manage'),
+  validate(recordProformaPaymentSchema),
+  controller.recordPayment
 );
 
 // Digitally sign and approve Proforma Invoice with cryptographic seal

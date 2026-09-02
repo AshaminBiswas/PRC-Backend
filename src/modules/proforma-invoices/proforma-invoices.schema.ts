@@ -140,6 +140,15 @@ export const validateTamperSchema = z.object({
   claimedSignature: z.string().optional(),
 });
 
+export const recordProformaPaymentSchema = z.object({
+  amountPaid: z.number().positive('Payment amount must be greater than 0'),
+  paymentMode: z.enum(['RTGS', 'NEFT', 'IMPS', 'UPI', 'CHEQUE', 'CASH', 'OTHER']).default('RTGS'),
+  transactionRef: z.string().min(1, 'Transaction reference / UTR is required'),
+  paymentDate: z.string().optional(),
+  status: z.enum(['ADVANCE_RECEIVED', 'APPROVED', 'ACCEPTED']).default('ADVANCE_RECEIVED'),
+  notes: z.string().optional().nullable(),
+});
+
 export type ProformaItemInput = z.infer<typeof proformaItemSchema>;
 export type CreateProformaInvoiceInput = z.infer<typeof createProformaInvoiceSchema>;
 export type UpdateProformaInvoiceInput = z.infer<typeof updateProformaInvoiceSchema>;
@@ -151,4 +160,5 @@ export type SendProformaInvoiceEmailInput = z.infer<typeof sendProformaInvoiceEm
 export type VerifySignatureInput = z.infer<typeof verifySignatureSchema>;
 export type CustomerFeedbackInput = z.infer<typeof customerFeedbackSchema>;
 export type ValidateTamperInput = z.infer<typeof validateTamperSchema>;
+export type RecordProformaPaymentInput = z.infer<typeof recordProformaPaymentSchema>;
 

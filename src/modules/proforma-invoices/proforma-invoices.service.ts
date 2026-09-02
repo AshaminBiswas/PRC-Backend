@@ -1359,3 +1359,64 @@ export const uploadProformaPaymentReceipt = async (
   return receiptUrl;
 };
 
+/**
+ * Admin: Record / Confirm Advance Payment for a Proforma Invoice.
+ */
+export const recordProformaPayment = async (
+  id: string,
+  input: {
+    amountPaid: number;
+    paymentMode: string;
+    transactionRef: string;
+    paymentDate?: string;
+    status?: ProformaInvoiceStatus;
+    notes?: string | null;
+  },
+  user?: UserContext
+) => {
+  const existing = await prisma.proformaInvoice.findUnique({ where: { id, deletedAt: null } });
+  if (!existing) throw new AppError('NOT_FOUND', 'Proforma Invoice not found', 404);
+
+  const newStatus = input.status || ProformaInvoiceStatus.ADVANCE_RECEIVED;
+  const payDateStr = input.paymentDate ? new Date(input.paymentDate).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN');
+  const paymentLog = `[Payment Cleared - ${payDateStr}]: ₹${input.amountPaid.toLocaleString('en-IN')} via ${input.paymentMode} (Ref: ${input.transactionRef})${input.notes ? ` - ${input.notes}` : ''}`;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const res = await tx.proformaInvoice.update({
+      where: { id },
+      data: {
+        status: newStatus,
+        notes: existing.notes ? `${existing.notes}\n${paymentLog}` : paymentLog,
+        updatedBy: user?.id || 'system',
+      },
+      include: { items: true, history: true },
+    });
+
+    await tx.proformaInvoiceHistory.create({
+      data: {
+        proformaInvoiceId: id,
+        action: 'PAYMENT_RECORDED',
+        performedBy: user?.email || user?.id || 'Accounts Desk',
+        details: `Advance payment of ₹${input.amountPaid.toLocaleString('en-IN')} recorded via ${input.paymentMode}. UTR/Ref: ${input.transactionRef}.`,
+        metadata: {
+          amountPaid: input.amountPaid,
+          paymentMode: input.paymentMode,
+          transactionRef: input.transactionRef,
+          paymentDate: input.paymentDate || new Date().toISOString(),
+          notes: input.notes || null,
+          previousStatus: existing.status,
+          newStatus,
+        },
+      },
+    });
+
+    return res;
+  });
+
+  return {
+    success: true,
+    data: updated,
+    message: `Payment of ₹${input.amountPaid.toLocaleString('en-IN')} recorded successfully for PI ${existing.piNumber}.`,
+  };
+};
+

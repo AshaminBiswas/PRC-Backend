@@ -439,22 +439,31 @@ The Storefront was architected and optimized for native app-like responsiveness 
     - `POST /:id/email`: Dispatches high-contrast monochrome Black & White PDF attachment to customer with email history logging.
     - `GET /:id/pdf`: Streams binary PDF generated on-the-fly via `pdfmake` in strict Monochrome (Black & White).
     - `POST /:id/convert-to-invoice`: Converts approved/advance-paid PI into official GST Tax Invoice.
+    - `POST /:id/record-payment`: Admin endpoint to record/confirm advance payment received (amount, payment mode: RTGS/NEFT/IMPS/UPI/Cheque/Cash, transaction UTR, payment date, notes) with immutable `ProformaInvoiceHistory` audit logging.
     - `GET /verify/:token`: Public cryptographic verification resolver with multi-identifier resolution (supports token UUID, verification ID, PI number, document hash, or full URL).
     - `POST /validate-tamper`: Comprehensive Document Tamper Analysis Engine. Evaluates physical paper claims against database records and digital signatures, returning structured integrity verdicts (`AUTHENTIC`, `MANIPULATED`, `UNSIGNED_DRAFT`, `DOCUMENT_NOT_FOUND`).
     - `POST /public/:token/upload-receipt`: Public customer endpoint to upload bank payment screenshot (PNG, JPG, WEBP) or payment receipt PDF (up to 10MB) via `uploadAttachmentFile` cloud storage fallback pipeline.
     - `POST /public/:token/feedback`: Public customer acceptance & payment submission with UTR reference, contact phone, notes, and uploaded receipt URL.
     - `DELETE /:id`: Exclusive super admin void/delete endpoint for proforma records.
   - **Admin Console (`D:\admin`)**:
+    - `AdvancePaymentsTrackerPage.tsx` (`/advance-payments`): Dedicated commercial receivables & advance payment tracking hub:
+      - 5 Executive KPI Matrix cards: Total PI Value, Expected Advance Deposits, Cleared & Collected Advance, Customer UTR Proofs awaiting clearance, and Overdue Receivables Alert (>30 Days SLA).
+      - Aging & SLA Overdue Engine: Computes exact document days elapsed, validity countdown, `Overdue by X days` alerts, and `Due in X days` warnings.
+      - Interactive Quick Filter Pills (`All`, `Awaiting Advance`, `Customer UTR Submitted`, `Advance Cleared`, `🚨 Overdue (>30 Days)`).
+      - Data Ledger Table: Shows PI #, issue date, customer/buyer entity, grand total, advance payable, balance due, payment/UTR proof badge, receipt thumbnail link, and SLA status badge.
+      - Built-in Record Payment Clearance Modal: Allows accounts team to confirm advance remittance (RTGS/NEFT/IMPS/UPI/Cheque/Cash), log UTR, and update PI status.
+      - Full-Screen Payment Receipt Lightbox Modal: Enlarge uploaded customer payment screenshots or download receipt PDFs directly.
+      - 1-Click Export to CSV: Exports current filtered ledger with all aging metrics, overdue flags, and financials.
     - `QRDocumentValidatorPage.tsx` (`/qr-validator`): Full-featured QR Scanner & Document Tamper Validation Hub:
       - Live Camera Scanner (`navigator.mediaDevices` + `jsQR`) with viewfinder crosshair radar.
       - Image / Screenshot drag-and-drop QR decoding.
       - Physical Paper Forgery Inspector matrix (compares printed Total, Advance, GSTIN, Customer Name, and Item Count against database).
       - System-wide QR Registry of all issued commercial invoices with high-res 400px QR modal, print badges, and PDF download.
       - Real-time scan verification audit trail.
-    - `ProformaInvoicesPage.tsx`: Full operational pipeline with 4 KPI cards (including Customer Accepted / Advance Remitted metrics), multi-facility routing, direct server binary PDF download, status filtering (`ACCEPTED`, `ADVANCE_RECEIVED`, `APPROVED`, `SENT`, `DRAFT`, `CONVERTED_TO_INVOICE`, `CANCELLED`), table status tags with customer acceptance indicators, quick QR Scanner launcher button, super admin delete action, and print view.
+    - `ProformaInvoicesPage.tsx`: Full operational pipeline with 4 KPI cards, multi-facility routing, direct server binary PDF download, status filtering (`ACCEPTED`, `ADVANCE_RECEIVED`, `APPROVED`, `SENT`, `DRAFT`, `CONVERTED_TO_INVOICE`, `CANCELLED`), table status tags with customer acceptance indicators, quick navigation button to Advance & Payment Tracker, quick QR Scanner launcher button, super admin delete action, and print view.
     - `ProformaInvoiceCreateView.tsx`: Enterprise creation form with B2B customer search, live customer custom pricing lookup, automatic customer address fetching, and GST calculation (CGST 9% + SGST 9% for Delhi; IGST 18% for other states).
     - `ProformaInvoiceDetailView.tsx`: Full PI dossier featuring live customer acceptance & advance remittance banner (`CheckCircle2`/`Landmark` dossier with UTR reference, customer comments, phone number, timestamp), payment proof preview card (with image thumbnail, direct PDF download, and full-screen image lightbox modal), complete immutable activity audit trail (`ProformaInvoiceHistory` timeline with receipt links), customer details, items breakdown, direct PDF download, super admin delete action, and SMTP email dispatch modal.
-    - `proformaService.ts`: Robust API integration, server-side data mapping (`transformBackendInvoiceToPI` with `history`, `notes`, `termsAndConditions`), binary PDF streaming, and tamper validation.
+    - `proformaService.ts`: Robust API integration, server-side data mapping (`transformBackendInvoiceToPI` with `history`, `notes`, `termsAndConditions`), binary PDF streaming, payment clearance recording (`recordPayment`), and tamper validation.
   - **Storefront (`D:\frontend`)**:
     - `UserProfilePage.tsx`: Integrated B2B Proforma Invoices tab with search, status filters, financial breakdown, and 1-tap PDF downloads.
     - `CustomerProformaViewPage.tsx`: Public/authenticated verification and acceptance page (`/proforma/:token`) allowing clients to accept terms, submit bank advance transaction reference (UTR / IMPS / RTGS), upload payment screenshot or bank receipt PDF (up to 10MB with live preview), submit site remarks, and download official monochrome PDFs.

@@ -399,3 +399,25 @@ export const uploadPaymentReceipt = async (req: Request, res: Response, next: Ne
     next(error);
   }
 };
+
+/**
+ * Admin: Record / Confirm Advance Payment.
+ */
+export const recordPayment = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await proformaService.recordProformaPayment(req.params.id, req.body, req.user);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'PI_PAYMENT_RECORDED',
+      entity: 'PROFORMA_INVOICE',
+      entityId: req.params.id,
+      details: `Recorded payment of ₹${req.body.amountPaid} via ${req.body.paymentMode} for PI #${req.params.id}.`,
+      severity: 'SUCCESS',
+      metadata: req.body,
+      req,
+    });
+    sendSuccess(res, result.data, result.message, 200);
+  } catch (error) {
+    next(error);
+  }
+};
