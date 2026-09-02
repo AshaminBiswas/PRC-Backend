@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import * as controller from './proforma-invoices.controller';
 import { validate } from '../../middleware/validate.middleware';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
@@ -16,9 +17,37 @@ import {
   validateTamperSchema,
 } from './proforma-invoices.schema';
 
+const storage = multer.memoryStorage();
+const uploadReceipt = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/pdf',
+    ];
+    if (allowed.includes(file.mimetype.toLowerCase())) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files (JPEG, PNG, WEBP) and PDF documents are allowed for payment receipts'));
+    }
+  },
+});
+
 const router = Router();
 
 // ─── Public Endpoints (No Authentication Required) ────────────────────────────
+
+// Public Customer Upload Payment Screenshot / Receipt PDF
+router.post(
+  '/public/:token/upload-receipt',
+  publicTrackingLimiter,
+  uploadReceipt.single('file'),
+  controller.uploadPaymentReceipt
+);
 
 // QR Code Scan Verification Resolver (Supports token, verification ID, PI number, document hash, or full URL)
 router.get('/verify/:token', publicTrackingLimiter, controller.verifyTokenPublic);

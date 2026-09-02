@@ -295,12 +295,12 @@ export const emailInvoice = async (id: string, recipientEmail?: string, user?: U
 
   await sendMail({
     to: targetEmail,
-    subject: `${invoice.invoiceType.replace('_', ' ')} #${invoice.invoiceNumber} - Pacific Hardware`,
+    subject: `${invoice.invoiceType.replace('_', ' ')} #${invoice.invoiceNumber} - PRC Hardware`,
     html: `
       <h2>Invoice Document Ready</h2>
       <p>Dear ${invoice.customer ? invoice.customer.firstName : 'Customer'},</p>
       <p>Your ${invoice.invoiceType.replace('_', ' ')} <strong>${invoice.invoiceNumber}</strong> for amount <strong>₹${Number(invoice.grandTotal).toFixed(2)}</strong> has been generated.</p>
-      <p><a href="https://pacifichardware.com/verify/${invoice.verificationToken}" style="display:inline-block; padding:10px 18px; background:#0f172a; color:#fff; text-decoration:none; border-radius:4px;">View & Verify Invoice Online</a></p>
+      <p><a href="https://prchardware.com/verify/${invoice.verificationToken}" style="display:inline-block; padding:10px 18px; background:#0f172a; color:#fff; text-decoration:none; border-radius:4px;">View &amp; Verify Invoice Online</a></p>
       <hr />
       ${htmlContent}
     `,
@@ -498,11 +498,11 @@ export const sendProformaInvoiceEmailDirect = async (
         <div style="font-weight: 800; font-size: 13px; color: #14532d; margin-bottom: 6px; border-bottom: 1px solid #bbf7d0; padding-bottom: 4px;">
           🏦 Official PRC Hardware Bank Details (RTGS / NEFT / IMPS):
         </div>
-        <strong>Beneficiary Name:</strong> Pacific Products and Solutions<br />
+        <strong>Beneficiary Name:</strong> PRC Hardware<br />
         <strong>Bank Name:</strong> HDFC Bank Ltd.<br />
         <strong>Account Number:</strong> <span style="font-family: monospace; font-weight: 900;">50200089412356</span><br />
         <strong>IFSC Code:</strong> <span style="font-family: monospace; font-weight: 900;">HDFC0000280</span> &nbsp;|&nbsp; <strong>Branch:</strong> Dilshad Garden, Delhi<br />
-        <strong>Account Type:</strong> Current Account &nbsp;|&nbsp; <strong>UPI:</strong> pacificproducts@hdfcbank
+        <strong>Account Type:</strong> Current Account
       </div>
 
       ${payload.notes ? `
@@ -513,7 +513,7 @@ export const sendProformaInvoiceEmailDirect = async (
       ` : ''}
 
       <p style="font-size: 13px; color: #475569; margin-top: 24px;">
-        For any billing inquiries, order customization, or dispatch coordination, please reply directly or reach our corporate desk at <strong>support@pacifichardware.com</strong>.
+        For any billing inquiries, order customization, or dispatch coordination, please reply directly or reach our corporate desk at <strong>support@prchardware.com</strong>.
       </p>
     </div>
 

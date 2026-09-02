@@ -167,19 +167,19 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
   const advancePct = Number(pi.advancePercentage || 50);
 
   // Facility & Company Branding
-  const companyName = pi.facility?.name || 'Pacific Products and Solutions';
+  const companyName = pi.facility?.name || 'PRC Hardware';
   const companyGstin = pi.facility?.gstin || '07AADFP3948F1Z1';
-  const companyEmail = pi.facility?.email || 'billing@pacifichardware.com';
+  const companyEmail = pi.facility?.email || 'billing@prchardware.com';
   const companyPhone = pi.facility?.phone || '+91 98185 92113';
 
   // Bank Remittance Details
   const bank = pi.bankDetails || pi.facility?.bankDetails || {
     bankName: 'HDFC Bank Ltd.',
-    accountName: 'Pacific Products and Solutions',
+    accountName: 'PRC Hardware',
     accountNumber: '50200012345678',
     ifsc: 'HDFC0001234',
     branch: 'Mandoli, Delhi',
-    upiId: 'pacificproducts@hdfcbank',
+    upiId: '',
   };
 
   // ── Line Items Table Body ───────────────────────────────────────────────────
@@ -306,7 +306,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                   { text: 'Mandoli, Delhi 110093, India', fontSize: 8.5, color: BLACK, margin: [0, 0, 0, 2] as [number, number, number, number] },
                   { text: `GSTIN: ${companyGstin}`, fontSize: 8.5, color: BLACK, margin: [0, 0, 0, 2] as [number, number, number, number] },
                   { text: `Email: ${companyEmail}`, fontSize: 8.5, color: BLACK, margin: [0, 0, 0, 2] as [number, number, number, number] },
-                  { text: `Phone: ${companyPhone}  |  Website: www.pacifichardware.com`, fontSize: 8.5, color: BLACK },
+                  { text: `Phone: ${companyPhone}  |  Website: www.prchardware.com`, fontSize: 8.5, color: BLACK },
                 ],
               },
             ],
@@ -328,21 +328,6 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                     text: '',
                     margin: [0, 0, 0, 0] as [number, number, number, number],
                   },
-              {
-                text: 'SCAN TO VERIFY AUTHENTICITY',
-                fontSize: 6.2,
-                bold: true,
-                color: BLACK,
-                alignment: 'right' as Alignment,
-                margin: [0, 1, 0, 0] as [number, number, number, number],
-              },
-              {
-                text: 'pacifichardware.com/verify/pi',
-                fontSize: 6,
-                color: MUTED_GRAY,
-                alignment: 'right' as Alignment,
-                margin: [0, 1, 0, 0] as [number, number, number, number],
-              },
               {
                 text: [
                   { text: 'PI No.: ', bold: true, fontSize: 10, color: BLACK },
@@ -537,7 +522,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                     [
                       makeCell('Account Name', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
                       makeCell(':', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
-                      makeCell(bank.accountName || 'Pacific Products and Solutions', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
+                      makeCell(bank.accountName || 'PRC Hardware', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
                     ],
                     [
                       makeCell('Account No.', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
@@ -554,11 +539,13 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
                       makeCell(':', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
                       makeCell(bank.branch || 'Mandoli, Delhi', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
                     ],
-                    [
-                      makeCell('UPI / VPA', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
-                      makeCell(':', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
-                      makeCell(bank.upiId || 'pacificproducts@hdfcbank', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
-                    ],
+                    ...(bank.upiId
+                      ? [[
+                          makeCell('UPI / VPA', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
+                          makeCell(':', { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
+                          makeCell(bank.upiId, { fontSize: 8.5, color: BLACK, margin: [0, 1, 0, 1] }),
+                        ]]
+                      : []),
                   ],
                 },
                 layout: 'noBorders',
@@ -666,19 +653,22 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
         margin: [0, 8, 0, 16] as [number, number, number, number],
       },
 
-      // ── 8. Authorised Signatory Block (Bottom Left) ──────────────────────────
+      // ── 8. Authorised Signatory Block (Bottom Right) ─────────────────────────
       {
         columns: [
+          // Left spacer (pushes signatory to right)
+          { width: '*', text: '' },
+          // Right: Authorised Signatory
           {
-            width: 220,
+            width: 200,
             stack: [
-              { text: 'Authorised Signatory', fontSize: 8.5, bold: true, color: BLACK, margin: [0, 0, 0, 2] as [number, number, number, number] },
-              { text: `For ${companyName}`, fontSize: 8.5, color: BLACK, margin: [0, 0, 0, 24] as [number, number, number, number] },
+              { text: 'Authorised Signatory', fontSize: 8.5, bold: true, color: BLACK, alignment: 'right' as Alignment, margin: [0, 0, 0, 2] as [number, number, number, number] },
+              { text: `For ${companyName}`, fontSize: 8.5, color: BLACK, alignment: 'right' as Alignment, margin: [0, 0, 0, 24] as [number, number, number, number] },
               {
-                canvas: [{ type: 'line', x1: 0, y1: 0, x2: 135, y2: 0, lineWidth: 0.8, lineColor: BORDER_BLACK }],
+                canvas: [{ type: 'line', x1: 65, y1: 0, x2: 200, y2: 0, lineWidth: 0.8, lineColor: BORDER_BLACK }],
                 margin: [0, 0, 0, 3] as [number, number, number, number],
               },
-              { text: `(${pi.signedBy || 'Executive Desk'})`, fontSize: 8.5, color: BLACK },
+              { text: `(${pi.signedBy || 'Executive Desk'})`, fontSize: 8.5, color: BLACK, alignment: 'right' as Alignment },
             ],
           },
         ],
@@ -738,7 +728,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
           'All materials should be installed / erected within 30 days from the date of delivery.',
           'All invoices will be made on number of cubicle basis.',
           'Unloading and shifting of material at site is in the scope of client only.',
-          'PO and remittances should be raised in the name of Pacific Products and Solutions, Delhi.',
+          'PO and remittances should be raised in the name of PRC Hardware, Delhi.',
           'Freight charge will be extra as actual.',
         ],
         style: 'termsList',
@@ -750,7 +740,7 @@ export async function generateProformaPdf(pi: ProformaPdfData): Promise<Buffer> 
       {
         ol: [
           `${advancePct}% advance along with confirmed Proforma Invoice (and balance ${100 - advancePct}% prior to dispatch / on delivery).`,
-          'Payments are to be made by the client based on the agreed terms and conditions with us, failing to do the same Pacific Products & Solutions reserves the right to cancel the order.',
+          'Payments are to be made by the client based on the agreed terms and conditions with us, failing to do the same PRC Hardware reserves the right to cancel the order.',
         ],
         style: 'termsList',
         margin: [0, 0, 0, 8] as [number, number, number, number],

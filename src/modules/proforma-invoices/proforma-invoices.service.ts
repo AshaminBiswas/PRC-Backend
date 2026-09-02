@@ -2,6 +2,7 @@ import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 import { getPaginationParams, buildPagination } from '../../utils/response';
 import { sendMail } from '../../utils/email.utils';
+import { uploadAttachmentFile } from '../upload/upload.service';
 import { ProformaInvoiceStatus, Prisma } from '@prisma/client';
 import { generateNextProformaNumber, getCurrentFinancialYear } from './proforma-invoice-numbering.service';
 import {
@@ -424,6 +425,9 @@ export const listProformaInvoices = async (query: ListProformaInvoicesQuery, _us
       orderBy,
       include: {
         items: true,
+        history: {
+          orderBy: { createdAt: 'desc' },
+        },
       },
     }),
     prisma.proformaInvoice.count({ where }),
@@ -1287,14 +1291,18 @@ export const submitCustomerFeedback = async (
   }
 
   const updated = await prisma.$transaction(async (tx) => {
+    const receiptNote = input.paymentReceiptUrl ? ` [Receipt: ${input.paymentReceiptUrl}]` : '';
+    const utrNote = input.advancePaymentRef ? ` (Advance Ref: ${input.advancePaymentRef})` : '';
+    const fullComment = `${input.feedbackComments}${utrNote}${receiptNote}`;
+
     const res = await tx.proformaInvoice.update({
       where: { id: pi.id },
       data: {
         status: newStatus,
         customerPhone: input.contactPhone || pi.customerPhone,
         notes: pi.notes
-          ? `${pi.notes}\n[Customer Feedback - ${new Date().toLocaleDateString('en-IN')}]: ${input.feedbackComments}${input.advancePaymentRef ? ` (Advance Ref: ${input.advancePaymentRef})` : ''}`
-          : `[Customer Feedback - ${new Date().toLocaleDateString('en-IN')}]: ${input.feedbackComments}${input.advancePaymentRef ? ` (Advance Ref: ${input.advancePaymentRef})` : ''}`,
+          ? `${pi.notes}\n[Customer Feedback - ${new Date().toLocaleDateString('en-IN')}]: ${fullComment}`
+          : `[Customer Feedback - ${new Date().toLocaleDateString('en-IN')}]: ${fullComment}`,
       },
       include: { items: true, history: true },
     });
@@ -1304,7 +1312,7 @@ export const submitCustomerFeedback = async (
         proformaInvoiceId: pi.id,
         action: `CUSTOMER_${input.action}`,
         performedBy: input.customerName || pi.customerName || 'Customer',
-        details: `Customer submitted feedback for PI ${pi.piNumber}. Action: ${input.action}. Comments: ${input.feedbackComments}.${input.advancePaymentRef ? ` Advance Payment UTR: ${input.advancePaymentRef}.` : ''}`,
+        details: `Customer submitted feedback for PI ${pi.piNumber}. Action: ${input.action}. Comments: ${input.feedbackComments}.${input.advancePaymentRef ? ` Advance Payment UTR: ${input.advancePaymentRef}.` : ''}${input.paymentReceiptUrl ? ` Receipt attached: ${input.paymentReceiptUrl}.` : ''}`,
         metadata: {
           action: input.action,
           feedbackComments: input.feedbackComments,
@@ -1331,5 +1339,23 @@ export const submitCustomerFeedback = async (
     data: updated,
     message,
   };
+};
+
+/**
+ * Public: Customer Uploads Payment Screenshot or PDF Receipt for a Proforma Invoice.
+ */
+export const uploadProformaPaymentReceipt = async (
+  token: string,
+  file: { originalname: string; mimetype: string; buffer: Buffer; size?: number }
+): Promise<string> => {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { verificationToken: token, deletedAt: null },
+  });
+  if (!pi) {
+    throw new AppError('NOT_FOUND', 'Proforma Invoice not found or token has expired', 404);
+  }
+
+  const receiptUrl = await uploadAttachmentFile(file, 'pi-payment-receipts');
+  return receiptUrl;
 };
 

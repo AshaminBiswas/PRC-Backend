@@ -380,5 +380,22 @@ export const validateDocumentTamper = async (req: Request, res: Response, next: 
   }
 };
 
-
-
+/**
+ * Public: Customer Uploads Payment Screenshot or PDF Receipt for a Proforma Invoice.
+ */
+export const uploadPaymentReceipt = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) {
+      throw new AppError('BAD_REQUEST', 'No payment receipt or screenshot file provided', 400);
+    }
+    const receiptUrl = await proformaService.uploadProformaPaymentReceipt(req.params.token, {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      buffer: req.file.buffer,
+      size: req.file.size,
+    });
+    sendSuccess(res, { receiptUrl }, 'Payment receipt uploaded successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};
