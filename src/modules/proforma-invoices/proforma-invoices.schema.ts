@@ -149,6 +149,26 @@ export const recordProformaPaymentSchema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+export const logProformaFollowUpSchema = z.object({
+  channel: z.enum(['EMAIL', 'PHONE', 'WHATSAPP', 'IN_PERSON', 'LEGAL_NOTICE', 'OTHER']).default('PHONE'),
+  stage: z.enum([
+    'COURTESY_REMINDER',
+    'DUE_WARNING',
+    'OVERDUE_ALERT',
+    'PROMISE_TO_PAY',
+    'ESCALATED',
+    'DISPUTED',
+    'OTHER',
+  ]).default('COURTESY_REMINDER'),
+  notes: z.string().min(1, 'Follow-up remarks/notes are required'),
+  contactedPerson: z.string().optional().nullable(),
+  contactPhone: z.string().optional().nullable(),
+  contactEmail: z.string().optional().nullable(),
+  ptpDate: z.string().optional().nullable(),
+  ptpAmount: z.number().optional().nullable(),
+  nextFollowupDate: z.string().optional().nullable(),
+});
+
 export type ProformaItemInput = z.infer<typeof proformaItemSchema>;
 export type CreateProformaInvoiceInput = z.infer<typeof createProformaInvoiceSchema>;
 export type UpdateProformaInvoiceInput = z.infer<typeof updateProformaInvoiceSchema>;
@@ -161,4 +181,5 @@ export type VerifySignatureInput = z.infer<typeof verifySignatureSchema>;
 export type CustomerFeedbackInput = z.infer<typeof customerFeedbackSchema>;
 export type ValidateTamperInput = z.infer<typeof validateTamperSchema>;
 export type RecordProformaPaymentInput = z.infer<typeof recordProformaPaymentSchema>;
+export type LogProformaFollowUpInput = z.infer<typeof logProformaFollowUpSchema>;
 

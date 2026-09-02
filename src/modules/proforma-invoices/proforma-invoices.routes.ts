@@ -16,6 +16,7 @@ import {
   customerFeedbackSchema,
   validateTamperSchema,
   recordProformaPaymentSchema,
+  logProformaFollowUpSchema,
 } from './proforma-invoices.schema';
 
 const storage = multer.memoryStorage();
@@ -159,6 +160,14 @@ router.post(
   authorize('invoices.edit', 'invoices.approve', 'finance.manage'),
   validate(recordProformaPaymentSchema),
   controller.recordPayment
+);
+
+// Log Commercial Payment Follow-up Touchpoint
+router.post(
+  '/:id/followup',
+  authorize('invoices.edit', 'invoices.approve', 'finance.manage', 'orders.edit'),
+  validate(logProformaFollowUpSchema),
+  controller.logFollowUp
 );
 
 // Digitally sign and approve Proforma Invoice with cryptographic seal

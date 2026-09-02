@@ -421,3 +421,25 @@ export const recordPayment = async (req: Request, res: Response, next: NextFunct
     next(error);
   }
 };
+
+/**
+ * Admin: Log commercial payment follow-up touchpoint.
+ */
+export const logFollowUp = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await proformaService.logProformaFollowUp(req.params.id, req.body, req.user);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'PI_FOLLOW_UP_LOGGED',
+      entity: 'PROFORMA_INVOICE',
+      entityId: req.params.id,
+      details: `Logged follow-up (${req.body.channel} / ${req.body.stage}) for PI #${req.params.id}.`,
+      severity: 'INFO',
+      metadata: req.body,
+      req,
+    });
+    sendSuccess(res, result.data, result.message, 200);
+  } catch (error) {
+    next(error);
+  }
+};

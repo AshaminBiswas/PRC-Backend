@@ -23,6 +23,8 @@ import type {
   VerifySignatureInput,
   ProformaItemInput,
   ValidateTamperInput,
+  RecordProformaPaymentInput,
+  LogProformaFollowUpInput,
 } from './proforma-invoices.schema';
 
 export interface UserContext {
@@ -1417,6 +1419,77 @@ export const recordProformaPayment = async (
     success: true,
     data: updated,
     message: `Payment of ₹${input.amountPaid.toLocaleString('en-IN')} recorded successfully for PI ${existing.piNumber}.`,
+  };
+};
+
+/**
+ * Log a commercial payment follow-up touchpoint with audit history and next action dates.
+ */
+export const logProformaFollowUp = async (
+  id: string,
+  input: LogProformaFollowUpInput,
+  user?: UserContext
+) => {
+  const existing = await prisma.proformaInvoice.findFirst({
+    where: { OR: [{ id }, { piNumber: id }], deletedAt: null },
+  });
+
+  if (!existing) throw new AppError('NOT_FOUND', 'Proforma Invoice not found', 404);
+
+  const followUpDateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const ptpInfo = input.ptpDate
+    ? ` [PTP Promised: ₹${Number(input.ptpAmount || 0).toLocaleString('en-IN')} on ${new Date(input.ptpDate).toLocaleDateString('en-IN')}]`
+    : '';
+  const nextFollowupInfo = input.nextFollowupDate
+    ? ` [Next Follow-up Due: ${new Date(input.nextFollowupDate).toLocaleDateString('en-IN')}]`
+    : '';
+
+  const followUpEntry = `[Follow-up ${followUpDateStr} | ${input.channel} - ${input.stage}]: ${input.notes}${ptpInfo}${nextFollowupInfo}`;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const res = await tx.proformaInvoice.update({
+      where: { id: existing.id },
+      data: {
+        notes: existing.notes ? `${existing.notes}\n${followUpEntry}` : followUpEntry,
+        updatedBy: user?.id || 'system',
+      },
+      include: {
+        items: true,
+        history: {
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    await tx.proformaInvoiceHistory.create({
+      data: {
+        proformaInvoiceId: existing.id,
+        action: 'FOLLOW_UP_LOGGED',
+        performedBy: (user as any)?.name || user?.email || user?.id || 'Commercial Accounts Desk',
+        details: `Follow-up logged (${input.channel} / ${input.stage}): ${input.notes}${ptpInfo}`,
+        metadata: {
+          channel: input.channel,
+          stage: input.stage,
+          notes: input.notes,
+          contactedPerson: input.contactedPerson || existing.customerName,
+          contactPhone: input.contactPhone || existing.customerPhone,
+          contactEmail: input.contactEmail || existing.customerEmail,
+          ptpDate: input.ptpDate || null,
+          ptpAmount: input.ptpAmount || null,
+          nextFollowupDate: input.nextFollowupDate || null,
+          loggedAt: new Date().toISOString(),
+          loggedBy: (user as any)?.name || user?.email || 'Accounts Agent',
+        },
+      },
+    });
+
+    return res;
+  });
+
+  return {
+    success: true,
+    data: updated,
+    message: `Follow-up touchpoint recorded successfully for ${existing.piNumber}.`,
   };
 };
 

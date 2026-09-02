@@ -539,9 +539,26 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - **Page 1**: Logo and contact header, amber accent bar, PI NO. badge, 3-column metadata strip (Issue Date, FY, Valid Until), 2-column Bill To (Buyer) & Order Details cards, `#0b1e38` Navy Dark line items table with alternating rows, digital authenticity stamp with QR code & HMAC-SHA256 hash, bank remittance box (HDFC Bank Ltd), and financial summary table (Basic, CGST/SGST/IGST, Logistics, Grand Total, Advance Payable %, and Balance Due).
             - **Page 2**: General Terms & Conditions (1. Specifications Required for Production, 2. Other Terms & Conditions, 3. Payment Terms for Supply, 4. Special Note on Site Delay & Payment Liability, 5. Delivery Timeline, 6. Statutory Compliance, and Dual Signatures for Client Acceptance and Pacific Products and Solutions).
             - Fixed header and footer with location pin, contact details, document reference, and dynamic page number pill (`X / Y`).
+    24. **B2B Payments & Commercial Receivables Hub with Commercial Follow-up Engine (`AdvancePaymentsTrackerPage.tsx`, `proforma-invoices.service.ts`, `proforma-invoices.controller.ts`, `CustomerProformaViewPage.tsx`)**:
+          - **Multi-Source Unified Receivables Ledger (`AdvancePaymentsTrackerPage.tsx`)**:
+            - Unified tracking for all B2B customer payments, Proforma Invoices (PIs), GST Tax Invoices, credit SLA overdues, bank UTR clearances, and client ledger exposures.
+            - Real-time aggregation of commercial records into a single unified ledger with SLA calculations, aging categories (<7d, 7-14d, 15-30d, 31-60d, >60d), and balance due tracking.
+            - Executive Financial Matrix KPIs: Total B2B Invoiced, Total Payments Cleared, Outstanding Receivables, Customer UTR Proofs Awaiting Clearance, and Overdue SLA Breaches.
+            - **Customer Accounts 360° Matrix**: Client risk profiling (`HIGH_RISK_OVERDUE`, `MODERATE`, `LOW_RISK`), total invoiced vs payments received, active document breakdown, and 1-click drilldown into client ledger.
+          - **Customer Payment Proof & UTR Verification Workflow**:
+            - Customer Storefront portal (`CustomerProformaViewPage.tsx`) cleanly separates **"Accept & Confirm Terms"** from **"Advance Payment Initiated"**.
+            - Dedicated 10MB payment proof upload system supporting PNG, JPG, WEBP, and PDF receipts with live document preview.
+            - Admin Console features a receipt inspection lightbox modal and 1-click payment clearance modal (`POST /api/v1/proforma-invoices/:id/payment` and `PATCH /api/v1/gst/invoices/:id`).
+          - **Commercial Follow-up & Promise to Pay (PTP) Engine**:
+            - **Backend REST API**: `POST /api/v1/proforma-invoices/:id/followup` with `logProformaFollowUpSchema` logging immutable `ProformaInvoiceHistory` events with action `FOLLOW_UP_LOGGED`, metadata (channel, stage, notes, contactedPerson, contactPhone, contactEmail, ptpDate, ptpAmount, nextFollowupDate), and structured notes updates.
+            - **Admin Touchpoint Logging Modal**:
+              - Channels: `PHONE` (Calls), `WHATSAPP` (Commercial Notice), `EMAIL` (Formal Notice), `IN_PERSON` (Site Visit), `LEGAL_NOTICE` (Demand Notice).
+              - Stages: `COURTESY_REMINDER`, `DUE_WARNING`, `OVERDUE_ALERT`, `PROMISE_TO_PAY`, `ESCALATED`, `DISPUTED`.
+              - Promise to Pay (PTP) tracking: promised date and amount with quick visual badges on the ledger.
+              - 1-Click Instant Communication Launchers: Pre-formatted WhatsApp notice generator (`wa.me`), pre-filled mailto launcher, and click-to-call.
+            - **Follow-up Timeline & Audit Modal**: Chronological touchpoint log for any commercial document with timestamps, agent names, channels, stages, remarks, and PTP commitments.
+            - **Follow-up Filters & Summary Badges**: Quick filter tabs for `📞 Follow-up Due Today`, `🤝 PTP Promised`, and `🚨 Overdue Follow-ups`.
 
 ---
 
-*Last Updated: 2026-09-01 (Fixed PO services inbound email ingestion so automated alert emails are not sent to admin accounts like ejaj@pacificproduct.in; in-app notifications and real-time SSE events remain fully active for Admin Console)*
-
-
+*Last Updated: 2026-09-02 (Implemented unified B2B Commercial Payments & Receivables Hub with complete Commercial Follow-up Suite, PTP tracking, WhatsApp 1-click triggers, and multi-source ledger reconciliation)*
