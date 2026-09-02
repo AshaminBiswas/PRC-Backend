@@ -445,25 +445,26 @@ The Storefront was architected and optimized for native app-like responsiveness 
     - `POST /public/:token/upload-receipt`: Public customer endpoint to upload bank payment screenshot (PNG, JPG, WEBP) or payment receipt PDF (up to 10MB) via `uploadAttachmentFile` cloud storage fallback pipeline.
     - `POST /public/:token/feedback`: Public customer acceptance & payment submission with UTR reference, contact phone, notes, and uploaded receipt URL.
     - `DELETE /:id`: Exclusive super admin void/delete endpoint for proforma records.
-  - **Admin Console (`D:\admin`)**:
-    - `AdvancePaymentsTrackerPage.tsx` (`/advance-payments`): Dedicated commercial receivables & advance payment tracking hub:
-      - 5 Executive KPI Matrix cards: Total PI Value, Expected Advance Deposits, Cleared & Collected Advance, Customer UTR Proofs awaiting clearance, and Overdue Receivables Alert (>30 Days SLA).
-      - Aging & SLA Overdue Engine: Computes exact document days elapsed, validity countdown, `Overdue by X days` alerts, and `Due in X days` warnings.
-      - Interactive Quick Filter Pills (`All`, `Awaiting Advance`, `Customer UTR Submitted`, `Advance Cleared`, `🚨 Overdue (>30 Days)`).
-      - Data Ledger Table: Shows PI #, issue date, customer/buyer entity, grand total, advance payable, balance due, payment/UTR proof badge, receipt thumbnail link, and SLA status badge.
-      - Built-in Record Payment Clearance Modal: Allows accounts team to confirm advance remittance (RTGS/NEFT/IMPS/UPI/Cheque/Cash), log UTR, and update PI status.
+    - `AdvancePaymentsTrackerPage.tsx` (`/advance-payments`): Unified B2B Payments & Commercial Receivables Hub (`B2B Payments & Receivables`):
+      - Aggregates ALL B2B customer financial records across Proforma Invoices (PIs), GST Tax Invoices, and B2B Sales Orders.
+      - Dual Intelligent View Architecture:
+        - Mode 1: Commercial Documents & Receivables Ledger (granular per-document aging, SLA overdues, advance payable, balance due, and UTR proofs).
+        - Mode 2: B2B Customer Accounts 360° Exposure Ledger (enterprise client matrix with lifetime invoiced value, cleared payments, open balances, oldest overdue days, risk level, and 1-click customer account dossier filter).
+      - 5 Executive KPI Matrix cards: Total B2B Invoiced Value, Total Payments Cleared, Outstanding Receivables Pending, Customer UTR Proofs Awaiting Clearance, and Overdue Dues Alert (>30 Days SLA).
+      - Multi-Tier Aging & SLA Overdue Engine: Computes exact document days elapsed, validity countdown, `Overdue by X days` alerts, and `Due in X days` warnings.
+      - Universal Record & Reconcile Payment Modal: Allows accounts team to record advance deposits, balance payments, or full settlements across PIs and GST Tax Invoices with payment mode (RTGS/NEFT/IMPS/UPI/Cheque/Cash), bank account credited, and transaction UTR.
       - Full-Screen Payment Receipt Lightbox Modal: Enlarge uploaded customer payment screenshots or download receipt PDFs directly.
-      - 1-Click Export to CSV: Exports current filtered ledger with all aging metrics, overdue flags, and financials.
+      - 1-Click Export to CSV: Exports full unified commercial ledger with aging days, overdue flags, and financials.
     - `QRDocumentValidatorPage.tsx` (`/qr-validator`): Full-featured QR Scanner & Document Tamper Validation Hub:
       - Live Camera Scanner (`navigator.mediaDevices` + `jsQR`) with viewfinder crosshair radar.
       - Image / Screenshot drag-and-drop QR decoding.
       - Physical Paper Forgery Inspector matrix (compares printed Total, Advance, GSTIN, Customer Name, and Item Count against database).
       - System-wide QR Registry of all issued commercial invoices with high-res 400px QR modal, print badges, and PDF download.
       - Real-time scan verification audit trail.
-    - `ProformaInvoicesPage.tsx`: Full operational pipeline with 4 KPI cards, multi-facility routing, direct server binary PDF download, status filtering (`ACCEPTED`, `ADVANCE_RECEIVED`, `APPROVED`, `SENT`, `DRAFT`, `CONVERTED_TO_INVOICE`, `CANCELLED`), table status tags with customer acceptance indicators, quick navigation button to Advance & Payment Tracker, quick QR Scanner launcher button, super admin delete action, and print view.
-    - `ProformaInvoiceCreateView.tsx`: Enterprise creation form with B2B customer search, live customer custom pricing lookup, automatic customer address fetching, and GST calculation (CGST 9% + SGST 9% for Delhi; IGST 18% for other states).
-    - `ProformaInvoiceDetailView.tsx`: Full PI dossier featuring live customer acceptance & advance remittance banner (`CheckCircle2`/`Landmark` dossier with UTR reference, customer comments, phone number, timestamp), payment proof preview card (with image thumbnail, direct PDF download, and full-screen image lightbox modal), complete immutable activity audit trail (`ProformaInvoiceHistory` timeline with receipt links), customer details, items breakdown, direct PDF download, super admin delete action, and SMTP email dispatch modal.
-    - `proformaService.ts`: Robust API integration, server-side data mapping (`transformBackendInvoiceToPI` with `history`, `notes`, `termsAndConditions`), binary PDF streaming, payment clearance recording (`recordPayment`), and tamper validation.
+    - `ProformaInvoicesPage.tsx`: Full operational pipeline with 4 KPI cards, multi-facility routing, direct server binary PDF download, status filtering (`ACCEPTED`, `ADVANCE_RECEIVED`, `APPROVED`, `SENT`, `DRAFT`, `CONVERTED_TO_INVOICE`, `CANCELLED`), table status tags with customer acceptance indicators, row-level **Edit Proforma Invoice** action, quick navigation button to Advance & Payment Tracker, quick QR Scanner launcher button, super admin delete action, and print view.
+    - `ProformaInvoiceCreateView.tsx`: Enterprise creation & edit form supporting both new generation and full editing of existing Proforma Invoices (`initialInvoice`), with B2B customer search, live customer custom pricing lookup, automatic customer address fetching, line item addition/modification/deletion, live GST recalculation (CGST 9% + SGST 9% for Delhi; IGST 18% for other states), advance percentage tuning, and shipping charges adjustments.
+    - `ProformaInvoiceDetailView.tsx`: Full PI dossier featuring live customer acceptance & advance remittance banner (`CheckCircle2`/`Landmark` dossier with UTR reference, customer comments, phone number, timestamp), payment proof preview card (with image thumbnail, direct PDF download, and full-screen image lightbox modal), **Edit Proforma Invoice** launcher button in the action header, complete immutable activity audit trail (`ProformaInvoiceHistory` timeline with receipt links), customer details, items breakdown, direct PDF download, super admin delete action, and SMTP email dispatch modal.
+    - `proformaService.ts`: Robust API integration, server-side data mapping (`transformBackendInvoiceToPI` with `history`, `notes`, `termsAndConditions`), binary PDF streaming, Proforma update client (`updateProformaInvoice`), payment clearance recording (`recordPayment`), and tamper validation.
   - **Storefront (`D:\frontend`)**:
     - `UserProfilePage.tsx`: Integrated B2B Proforma Invoices tab with search, status filters, financial breakdown, and 1-tap PDF downloads.
     - `CustomerProformaViewPage.tsx`: Public/authenticated verification and acceptance page (`/proforma/:token`) allowing clients to accept terms, submit bank advance transaction reference (UTR / IMPS / RTGS), upload payment screenshot or bank receipt PDF (up to 10MB with live preview), submit site remarks, and download official monochrome PDFs.
