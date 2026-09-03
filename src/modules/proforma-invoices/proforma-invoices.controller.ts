@@ -443,3 +443,38 @@ export const logFollowUp = async (req: Request, res: Response, next: NextFunctio
     next(error);
   }
 };
+
+/**
+ * Admin: Get Commercial Ledger Statement & WhatsApp payload for a Proforma Invoice.
+ */
+export const getInvoiceLedger = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await proformaService.generateProformaInvoiceLedger(req.params.id);
+    sendSuccess(res, data, 'Invoice commercial ledger retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Admin: Send WhatsApp / Email Reminder with remaining balance ledger & attached PDF.
+ */
+export const sendReminder = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await proformaService.sendProformaInvoiceReminder(req.params.id, req.body, req.user);
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'PI_REMINDER_SENT',
+      entity: 'PROFORMA_INVOICE',
+      entityId: req.params.id,
+      details: `Sent ${req.body.channel} reminder for PI #${req.params.id}. Total reminders: ${result.reminderCount}.`,
+      severity: 'SUCCESS',
+      metadata: { ...req.body, result },
+      req,
+    });
+    sendSuccess(res, result, result.message, 200);
+  } catch (error) {
+    next(error);
+  }
+};
+

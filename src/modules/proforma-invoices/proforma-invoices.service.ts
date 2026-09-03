@@ -20,6 +20,7 @@ import type {
   SignProformaInvoiceInput,
   ListProformaInvoicesQuery,
   SendProformaInvoiceEmailInput,
+  SendProformaInvoiceReminderInput,
   VerifySignatureInput,
   ProformaItemInput,
   ValidateTamperInput,
@@ -881,6 +882,330 @@ export const emailProformaInvoice = async (
   });
 
   return { success: true, message: `Proforma Invoice emailed successfully to ${targetEmail}` };
+};
+
+/**
+ * Generates an executive Commercial Ledger Statement & WhatsApp payload for a Proforma Invoice.
+ */
+export const generateProformaInvoiceLedger = async (id: string) => {
+  const pi = await prisma.proformaInvoice.findUnique({
+    where: { id, deletedAt: null },
+    include: { items: true, customer: true, history: { orderBy: { createdAt: 'desc' } } },
+  });
+
+  if (!pi) throw new AppError('NOT_FOUND', 'Proforma Invoice not found', 404);
+
+  const grandTotal = Number(pi.grandTotal);
+  const advanceAmount = Number(pi.advanceAmount);
+  const balanceDue = Number(pi.balanceDue);
+  const advancePercentage = Number(pi.advancePercentage);
+  const customerName = pi.customerName || 'Valued Customer';
+  const phone = (pi.customerPhone || '').replace(/\D/g, '').slice(-10);
+
+  // Bank Details from invoice or facility defaults
+  const bankDetails = (pi.bankDetails as any) || {
+    bankName: 'HDFC Bank Ltd.',
+    accountName: 'Pacific Products and Solutions',
+    accountNumber: '50200088991122',
+    ifscCode: 'HDFC0001234',
+    branch: 'Mandoli, Delhi - 110093',
+    upiId: 'prchardware@hdfcbank',
+  };
+
+  const portalUrl = `https://pacifichardware.com/proforma/${pi.verificationToken}`;
+  const verifyUrl = `https://pacifichardware.com/verify/pi/${pi.verificationToken}`;
+  const pdfDownloadUrl = `https://pacifichardware.com/api/v1/proforma-invoices/${pi.id}/pdf`;
+
+  // Format professional WhatsApp ledger message
+  const whatsappText = [
+    `*COMMERCIAL STATEMENT / PAYMENT REMINDER*`,
+    `*PRC Hardware (Pacific Products & Solutions)*`,
+    `──────────────────────────────`,
+    `Dear *${customerName}*${pi.companyName ? ` (${pi.companyName})` : ''},`,
+    ``,
+    `Please find below the updated payment ledger for Proforma Invoice *#${pi.piNumber}*.`,
+    ``,
+    `📊 *ACCOUNT & ORDER LEDGER:*`,
+    `• Total Order Value: *₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}*`,
+    `• Advance Required/Paid: *₹${advanceAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} (${advancePercentage}%)*`,
+    `• ⚠️ *REMAINING BALANCE DUE: ₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}*`,
+    ``,
+    `🏦 *BANK REMITTANCE DETAILS (RTGS/NEFT):*`,
+    `• Bank: ${bankDetails.bankName || 'HDFC Bank Ltd.'}`,
+    `• Account Name: ${bankDetails.accountName || 'Pacific Products and Solutions'}`,
+    `• Account Number: ${bankDetails.accountNumber || '50200088991122'}`,
+    `• IFSC Code: ${bankDetails.ifscCode || bankDetails.ifsc || 'HDFC0001234'}`,
+    `• UPI ID: ${bankDetails.upiId || 'prchardware@hdfcbank'}`,
+    ``,
+    `📄 *VIEW & DOWNLOAD OFFICIAL PDF:*`,
+    portalUrl,
+    ``,
+    `🛡️ *VERIFY AUTHENTICITY (QR SEAL):*`,
+    verifyUrl,
+    ``,
+    `Kindly share the transaction UTR / bank payment receipt once initiated so we can release the consignment for dispatch.`,
+    `──────────────────────────────`,
+    `*PRC Hardware Commercial Operations Desk*`,
+    `📞 Support: +91 11 2233 4455 | ✉️ billing@pacifichardware.com`
+  ].join('\n');
+
+  const whatsappUrl = phone
+    ? `https://wa.me/91${phone}?text=${encodeURIComponent(whatsappText)}`
+    : `https://wa.me/?text=${encodeURIComponent(whatsappText)}`;
+
+  return {
+    invoice: {
+      id: pi.id,
+      piNumber: pi.piNumber,
+      customerName: pi.customerName,
+      companyName: pi.companyName,
+      customerEmail: pi.customerEmail,
+      customerPhone: pi.customerPhone,
+      grandTotal,
+      advanceAmount,
+      balanceDue,
+      advancePercentage,
+      status: pi.status,
+      issueDate: pi.createdAt,
+      validUntil: pi.validUntil,
+      reminderCount: pi.reminderCount || 0,
+      emailReminderCount: pi.emailReminderCount || 0,
+      whatsappReminderCount: pi.whatsappReminderCount || 0,
+      lastReminderAt: pi.lastReminderAt,
+      lastWhatsappAt: pi.lastWhatsappAt,
+      lastEmailAt: pi.lastEmailAt,
+    },
+    bankDetails,
+    portalUrl,
+    verifyUrl,
+    pdfDownloadUrl,
+    whatsappText,
+    whatsappUrl,
+  };
+};
+
+/**
+ * Dispatches WhatsApp / Email Reminder and updates tracking counters & ledger history.
+ */
+export const sendProformaInvoiceReminder = async (
+  id: string,
+  input: SendProformaInvoiceReminderInput,
+  user?: UserContext
+) => {
+  const pi = await prisma.proformaInvoice.findUnique({
+    where: { id, deletedAt: null },
+    include: { items: true },
+  });
+
+  if (!pi) throw new AppError('NOT_FOUND', 'Proforma Invoice not found', 404);
+
+  const grandTotal = Number(pi.grandTotal);
+  const advanceAmount = Number(pi.advanceAmount);
+  const balanceDue = Number(pi.balanceDue);
+  const advancePercentage = Number(pi.advancePercentage);
+  const targetEmail = input.recipient && input.recipient.includes('@') ? input.recipient : pi.customerEmail;
+  const targetPhone = input.recipient && !input.recipient.includes('@') ? input.recipient : pi.customerPhone;
+
+  let newWhatsappCount = pi.whatsappReminderCount || 0;
+  let newEmailCount = pi.emailReminderCount || 0;
+  let newReminderCount = pi.reminderCount || 0;
+  let lastWhatsappAt = pi.lastWhatsappAt;
+  let lastEmailAt = pi.lastEmailAt;
+  const now = new Date();
+
+  const ledger = await generateProformaInvoiceLedger(id);
+  const bankDetails = ledger.bankDetails;
+  const portalUrl = ledger.portalUrl;
+  const verifyUrl = ledger.verifyUrl;
+
+  // If WHATSAPP or BOTH
+  if (input.channel === 'WHATSAPP' || input.channel === 'BOTH') {
+    newWhatsappCount += 1;
+    newReminderCount += 1;
+    lastWhatsappAt = now;
+
+    await prisma.proformaInvoiceHistory.create({
+      data: {
+        proformaInvoiceId: id,
+        action: 'WHATSAPP_REMINDER_SENT',
+        performedBy: user?.id || 'system',
+        details: `Follow-up #${newWhatsappCount} generated for WhatsApp with balance ledger of ₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.`,
+        metadata: {
+          channel: 'WHATSAPP',
+          recipient: targetPhone || 'Customer Phone',
+          balanceDue,
+          grandTotal,
+          advanceAmount,
+          reminderCount: newReminderCount,
+          whatsappReminderCount: newWhatsappCount,
+          customMessage: input.customMessage || null,
+        },
+      },
+    });
+  }
+
+  // If EMAIL or BOTH
+  if (input.channel === 'EMAIL' || input.channel === 'BOTH') {
+    newEmailCount += 1;
+    if (input.channel === 'EMAIL') newReminderCount += 1;
+    lastEmailAt = now;
+
+    const pdfBuffer = await generateProformaPdf(pi as any);
+    const subject = input.subject || `Payment Reminder & Account Ledger: Proforma Invoice #${pi.piNumber} (Balance Due: ₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })})`;
+
+    const html = `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+        <!-- Header -->
+        <div style="background: #0f172a; padding: 28px 24px; color: #ffffff;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h1 style="margin: 0; font-size: 22px; color: #f59e0b; font-weight: 800; letter-spacing: -0.5px;">PRC Hardware</h1>
+              <p style="margin: 4px 0 0 0; font-size: 13px; color: #94a3b8;">Commercial Operations & Account Receivables Desk</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Body -->
+        <div style="padding: 28px 24px; background: #ffffff;">
+          <div style="display: inline-block; padding: 4px 12px; background: #fef3c7; color: #92400e; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; margin-bottom: 16px;">
+            Payment Follow-up #${newEmailCount}
+          </div>
+
+          <p style="font-size: 15px; margin-top: 0;">Dear <strong>${pi.customerName}</strong>${pi.companyName ? ` (${pi.companyName})` : ''},</p>
+          <p style="font-size: 13px; color: #334155; line-height: 1.6;">
+            This is a friendly commercial reminder regarding the outstanding balance for Proforma Invoice <strong>#${pi.piNumber}</strong>. Please find the statement of accounts below along with the official signed PDF copy attached.
+          </p>
+
+          ${input.customMessage ? `
+            <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 16px; margin: 20px 0; border-radius: 0 8px 8px 0;">
+              <p style="margin: 0; font-size: 13px; color: #78350f; font-weight: 600;">Message from Billing Desk:</p>
+              <p style="margin: 6px 0 0 0; font-size: 13px; color: #92400e;">${input.customMessage}</p>
+            </div>
+          ` : ''}
+
+          <!-- Outstanding Ledger Card -->
+          <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 10px; padding: 20px; margin: 24px 0;">
+            <h3 style="margin: 0 0 14px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: #475569; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+              📊 Commercial Ledger Statement
+            </h3>
+            <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;">Proforma Invoice #:</td>
+                <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #0f172a;">${pi.piNumber}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;">Total Order Value:</td>
+                <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #0f172a;">₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;">Advance Payable (${advancePercentage}%):</td>
+                <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #059669;">₹${advanceAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr style="border-top: 2px dashed #cbd5e1;">
+                <td style="padding: 10px 0 4px 0; font-size: 14px; font-weight: 800; color: #b91c1c;">REMAINING BALANCE DUE:</td>
+                <td style="padding: 10px 0 4px 0; text-align: right; font-size: 16px; font-weight: 900; color: #b91c1c;">₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Bank Details Box -->
+          <div style="background: #0f172a; color: #ffffff; border-radius: 10px; padding: 20px; margin: 24px 0;">
+            <h4 style="margin: 0 0 12px 0; font-size: 13px; color: #f59e0b; text-transform: uppercase;">
+              🏦 Official Bank Remittance Instructions (RTGS / NEFT / IMPS)
+            </h4>
+            <table style="width: 100%; font-size: 12px; color: #cbd5e1; border-collapse: collapse;">
+              <tr><td style="padding: 4px 0; width: 40%;">Bank Name:</td><td style="padding: 4px 0; color: #ffffff; font-weight: bold;">${bankDetails.bankName || 'HDFC Bank Ltd.'}</td></tr>
+              <tr><td style="padding: 4px 0;">Account Name:</td><td style="padding: 4px 0; color: #ffffff; font-weight: bold;">${bankDetails.accountName || 'Pacific Products and Solutions'}</td></tr>
+              <tr><td style="padding: 4px 0;">Account Number:</td><td style="padding: 4px 0; color: #ffffff; font-weight: bold; font-family: monospace; font-size: 13px;">${bankDetails.accountNumber || '50200088991122'}</td></tr>
+              <tr><td style="padding: 4px 0;">IFSC Code:</td><td style="padding: 4px 0; color: #ffffff; font-weight: bold; font-family: monospace;">${bankDetails.ifscCode || bankDetails.ifsc || 'HDFC0001234'}</td></tr>
+              <tr><td style="padding: 4px 0;">UPI ID:</td><td style="padding: 4px 0; color: #38bdf8; font-weight: bold;">${bankDetails.upiId || 'prchardware@hdfcbank'}</td></tr>
+            </table>
+          </div>
+
+          <!-- CTAs -->
+          <div style="text-align: center; margin: 28px 0 16px 0;">
+            <a href="${portalUrl}" style="display: inline-block; background: #8b5cf6; color: #ffffff; padding: 12px 28px; font-size: 13px; font-weight: bold; text-decoration: none; border-radius: 8px; margin: 4px;">
+              📄 View Signed Invoice Online
+            </a>
+            <a href="${verifyUrl}" style="display: inline-block; background: #0f172a; color: #ffffff; padding: 12px 24px; font-size: 13px; font-weight: bold; text-decoration: none; border-radius: 8px; margin: 4px; border: 1px solid #334155;">
+              🛡️ Verify Cryptographic Seal
+            </a>
+          </div>
+
+          <p style="font-size: 12px; color: #64748b; line-height: 1.5; margin-top: 24px;">
+            Please reply to this email or send the bank transaction reference (UTR) to <strong>billing@pacifichardware.com</strong> once the payment is initiated.
+          </p>
+        </div>
+
+        <!-- Footer -->
+        <div style="background: #f8fafc; padding: 16px 24px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; text-align: center;">
+          Pacific Products and Solutions (PRC Hardware) | H-3, J.R. Complex, Gate No 4, Mela Ram Farm, Mandoli, Delhi - 110093<br />
+          TIN / GSTIN: 07AABCP1234F1Z9 | Phone: +91 11 2233 4455
+        </div>
+      </div>
+    `;
+
+    await sendMail({
+      to: targetEmail,
+      cc: input.cc,
+      subject,
+      html,
+      attachments: [
+        {
+          filename: `Proforma-Invoice-${pi.piNumber.replace(/[\/\\]/g, '-')}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        },
+      ],
+    });
+
+    await prisma.proformaInvoiceHistory.create({
+      data: {
+        proformaInvoiceId: id,
+        action: 'EMAIL_REMINDER_SENT',
+        performedBy: user?.id || 'system',
+        details: `Follow-up #${newEmailCount} emailed to ${targetEmail} with attached PDF and remaining balance statement of ₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.`,
+        metadata: {
+          channel: 'EMAIL',
+          recipient: targetEmail,
+          balanceDue,
+          grandTotal,
+          advanceAmount,
+          reminderCount: newReminderCount,
+          emailReminderCount: newEmailCount,
+          subject,
+        },
+      },
+    });
+  }
+
+  // Update Invoice Reminder Counters in Database
+  const updated = await prisma.proformaInvoice.update({
+    where: { id },
+    data: {
+      reminderCount: newReminderCount,
+      whatsappReminderCount: newWhatsappCount,
+      emailReminderCount: newEmailCount,
+      lastReminderAt: now,
+      lastWhatsappAt,
+      lastEmailAt,
+    },
+  });
+
+  return {
+    success: true,
+    message: `Reminder successfully processed via ${input.channel}.`,
+    channel: input.channel,
+    reminderCount: updated.reminderCount,
+    whatsappReminderCount: updated.whatsappReminderCount,
+    emailReminderCount: updated.emailReminderCount,
+    lastReminderAt: updated.lastReminderAt,
+    lastWhatsappAt: updated.lastWhatsappAt,
+    lastEmailAt: updated.lastEmailAt,
+    whatsappUrl: ledger.whatsappUrl,
+    whatsappText: ledger.whatsappText,
+    portalUrl: ledger.portalUrl,
+  };
 };
 
 /**

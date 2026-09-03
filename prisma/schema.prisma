@@ -1302,6 +1302,14 @@ model ProformaInvoice {
   sentAt                 DateTime?             @map("sent_at")
   cancelledAt            DateTime?             @map("cancelled_at")
   cancelledReason        String?               @map("cancelled_reason")
+  // Follow-up & Reminder Metrics
+  reminderCount          Int                   @default(0) @map("reminder_count")
+  emailReminderCount     Int                   @default(0) @map("email_reminder_count")
+  whatsappReminderCount  Int                   @default(0) @map("whatsapp_reminder_count")
+  lastReminderAt         DateTime?             @map("last_reminder_at")
+  lastWhatsappAt         DateTime?             @map("last_whatsapp_at")
+  lastEmailAt            DateTime?             @map("last_email_at")
+
   createdAt              DateTime              @default(now()) @map("created_at")
   updatedAt              DateTime              @updatedAt @map("updated_at")
   deletedAt              DateTime?             @map("deleted_at")

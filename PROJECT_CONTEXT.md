@@ -141,7 +141,7 @@ D:\
     - `PoActivityLog`: Lifecycle audit events (`EMAIL_RECEIVED`, `PO_ID_ASSIGNED`, `STATUS_CHANGED`, `PRIORITY_CHANGED`, `RECLASSIFIED`, `CUSTOMER_PO_NUMBER_UPDATED`).
     - `PoSequence`: Atomic transaction-safe yearly sequence generator (`year`, `lastNumber`) producing `PRC-PO-YYYY-XXXXXX` IDs with automatic annual restart.
 12. **B2B Proforma Invoices (PI) & Cryptographic QR Verification Suite**:
-    - `ProformaInvoice` & `ProformaInvoiceItem`: Commercial advance demand invoices (`piNumber`, `financialYear`, `sequenceNo`, `status`, `subtotal`, `taxableAmount`, `cgst`, `sgst`, `igst`, `grandTotal`, `advancePercentage`, `advanceAmount`, `balanceDue`, `paymentTerms`, `deliveryTimeline`, `validUntil`, `verificationToken`, `verificationId`, `documentHash`, `digitalSignature`, `signedBy`, `signedAt`, `qrCodeDataUrl`, `bankDetails`).
+    - `ProformaInvoice` & `ProformaInvoiceItem`: Commercial advance demand invoices (`piNumber`, `financialYear`, `sequenceNo`, `status`, `subtotal`, `taxableAmount`, `cgst`, `sgst`, `igst`, `grandTotal`, `advancePercentage`, `advanceAmount`, `balanceDue`, `paymentTerms`, `deliveryTimeline`, `validUntil`, `verificationToken`, `verificationId`, `documentHash`, `digitalSignature`, `signedBy`, `signedAt`, `qrCodeDataUrl`, `bankDetails`, `reminderCount`, `emailReminderCount`, `whatsappReminderCount`, `lastReminderAt`, `lastWhatsappAt`, `lastEmailAt`).
     - `ProformaInvoiceHistory` & `ProformaInvoiceSequence`: Atomic annual sequence tracking (`PRC/PI/2026-27/0001`) and chronological state transitions audit trail.
 
 > **Note on Removed Subsystems**: The legacy multi-tenant enterprise venture/POS subsystem was permanently removed in favor of direct SKU catalog management and this streamlined multi-branch inventory tracking suite.
@@ -181,7 +181,7 @@ All modules follow a uniform, production-grade layered architecture:
 | `orders` | `/api/v1/orders` | Full order lifecycle, status transitions, cancellation restock |
 | `payments` | `/api/v1/payments` | Razorpay & PhonePe checkouts, webhooks, refund processing |
 | `po-management` | `/api/v1/po-management` | Inbound business email ingestion, PO multi-factor classification, atomic sequence generator (`PRC-PO-YYYY-XXXXXX`), email threading, PO dossier management, customer storefront submissions (`POST /customer-submit` for Quotation-linked POs, Custom Form line-item composer, and Direct PO document uploads). |
-| `proforma-invoices` | `/api/v1/proforma-invoices` | Dedicated B2B Proforma Invoice (PI) lifecycle suite — **Admin-Only Generation** (from scratch, Quotation, PO, or Order), atomic sequence generator (`PRC/PI/YYYY-YY/XXXX`), automated Indian GST computation, advance payment terms schedule, HMAC-SHA256 digital signing, high-density vector QR code generation, vector-branded A4 PDF export, public anti-tamper QR verification resolver, **Customer Self-Service API** (`GET /customer/my-proformas`), **Customer Storefront Portal** (`/pi/:token` & `/proforma/:token`), and **B2B Profile Proforma Section** (`UserProfilePage.tsx` tab) allowing verified B2B customers to review all their issued PIs, inspect commercial milestones, download official signed PDFs, and submit feedback/advance payment UTR references (customers cannot generate or request PIs from storefront). |
+| `proforma-invoices` | `/api/v1/proforma-invoices` | Dedicated B2B Proforma Invoice (PI) lifecycle suite — **Admin-Only Generation** (from scratch, Quotation, PO, or Order), atomic sequence generator (`PRC/PI/YYYY-YY/XXXX`), automated Indian GST computation (Delhi HQ Intra-state CGST 9% + SGST 9%, Interstate IGST 18%), advance payment terms schedule, HMAC-SHA256 digital signing, high-density vector QR code generation, vector-branded A4 PDF export (borderless QR and logo, pure monochrome contrast), public anti-tamper QR verification resolver, **Customer Self-Service API** (`GET /customer/my-proformas`), **Customer Storefront Portal** (`/pi/:token` & `/proforma/:token`), **B2B Profile Proforma Section** (`UserProfilePage.tsx` tab), **Commercial Ledger & Remaining Balance Engine** (`GET /:id/ledger`), **WhatsApp & Email Payment Reminder Engine with PDF auto-attachment** (`POST /:id/reminder`), and **Follow-up Counter Tracking** (`reminderCount`, `emailReminderCount`, `whatsappReminderCount`, `lastReminderAt`, `lastWhatsappAt`, `lastEmailAt`). |
 | `products` | `/api/v1/products` | Hardware SKU catalog, prices, specs, tags, filters |
 | `quotes` | `/api/v1/quotes` | B2B bulk quotations, negotiations, approvals, PDF quotes |
 | `reports` | `/api/v1/reports` | Financial & sales data exports (CSV, XLSX, PDF) |
@@ -548,17 +548,30 @@ The Storefront was architected and optimized for native app-like responsiveness 
           - **Customer Payment Proof & UTR Verification Workflow**:
             - Customer Storefront portal (`CustomerProformaViewPage.tsx`) cleanly separates **"Accept & Confirm Terms"** from **"Advance Payment Initiated"**.
             - Dedicated 10MB payment proof upload system supporting PNG, JPG, WEBP, and PDF receipts with live document preview.
-            - Admin Console features a receipt inspection lightbox modal and 1-click payment clearance modal (`POST /api/v1/proforma-invoices/:id/payment` and `PATCH /api/v1/gst/invoices/:id`).
-          - **Commercial Follow-up & Promise to Pay (PTP) Engine**:
-            - **Backend REST API**: `POST /api/v1/proforma-invoices/:id/followup` with `logProformaFollowUpSchema` logging immutable `ProformaInvoiceHistory` events with action `FOLLOW_UP_LOGGED`, metadata (channel, stage, notes, contactedPerson, contactPhone, contactEmail, ptpDate, ptpAmount, nextFollowupDate), and structured notes updates.
-            - **Admin Touchpoint Logging Modal**:
-              - Channels: `PHONE` (Calls), `WHATSAPP` (Commercial Notice), `EMAIL` (Formal Notice), `IN_PERSON` (Site Visit), `LEGAL_NOTICE` (Demand Notice).
-              - Stages: `COURTESY_REMINDER`, `DUE_WARNING`, `OVERDUE_ALERT`, `PROMISE_TO_PAY`, `ESCALATED`, `DISPUTED`.
-              - Promise to Pay (PTP) tracking: promised date and amount with quick visual badges on the ledger.
-              - 1-Click Instant Communication Launchers: Pre-formatted WhatsApp notice generator (`wa.me`), pre-filled mailto launcher, and click-to-call.
-            - **Follow-up Timeline & Audit Modal**: Chronological touchpoint log for any commercial document with timestamps, agent names, channels, stages, remarks, and PTP commitments.
-            - **Follow-up Filters & Summary Badges**: Quick filter tabs for `📞 Follow-up Due Today`, `🤝 PTP Promised`, and `🚨 Overdue Follow-ups`.
+            - **Dedicated Full-Page Workspaces for Follow-up & Payment Clearance**:
+              - Clicking **"Follow-up"** or **"Clear"** opens comprehensive full-page workspaces (`activeFollowupRecord` and `activePaymentRecord`) with responsive 2-column operational views, document/buyer context banners, and instant back navigation to the ledger.
+              - **Commercial Follow-up Workspace**: 1-click WhatsApp/Email/Phone communications suite, touchpoint logger with PTP commitments & next scheduled due dates, and real-time chronological follow-up audit timeline dossier.
+              - **Payment Clearance Workspace**: Document breakdown, 1-click amount fill chips (Advance / Balance / Full), bank account & payment mode selectors, UTR verification, accounts clearance notes, and embedded live receipt document inspector (Image / PDF).
+            - **Origin Facility Clean Brand Protocol**: Cleaned origin facility labels in Proforma Invoices and ledger views to standard corporate name `PRC Hardware` (removing legacy `(Pacific Products & Solutions)` from table columns and facility constants).
+    25. **Cryptographic QR Document Validator & Multi-Format PDF Tamper Hub (`QRDocumentValidatorPage.tsx`)**:
+          - **Universal Document Ingestion**: Supports high-res live camera scanning, document image upload (PNG/JPG/WEBP), and multi-page drag-and-drop PDF ingestion (`pdfjs-dist` v3.11.174).
+          - **Multi-Page Canvas Rendering & Extraction**: Renders uploaded PDF pages to offscreen high-res HTML5 canvases for `jsQR` 2D barcode localization, combined with embedded PDF text-layer extraction for PI number, total value, and GSTIN regex matching.
+          - **Cryptographic Tamper Audit**: Queries public verification API (`GET /proforma-invoices/verify/:token`), checks SHA-256 digital document signature against original tamper-proof database hash, and verifies monetary amounts, GST breakdown, customer name, and issue dates.
+    26. **Automated WhatsApp Ledger Statement & Email Reminder Follow-up Suite (`WhatsAppLedgerModal.tsx`, `EmailReminderModal.tsx`, `proforma-invoices.service.ts`)**:
+          - **WhatsApp Ledger Dispatch & Balance Reminder**:
+            - Generates pre-formatted WhatsApp statement containing total quote value, advance deposit required/paid, and **highlighted Remaining Balance Due to Pay**.
+            - Includes official bank RTGS/NEFT remittance details, direct authenticated PDF download link, and anti-tamper QR seal verification link.
+            - Automatically increments `whatsappReminderCount` and `reminderCount`, updates `lastWhatsappAt` & `lastReminderAt`, and logs audit trail.
+            - 1-click launch opens `https://wa.me/91<phone>?text=...` with full ledger statement.
+          - **Email Payment Reminder with Auto-Attached PDF**:
+            - Generates executive branded HTML email with commercial balance due summary, bank remittance instructions, and auto-attaches official monochrome PDF Proforma Invoice.
+            - Increments `emailReminderCount` and `reminderCount`, updates `lastEmailAt`, and logs history.
+          - **Admin Console Follow-up Tracking**:
+            - **`ProformaInvoicesPage.tsx`**: Follow-up counter badges (`🔔 N Sent`) with 1-click WhatsApp and Email quick trigger buttons.
+            - **`ProformaInvoiceDetailView.tsx`**: Top header actions and dedicated **Payment Ledger & Commercial Follow-up Summary** card highlighting Gross Order Value, Advance Required/Paid, **Remaining Balance Due (₹)**, and real-time follow-up statistics.
 
 ---
 
-*Last Updated: 2026-09-02 (Implemented unified B2B Commercial Payments & Receivables Hub with complete Commercial Follow-up Suite, PTP tracking, WhatsApp 1-click triggers, and multi-source ledger reconciliation)*
+*Last Updated: 2026-09-02 (Implemented automated WhatsApp Ledger Statement & Remaining Balance Reminder with wa.me launch, Email Reminder with PDF auto-attachment, Follow-up Counter Tracking, and QR Document PDF Upload Validator)*
+
+

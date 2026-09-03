@@ -111,6 +111,14 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS "proforma_invoices_quote_number_idx" ON "proforma_invoices"("quote_number")`,
   `CREATE INDEX IF NOT EXISTS "proforma_invoices_po_number_idx" ON "proforma_invoices"("po_number")`,
 
+  // Idempotent column additions for Follow-up & Reminder counters
+  `ALTER TABLE "proforma_invoices" ADD COLUMN IF NOT EXISTS "reminder_count" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "proforma_invoices" ADD COLUMN IF NOT EXISTS "email_reminder_count" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "proforma_invoices" ADD COLUMN IF NOT EXISTS "whatsapp_reminder_count" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "proforma_invoices" ADD COLUMN IF NOT EXISTS "last_reminder_at" TIMESTAMP(3)`,
+  `ALTER TABLE "proforma_invoices" ADD COLUMN IF NOT EXISTS "last_whatsapp_at" TIMESTAMP(3)`,
+  `ALTER TABLE "proforma_invoices" ADD COLUMN IF NOT EXISTS "last_email_at" TIMESTAMP(3)`,
+
   `CREATE TABLE IF NOT EXISTS "proforma_invoice_items" (
     "id"                   TEXT NOT NULL,
     "proforma_invoice_id"  TEXT NOT NULL,

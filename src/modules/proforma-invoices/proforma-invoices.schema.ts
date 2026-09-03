@@ -169,6 +169,16 @@ export const logProformaFollowUpSchema = z.object({
   nextFollowupDate: z.string().optional().nullable(),
 });
 
+export const sendProformaInvoiceReminderSchema = z.object({
+  channel: z.enum(['WHATSAPP', 'EMAIL', 'BOTH']).default('WHATSAPP'),
+  recipient: z.string().optional().nullable(),
+  customMessage: z.string().optional().nullable(),
+  includeBankDetails: z.boolean().optional().default(true),
+  includePortalLink: z.boolean().optional().default(true),
+  subject: z.string().optional().nullable(),
+  cc: z.array(z.string().email()).optional(),
+});
+
 export type ProformaItemInput = z.infer<typeof proformaItemSchema>;
 export type CreateProformaInvoiceInput = z.infer<typeof createProformaInvoiceSchema>;
 export type UpdateProformaInvoiceInput = z.infer<typeof updateProformaInvoiceSchema>;
@@ -177,6 +187,7 @@ export type UpdateProformaInvoiceStatusInput = z.infer<typeof updateProformaInvo
 export type SignProformaInvoiceInput = z.infer<typeof signProformaInvoiceSchema>;
 export type ListProformaInvoicesQuery = z.infer<typeof listProformaInvoicesQuerySchema>;
 export type SendProformaInvoiceEmailInput = z.infer<typeof sendProformaInvoiceEmailSchema>;
+export type SendProformaInvoiceReminderInput = z.infer<typeof sendProformaInvoiceReminderSchema>;
 export type VerifySignatureInput = z.infer<typeof verifySignatureSchema>;
 export type CustomerFeedbackInput = z.infer<typeof customerFeedbackSchema>;
 export type ValidateTamperInput = z.infer<typeof validateTamperSchema>;

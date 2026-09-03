@@ -12,6 +12,7 @@ import {
   signProformaInvoiceSchema,
   listProformaInvoicesQuerySchema,
   sendProformaInvoiceEmailSchema,
+  sendProformaInvoiceReminderSchema,
   verifySignatureSchema,
   customerFeedbackSchema,
   validateTamperSchema,
@@ -197,6 +198,21 @@ router.post(
   authorize('invoices.create', 'invoices.edit', 'finance.manage'),
   validate(sendProformaInvoiceEmailSchema),
   controller.emailProformaInvoice
+);
+
+// Get Proforma Invoice Ledger Statement & WhatsApp payload
+router.get(
+  '/:id/ledger',
+  authorize('invoices.read', 'orders.read', 'quotes.read'),
+  controller.getInvoiceLedger
+);
+
+// Send WhatsApp / Email Payment Reminder with remaining balance ledger & attached PDF
+router.post(
+  '/:id/reminder',
+  authorize('invoices.create', 'invoices.edit', 'finance.manage', 'orders.edit'),
+  validate(sendProformaInvoiceReminderSchema),
+  controller.sendReminder
 );
 
 // Convert Proforma Invoice to GST Tax Invoice
