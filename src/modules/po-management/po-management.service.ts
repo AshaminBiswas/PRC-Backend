@@ -13,6 +13,7 @@ import {
 } from './po.types';
 import { generatePoSubmissionId } from './po-sequence.service';
 import { generatePoPdfBuffer } from './po-pdf.service';
+import { aiDetectAndClassifySubmission } from './po-ai-detector.service';
 
 /**
  * List PO Submissions with filtering, search, sorting and pagination
@@ -1295,3 +1296,42 @@ ${input.notes || 'None'}
     po: submission,
   };
 }
+
+/**
+ * Run AI detection on a single PO Submission
+ */
+export async function aiDetectPoSubmission(id: string, performedByUserId?: string) {
+  return aiDetectAndClassifySubmission(id, performedByUserId);
+}
+
+/**
+ * Run batch AI detection on multiple PO Submissions
+ */
+export async function batchAiDetectPoSubmissions(ids: string[], performedByUserId?: string) {
+  if (!ids || ids.length === 0) {
+    throw new AppError('BAD_REQUEST', 'No PO Submission IDs provided for AI detection', 400);
+  }
+
+  const results: any[] = [];
+  let detectedCount = 0;
+
+  for (const id of ids) {
+    try {
+      const res = await aiDetectAndClassifySubmission(id, performedByUserId);
+      results.push(res);
+      if (res.po.classification === PoClassification.PO_DETECTED) {
+        detectedCount++;
+      }
+    } catch (err: any) {
+      logger.warn(`[PO Batch AI] Error processing submission ${id}:`, err?.message || err);
+    }
+  }
+
+  return {
+    success: true,
+    processedCount: results.length,
+    detectedCount,
+    updatedItems: results.map((r) => r.po),
+  };
+}
+

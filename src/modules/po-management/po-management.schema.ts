@@ -77,6 +77,10 @@ export const BulkDeletePoSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, 'At least one PO ID is required for bulk deletion'),
 });
 
+export const BatchAiDetectPoSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, 'At least one PO ID is required for AI detection'),
+});
+
 export const ReplyPoSubmissionSchema = z.object({
   to: z.string().email('Valid recipient email required').optional().or(z.literal('')),
   subject: z.string().min(1, 'Email subject is required'),

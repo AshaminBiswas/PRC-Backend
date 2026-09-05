@@ -7,6 +7,7 @@ import {
   ListNotificationsQuerySchema,
   SendNotificationSchema,
   UuidParamSchema,
+  BulkDeleteNotificationsSchema,
 } from './notifications.schema';
 
 const router = Router();
@@ -31,6 +32,20 @@ router.patch(
   authenticate,
   validate(UuidParamSchema, 'params'),
   controller.markAsRead
+);
+
+router.post(
+  '/bulk-delete',
+  authenticate,
+  validate(BulkDeleteNotificationsSchema),
+  controller.bulkDeleteNotifications
+);
+
+router.delete(
+  '/bulk',
+  authenticate,
+  validate(BulkDeleteNotificationsSchema),
+  controller.bulkDeleteNotifications
 );
 
 router.delete(

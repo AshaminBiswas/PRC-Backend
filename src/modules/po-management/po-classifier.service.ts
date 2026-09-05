@@ -1,12 +1,12 @@
 import { PoClassification, PoPriority, PoClassificationResult, EmailAttachmentPayload } from './po.types';
 
-// High-confidence PO subject keywords
-const HIGH_PO_SUBJECT_REGEX = /\b(purchase\s*order|p\.?\s*o\.?\s*#?|p\.o\b|new\s*po|po\s*submission|po\s*attached|po\s*number|po\s*no|supply\s*order|work\s*order|order\s*form|material\s*order|formal\s*order|commercial\s*order)\b/i;
+// High-confidence PO subject keywords (broadened for Indian commercial B2B procurement)
+const HIGH_PO_SUBJECT_REGEX = /\b(purchase\s*order|p\.?\s*o\.?\s*#?|p\.o\b|new\s*po|po\s*submission|po\s*attached|po\s*number|po\s*no|supply\s*order|work\s*order|order\s*form|material\s*order|formal\s*order|commercial\s*order|hardware\s*order|fittings?\s*order|order\s*for\s*(?:site|dlf|project|material|fittings|hardware)|purchase\s*indent|material\s*indent|site\s*order|boq\s*(?:&|and)?\s*order|rate\s*contract\s*order|quotation\s*approval|approved\s*quotation|pi\s*approval|proforma\s*approval|order\s*booking|order\s*placement|confirmed\s*order|release\s*of\s*po|issuance\s*of\s*po)\b/i;
 
 // Medium-confidence order keywords
-const MEDIUM_PO_SUBJECT_REGEX = /\b(order\s*confirmation|order\s*booking|quotation\s*approved|quote\s*approval|hardware\s*order|order\s*request|purchase\s*request|procurement|po)\b/i;
+const MEDIUM_PO_SUBJECT_REGEX = /\b(order\s*confirmation|order\s*booking|quotation\s*approved|quote\s*approval|hardware\s*order|order\s*request|purchase\s*request|procurement|supply\s*required|material\s*required|material\s*requirement|fittings?\s*requirement|boq|indent|dispatch\s*request|order|supply|hardware|fittings|proforma)\b/i;
 
-// High-confidence PO body keywords
+// High-confidence PO body keywords & procurement terms
 const HIGH_PO_BODY_TERMS = [
   'purchase order',
   'po number',
@@ -31,10 +31,41 @@ const HIGH_PO_BODY_TERMS = [
   'item description',
   'work order',
   'supply order',
+  'please supply',
+  'kindly supply',
+  'dispatch material',
+  'arrange dispatch',
+  'deliver to site',
+  'site delivery',
+  'bill of quantities',
+  'boq',
+  'rate contract',
+  'po copy',
+  'advance payment',
+  'proforma invoice',
+  'pi approved',
+  'material requirement',
+  'purchase indent',
+  'formal order',
+  'approved quote',
+  'proforma accepted',
+  'kindly arrange',
+  'order placement',
+  'commercial terms',
+  'scope of supply',
+  'architectural hardware',
+  'door handles',
+  'mortise lock',
+  'patch fittings',
+  'floor spring',
+  'door closer',
+  'transporter',
+  'e-way bill',
+  'challan',
 ];
 
-// Attachment filename PO patterns
-const PO_ATTACHMENT_REGEX = /\b(po|purchase[_\s-]?order|order[_\s-]?form|customer[_\s-]?po|work[_\s-]?order|po[_\s-]?\d+|quotation[_\s-]?approved)\b/i;
+// Attachment filename PO patterns (expanded for real-world document names)
+const PO_ATTACHMENT_REGEX = /\b(po|purchase[_\s-]?order|order[_\s-]?form|customer[_\s-]?po|work[_\s-]?order|po[_\s-]?\d+|quotation[_\s-]?approved|boq|indent|order|commercial|invoice|proforma|fitting[_\s-]?list|material[_\s-]?list)\b/i;
 
 export function classifyInboundEmail(
   subject: string,
@@ -57,6 +88,8 @@ export function classifyInboundEmail(
 
   // 2. Evaluate Attachment File Names & Types
   let hasPoPdfOrExcel = false;
+  let hasGenericDocAttachment = false;
+
   for (const att of attachments) {
     const isDocOrSheet =
       att.fileType.includes('pdf') ||
@@ -67,11 +100,11 @@ export function classifyInboundEmail(
     if (isDocOrSheet && PO_ATTACHMENT_REGEX.test(att.fileName)) {
       score += 0.45;
       hasPoPdfOrExcel = true;
-      reasons.push(`Attachment "${att.fileName}" matches standard Purchase Order document naming`);
+      reasons.push(`Attachment "${att.fileName}" matches Purchase Order document naming`);
       break;
     } else if (isDocOrSheet) {
-      score += 0.2;
-      hasPoPdfOrExcel = true;
+      score += 0.25;
+      hasGenericDocAttachment = true;
       reasons.push(`Contains document attachment "${att.fileName}"`);
       break;
     }
@@ -86,11 +119,11 @@ export function classifyInboundEmail(
   }
 
   if (bodyMatches >= 3) {
-    score += 0.4;
-    reasons.push(`Email body contains ${bodyMatches} commercial purchase terms`);
+    score += 0.45;
+    reasons.push(`Email body contains ${bodyMatches} commercial procurement terms`);
   } else if (bodyMatches >= 1) {
-    score += 0.25;
-    reasons.push(`Email body mentions "${HIGH_PO_BODY_TERMS.find((t) => cleanBody.includes(t))}"`);
+    score += 0.3;
+    reasons.push(`Email body mentions procurement phrase "${HIGH_PO_BODY_TERMS.find((t) => cleanBody.includes(t))}"`);
   }
 
   // 4. Inspect buffer text of PDF/text attachments if extractedText is available
@@ -102,7 +135,8 @@ export function classifyInboundEmail(
         if (lowerAttText.includes(term)) attMatches++;
       }
       if (attMatches >= 2) {
-        score += 0.4;
+        score += 0.45;
+        hasPoPdfOrExcel = true;
         reasons.push(`Attachment content scan confirmed Purchase Order document`);
         break;
       }
@@ -115,17 +149,23 @@ export function classifyInboundEmail(
   // Extract Customer PO Number if pattern matches
   const extractedCustomerPoNumber = extractCustomerPoNumber(cleanSubject, plainTextBody);
 
-  // Determine classification (lowered threshold for direct detection)
+  // Determine classification:
+  // Direct PO if score >= 0.4, or has document attachment with order keywords, or PO number extracted
   let classification: PoClassification = PoClassification.GENERAL_EMAIL;
-  if (finalScore >= 0.5 || (hasPoPdfOrExcel && finalScore >= 0.4) || extractedCustomerPoNumber) {
+  if (
+    finalScore >= 0.4 ||
+    (hasPoPdfOrExcel && finalScore >= 0.3) ||
+    (hasGenericDocAttachment && bodyMatches >= 1) ||
+    Boolean(extractedCustomerPoNumber)
+  ) {
     classification = PoClassification.PO_DETECTED;
-  } else if (finalScore >= 0.2) {
+  } else if (finalScore >= 0.2 || hasGenericDocAttachment || bodyMatches >= 1) {
     classification = PoClassification.POSSIBLE_PO;
   }
 
   // Determine Priority (Urgent / High / Medium)
-  const URGENT_REGEX = /\b(urgent|urgently|asap|rush\s*order|immediate\s*delivery|emergency|critical|high\s*priority|fast\s*track|immediate\s*dispatch)\b/i;
-  const HIGH_PRIORITY_REGEX = /\b(priority|express|priority\s*order|same\s*day|urgent\s*po)\b/i;
+  const URGENT_REGEX = /\b(urgent|urgently|asap|rush\s*order|immediate\s*delivery|emergency|critical|high\s*priority|fast\s*track|immediate\s*dispatch|same\s*day|urgent\s*po)\b/i;
+  const HIGH_PRIORITY_REGEX = /\b(priority|express|priority\s*order|prompt\s*action|quick\s*dispatch)\b/i;
 
   let suggestedPriority: PoPriority = PoPriority.MEDIUM;
   if (URGENT_REGEX.test(cleanSubject) || URGENT_REGEX.test(cleanBody)) {
@@ -151,15 +191,20 @@ export function classifyInboundEmail(
 export function extractCustomerPoNumber(subject: string, body: string): string | undefined {
   const sources = [subject, body];
   const patterns = [
-    /(?:P\.?O\.?|Purchase\s*Order|Work\s*Order|Supply\s*Order)\s*(?:No\.?|Number|Num|#|Ref)?\s*[:\-]?\s*([A-Za-z0-9\/\-_.]{2,40})/i,
+    /(?:P\.?O\.?|Purchase\s*Order|Work\s*Order|Supply\s*Order|Commercial\s*Order|Material\s*Order)\s*(?:No\.?|Number|Num|#|Ref)?\s*[:=\-]?\s*([A-Za-z0-9\/\-_.]{2,40})/i,
     /\b(?:PO\s*#\s*|PO#|PO\s*-\s*|PO\s*:\s*|PO\s*No\.?\s*|PO\s*Num\.?\s*)([A-Za-z0-9\/\-_.]{2,40})\b/i,
-    /\b(?:Order\s*(?:No\.?|Number|#|Id))\s*[:\-]?\s*([A-Za-z0-9\/\-_.]{2,40})/i,
-    /\b(?:Ref\s*(?:No\.?|#)?)\s*[:\-]?\s*([A-Za-z0-9\/\-_.]{3,40})/i,
-    /\b(?:Customer\s*PO\s*(?:No\.?|#)?)\s*[:\-]?\s*([A-Za-z0-9\/\-_.]{2,40})/i,
-    /\b(?:Our\s*PO\s*(?:No\.?|#)?)\s*[:\-]?\s*([A-Za-z0-9\/\-_.]{2,40})/i,
+    /\b(?:WO\s*#\s*|WO#|WO\s*-\s*|WO\s*:\s*|WO\s*No\.?\s*)([A-Za-z0-9\/\-_.]{2,40})\b/i,
+    /\b([A-Za-z0-9\/\-_.]{2,15}\/(?:PO|WO)\/[A-Za-z0-9\/\-_.]{2,25})\b/i,
+    /\b(PO-[A-Za-z0-9\/\-_]{3,30})\b/i,
+    /\b(WO-[A-Za-z0-9\/\-_]{3,30})\b/i,
+    /\b(?:Order\s*(?:No\.?|Number|#|Id))\s*[:=\-]?\s*([A-Za-z0-9\/\-_.]{2,40})/i,
+    /\b(?:Indent\s*(?:No\.?|Number|#))\s*[:=\-]?\s*([A-Za-z0-9\/\-_.]{2,40})/i,
+    /\b(?:Ref\s*(?:No\.?|#)?)\s*[:=\-]?\s*([A-Za-z0-9\/\-_.]{3,40})/i,
+    /\b(?:Customer\s*PO\s*(?:No\.?|#)?)\s*[:=\-]?\s*([A-Za-z0-9\/\-_.]{2,40})/i,
+    /\b(?:Our\s*PO\s*(?:No\.?|#)?)\s*[:=\-]?\s*([A-Za-z0-9\/\-_.]{2,40})/i,
   ];
 
-  const stopWords = /^(attached|details|request|form|submission|pdf|xlsx|docx|new|the|for|copy|file|document|order|number|no|po|purchase|please|here|our|your)$/i;
+  const stopWords = /^(attached|details|request|form|submission|pdf|xlsx|docx|new|the|for|copy|file|document|order|number|no|po|purchase|please|here|our|your|approved|confirmation)$/i;
 
   for (const text of sources) {
     if (!text) continue;
@@ -192,6 +237,7 @@ export function extractSenderProfileDetails(body: string = '') {
     /(?:Company|Organization|Firm|Enterprise|Business)\s*[:\-]?\s*([A-Za-z0-9\s.,&'-]{3,60})/i,
     /(?:M\/s\.?|M\/S)\s+([A-Za-z0-9\s.,&'-]{3,60})/i,
     /\b([A-Za-z0-9\s.,&'-]{3,45}\s+(?:Pvt\.?\s*Ltd\.?|Private\s*Limited|Ltd\.?|LLP|Inc\.?|Corp\.?|Corporation|Enterprises|Industries|Hardware|Suppliers))\b/i,
+    /\b([A-Za-z0-9\s.,&'-]{3,45}\s+(?:Constructions?|Infra(?:structure)?|Interiors?|Builders?|Developers?|Architects?|Designers?|Engineers?|Traders?|Trading|Projects?|Glass))\b/i,
   ];
 
   for (const pat of companyPatterns) {

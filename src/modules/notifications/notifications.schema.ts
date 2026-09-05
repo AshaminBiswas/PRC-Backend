@@ -20,5 +20,13 @@ export const UuidParamSchema = z.object({
   id: z.string().uuid('Invalid notification ID'),
 });
 
+export const BulkDeleteNotificationsSchema = z.object({
+  ids: z
+    .array(z.string().min(1, 'Notification ID cannot be empty'))
+    .min(1, 'At least one notification ID is required for bulk deletion')
+    .max(50, 'Cannot delete more than 50 notifications at a time'),
+});
+
 export type ListNotificationsQuery = z.infer<typeof ListNotificationsQuerySchema>;
 export type SendNotificationInput = z.infer<typeof SendNotificationSchema>;
+export type BulkDeleteNotificationsInput = z.infer<typeof BulkDeleteNotificationsSchema>;

@@ -13,6 +13,7 @@ import {
   AddInternalNoteSchema,
   InboundWebhookSchema,
   BulkDeletePoSchema,
+  BatchAiDetectPoSchema,
   ReplyPoSubmissionSchema,
 } from './po-management.schema';
 
@@ -79,10 +80,23 @@ router.post(
   controller.bulkDeletePoSubmissions
 );
 
+router.post(
+  '/ai-detect-batch',
+  authorize('orders.manage', 'quotes.manage', 'po.manage'),
+  validate(BatchAiDetectPoSchema),
+  controller.batchAiDetectSubmissions
+);
+
 router.get(
   '/:id',
   authorize('orders.read', 'quotes.read', 'products.read', 'po.manage'),
   controller.getPoSubmissionById
+);
+
+router.post(
+  '/:id/ai-detect',
+  authorize('orders.manage', 'quotes.manage', 'po.manage'),
+  controller.aiDetectSubmission
 );
 
 router.post(

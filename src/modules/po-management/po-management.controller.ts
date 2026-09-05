@@ -346,3 +346,25 @@ export const getMyPoSubmissions = async (req: Request, res: Response, next: Next
     next(error);
   }
 };
+
+export const aiDetectSubmission = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const currentUserId = req.user?.id;
+    const result = await poService.aiDetectPoSubmission(req.params.id, currentUserId);
+    sendSuccess(res, result, 'AI PO Detection completed successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const batchAiDetectSubmissions = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { ids } = req.body;
+    const currentUserId = req.user?.id;
+    const result = await poService.batchAiDetectPoSubmissions(ids, currentUserId);
+    sendSuccess(res, result, `Successfully processed ${result.processedCount} submission(s) with AI`);
+  } catch (error) {
+    next(error);
+  }
+};
+

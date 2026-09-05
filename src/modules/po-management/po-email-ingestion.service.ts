@@ -13,6 +13,7 @@ import {
 } from './po.types';
 import { generatePoSubmissionId } from './po-sequence.service';
 import { classifyInboundEmail, extractSenderProfileDetails } from './po-classifier.service';
+import { detectPoWithAi } from './po-ai-detector.service';
 import { uploadAttachmentFile } from '../upload/upload.service';
 
 /**
@@ -280,24 +281,7 @@ export async function processInboundEmail(email: InboundEmailPayload) {
     };
   }
 
-  // ── STEP 4: Classify New Inbound Email ─────────────────────────────────────────
-  const classificationResult = classifyInboundEmail(cleanSubject, plainText, email.attachments || []);
-  const { classification, confidenceScore, extractedCustomerPoNumber } = classificationResult;
-
-  logger.info(
-    `[PO Classifier] Email "${cleanSubject}" classified as ${classification} (confidence: ${confidenceScore * 100}%)`
-  );
-
-  // ── STEP 5: Generate Internal PO Submission ID if PO or Possible PO ────────────
-  let generatedPoId: string | null = null;
-  if (
-    classification === PoClassification.PO_DETECTED ||
-    classification === PoClassification.POSSIBLE_PO
-  ) {
-    generatedPoId = await generatePoSubmissionId();
-  }
-
-  // ── STEP 6: Identify Sender Customer / Company Profile ─────────────────────────
+  // ── STEP 4: Identify Sender Customer / Company Profile ─────────────────────────
   const senderEmailNormalized = email.senderEmail.toLowerCase().trim();
   const existingCustomer = await prisma.user.findFirst({
     where: { email: senderEmailNormalized, deletedAt: null },
@@ -306,13 +290,52 @@ export async function processInboundEmail(email: InboundEmailPayload) {
 
   const extractedProfile = extractSenderProfileDetails(plainText);
 
+  // ── STEP 5: Classify Inbound Email using AI Engine (with Heuristic Fallback) ──
+  const aiDetectionResult = await detectPoWithAi({
+    subject: cleanSubject,
+    body: plainText,
+    senderEmail: senderEmailNormalized,
+    senderName: email.senderName,
+    companyName: existingCustomer?.companyName || extractedProfile.extractedCompany,
+    attachments: (email.attachments || []).map((a) => ({
+      fileName: a.fileName,
+      fileType: a.fileType,
+      fileSize: a.fileSize,
+      extractedText: a.extractedText,
+    })),
+  });
+
+  const { classification, confidenceScore, customerPoNumber: extractedCustomerPoNumber } = aiDetectionResult;
+
+  logger.info(
+    `[PO Ingestion] Email "${cleanSubject}" classified as ${classification} (confidence: ${(confidenceScore * 100).toFixed(1)}%, engine: ${aiDetectionResult.detectionEngine})`
+  );
+
+  // ── STEP 6: Generate Internal PO Submission ID if PO or Possible PO ────────────
+  let generatedPoId: string | null = null;
+  if (
+    classification === PoClassification.PO_DETECTED ||
+    classification === PoClassification.POSSIBLE_PO
+  ) {
+    generatedPoId = await generatePoSubmissionId();
+  }
+
   const customerName =
     email.senderName ||
-    (existingCustomer ? `${existingCustomer.firstName} ${existingCustomer.lastName}`.trim() : extractedProfile.extractedName) ||
+    (existingCustomer ? `${existingCustomer.firstName} ${existingCustomer.lastName}`.trim() : aiDetectionResult.customerName || extractedProfile.extractedName) ||
     senderEmailNormalized.split('@')[0];
 
-  const companyName = existingCustomer?.companyName || extractedProfile.extractedCompany || null;
-  const customerPhone = existingCustomer?.phone || extractedProfile.extractedPhone || null;
+  const companyName =
+    existingCustomer?.companyName ||
+    aiDetectionResult.companyName ||
+    extractedProfile.extractedCompany ||
+    null;
+
+  const customerPhone =
+    existingCustomer?.phone ||
+    aiDetectionResult.customerPhone ||
+    extractedProfile.extractedPhone ||
+    null;
 
   // ── STEP 7: Process Attachments ───────────────────────────────────────────────
   const attachmentRecords: any[] = [];
@@ -350,11 +373,18 @@ export async function processInboundEmail(email: InboundEmailPayload) {
         subject: cleanSubject,
         previewText,
         status: PoStatus.NEW,
-        priority: classificationResult.suggestedPriority || PoPriority.MEDIUM,
+        priority: aiDetectionResult.suggestedPriority || PoPriority.MEDIUM,
         receivedAt: email.receivedAt ? new Date(email.receivedAt) : new Date(),
         lastActivityAt: new Date(),
         metadata: {
-          reasons: classificationResult.reasons,
+          aiDetection: {
+            isPurchaseOrder: aiDetectionResult.isPurchaseOrder,
+            confidenceScore: aiDetectionResult.confidenceScore,
+            reasoning: aiDetectionResult.reasoning,
+            lineItemsSummary: aiDetectionResult.lineItemsSummary,
+            detectionEngine: aiDetectionResult.detectionEngine,
+            detectedAt: new Date().toISOString(),
+          },
           recipientEmail: email.recipientEmail,
           rawMessageId: cleanMessageId,
         },

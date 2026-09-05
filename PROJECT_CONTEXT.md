@@ -49,7 +49,7 @@ D:\
     - **B2B Quotations Pipeline (`QuotesPage.tsx`)**: Mobile RFQ cards with reference numbers, company info, totals, status pills, and 1-tap PDF downloads.
     - **B2B Custom Pricing Matrix (`B2BPricingPage.tsx`)**: Mobile touch override cards with standard MRP vs custom B2B rate input, MOQ stepper, and live margin badges.
     - **GST Tax Invoice Hub (`InvoiceListView.tsx`)**: Mobile invoice stream with legal name, GSTIN, tax breakdown, and instant PDF action buttons.
-    - **PO Management & Email Workspace (`POManagementPage.tsx`, `PODetailPage.tsx`)**: Inbound email pipeline, 4 classification tabs, and dedicated full-page email dossier with interactive HTML viewer, threaded customer replies, attachment galleries, and timeline audit logs.
+    - **PO Management & Email Workspace (`POManagementPage.tsx`, `PODetailPage.tsx`)**: Inbound email pipeline, 4 classification tabs (`PO_DETECTED`, `POSSIBLE_PO`, `GENERAL_EMAIL`, `ALL`), dedicated full-page email dossier with interactive HTML viewer, threaded customer replies, attachment galleries, timeline audit logs, **AI-Powered PO Detection & Intent Extraction** (1-click AI Scan & Detect PO button, PRC PILOT AI Procurement Audit card, live confidence percentage, customer PO extraction, and batch AI auto-classification across pending submissions).
     - **Customer Accounts Directory (`UsersPage.tsx`)**: Mobile customer cards with contact chips, B2B enterprise details, and role badges.
 - **State & Auth**: `AdminAuthContext` (JWT in localStorage), `ThemeContext` (Light/Dark mode).
 - **Features**: Real-time SSE notification stream, executive analytics, product/variant CRUD, quotation pipeline, GST Tax Invoice Hub, custom B2B pricing, RBAC roles & permissions, media studio.
@@ -180,7 +180,7 @@ All modules follow a uniform, production-grade layered architecture:
 | `notifications` | `/api/v1/notifications` | Real-time SSE event stream, user inbox, admin alerts |
 | `orders` | `/api/v1/orders` | Full order lifecycle, status transitions, cancellation restock |
 | `payments` | `/api/v1/payments` | Razorpay & PhonePe checkouts, webhooks, refund processing |
-| `po-management` | `/api/v1/po-management` | Inbound business email ingestion, PO multi-factor classification, atomic sequence generator (`PRC-PO-YYYY-XXXXXX`), email threading, PO dossier management, customer storefront submissions (`POST /customer-submit` for Quotation-linked POs, Custom Form line-item composer, and Direct PO document uploads). |
+| `po-management` | `/api/v1/po-management` | Inbound business email ingestion, PO multi-factor classification, atomic sequence generator (`PRC-PO-YYYY-XXXXXX`), email threading, PO dossier management, customer storefront submissions (`POST /customer-submit` for Quotation-linked POs, Custom Form line-item composer, and Direct PO document uploads), **AI-Powered PO Detection & Procurement Extraction Engine** (`POST /api/v1/po-management/:id/ai-detect`, `POST /api/v1/po-management/ai-detect-batch`) via PRC PILOT LLM with resilient offline semantic heuristic fallback, intelligent customer PO number extraction, company name parsing, and priority suggestion. |
 | `proforma-invoices` | `/api/v1/proforma-invoices` | Dedicated B2B Proforma Invoice (PI) lifecycle suite — **Admin-Only Generation** (from scratch, Quotation, PO, or Order), atomic sequence generator (`PRC/PI/YYYY-YY/XXXX`), automated Indian GST computation (Delhi HQ Intra-state CGST 9% + SGST 9%, Interstate IGST 18%), advance payment terms schedule, HMAC-SHA256 digital signing, high-density vector QR code generation, vector-branded A4 PDF export (borderless QR and logo, pure monochrome contrast), public anti-tamper QR verification resolver, **Customer Self-Service API** (`GET /customer/my-proformas`), **Customer Storefront Portal** (`/pi/:token` & `/proforma/:token`), **B2B Profile Proforma Section** (`UserProfilePage.tsx` tab), **Commercial Ledger & Remaining Balance Engine** (`GET /:id/ledger`), **WhatsApp & Email Payment Reminder Engine with PDF auto-attachment** (`POST /:id/reminder`), and **Follow-up Counter Tracking** (`reminderCount`, `emailReminderCount`, `whatsappReminderCount`, `lastReminderAt`, `lastWhatsappAt`, `lastEmailAt`). |
 | `products` | `/api/v1/products` | Hardware SKU catalog, prices, specs, tags, filters |
 | `quotes` | `/api/v1/quotes` | B2B bulk quotations, negotiations, approvals, PDF quotes |
@@ -569,9 +569,18 @@ The Storefront was architected and optimized for native app-like responsiveness 
           - **Admin Console Follow-up Tracking**:
             - **`ProformaInvoicesPage.tsx`**: Follow-up counter badges (`🔔 N Sent`) with 1-click WhatsApp and Email quick trigger buttons.
             - **`ProformaInvoiceDetailView.tsx`**: Top header actions and dedicated **Payment Ledger & Commercial Follow-up Summary** card highlighting Gross Order Value, Advance Required/Paid, **Remaining Balance Due (₹)**, and real-time follow-up statistics.
+    27. **Admin Notifications Command Center & Bulk Deletion Suite (`NotificationsPage.tsx`, `notifications.service.ts`, `notifications.routes.ts`, `adminApi.ts`, `notificationService.ts`)**:
+          - **Click-to-Open Interactive Detail Modal**: Clicking any notification card in the Admin Notifications Hub opens a comprehensive **Notification Detail Modal** with rich metadata, formatted multi-line message view, raw JSON payload drawer, and 1-click navigation links to linked entities (Order, Quotation, Inventory Product, or Customer Account).
+          - **Automatic Real-Time Read State**: Opening unread alerts immediately triggers `handleMarkAsRead` across the database and UI, decrementing unread priority counters synchronously.
+          - **Bulk Selection & Strict Max-50 Deletion Guard**:
+            - Card-level selection checkboxes and a toolbar "Select Visible (Max 50)" control.
+            - Sticky floating Bulk Action Bar with real-time selection counter (`X / 50 max`).
+            - Enforced hard cap of maximum 50 notifications per batch with immediate feedback notices.
+            - Backend atomic batch deletion via `POST /api/v1/notifications/bulk-delete` and `DELETE /api/v1/notifications/bulk` validated with `BulkDeleteNotificationsSchema` (max 50 limit).
+            - Full cross-stack synchronization across `PRC-Backend`, `adminApi.ts`, and Storefront `notificationService.ts`.
 
 ---
 
-*Last Updated: 2026-09-02 (Implemented automated WhatsApp Ledger Statement & Remaining Balance Reminder with wa.me launch, Email Reminder with PDF auto-attachment, Follow-up Counter Tracking, and QR Document PDF Upload Validator)*
+*Last Updated: 2026-09-05 (Implemented Admin Notification Detail Modal with auto-mark-read, direct entity navigation, and max-50 bulk deletion across backend, admin, and storefront)*
 
 

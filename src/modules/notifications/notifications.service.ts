@@ -205,3 +205,17 @@ export const deleteNotification = async (userId: string, notificationId: string,
   await prisma.notification.delete({ where: { id: notificationId } });
   return { deleted: true, id: notificationId };
 };
+
+export const bulkDeleteNotifications = async (userId: string, ids: string[], isAdmin = false) => {
+  const where: Prisma.NotificationWhereInput = {
+    id: { in: ids },
+    ...(isAdmin ? {} : { userId }),
+  };
+
+  const result = await prisma.notification.deleteMany({ where });
+  return {
+    deletedCount: result.count,
+    ids,
+  };
+};
+
