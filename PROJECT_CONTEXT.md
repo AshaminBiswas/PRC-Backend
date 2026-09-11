@@ -77,7 +77,7 @@ D:\
 
 ## 3. Database Schema & Prisma Models (`prisma/schema.prisma`)
 
-### Core Models Registry (60 Active Models):
+### Core Models Registry (64 Active Models):
 
 1. **Authentication, Users & RBAC**:
    - `User`: Customers, staff, and superadmins (`email`, `phone`, `role`, `status`, `isTwoFactorEnabled`, `twoFactorSecret`, `b2bCompanyName`, `b2bGstin`).
@@ -143,6 +143,12 @@ D:\
 12. **B2B Proforma Invoices (PI) & Cryptographic QR Verification Suite**:
     - `ProformaInvoice` & `ProformaInvoiceItem`: Commercial advance demand invoices (`piNumber`, `financialYear`, `sequenceNo`, `status`, `subtotal`, `taxableAmount`, `cgst`, `sgst`, `igst`, `grandTotal`, `advancePercentage`, `advanceAmount`, `balanceDue`, `paymentTerms`, `deliveryTimeline`, `validUntil`, `verificationToken`, `verificationId`, `documentHash`, `digitalSignature`, `signedBy`, `signedAt`, `qrCodeDataUrl`, `bankDetails`, `reminderCount`, `emailReminderCount`, `whatsappReminderCount`, `lastReminderAt`, `lastWhatsappAt`, `lastEmailAt`).
     - `ProformaInvoiceHistory` & `ProformaInvoiceSequence`: Atomic annual sequence tracking (`PRC/PI/2026-27/0001`) and chronological state transitions audit trail.
+13. **Cubicle Installer Payment Tracking System**:
+    - `CubicleModel`: Master rate catalog for cubicle models (`modelName` unique, `installationPrice`, `isActive`, `createdAt`, `updatedAt`).
+    - `InstallerBill`: Itemized installer job billing records (`billNumber` unique sequential `PPSI-00001`, `installerName`, `installerPhone`, `installerEmail`, `siteAddress`, `jobDate`, `isNcr`, `travelExpenses`, `subtotal`, `totalAmount`, `amountPaid`, `balanceDue`, `paymentStatus` enum `PARTIAL`/`CLEARED`, `paymentNotes`, `emailStatus`, `emailSentAt`, `emailError`, `createdById`, `createdAt`, `updatedAt`).
+    - `InstallerBillItem`: Line items mapped to cubicle models (`billId`, `cubicleModelId`, `modelName`, `quantity`, `unitPrice`, `lineTotal`).
+    - `InstallerBillPayment`: Payment installment audit records (`billId`, `amount`, `paymentDate`, `paymentMode`, `referenceNumber`, `notes`, `recordedById`, `createdAt`).
+    - `InstallerBillSequence`: Atomic sequence generator tracking sequential numbers (`PPSI-XXXXX`).
 
 > **Note on Removed Subsystems**: The legacy multi-tenant enterprise venture/POS subsystem was permanently removed in favor of direct SKU catalog management and this streamlined multi-branch inventory tracking suite.
 
@@ -195,6 +201,7 @@ All modules follow a uniform, production-grade layered architecture:
 | `variants` | `/api/v1/variants` | Product variant matrix (color, size, finish), SKUs |
 | `wishlist` | `/api/v1/wishlist` | Customer saved wishlists & demand forecast tracking |
 | `ai-agent` | `/api/v1/ai-agent` | **NVIDIA NIM AI Copilot** — `POST /chat` (admin copilot), `POST /draft-reply` (PO email drafter with stock context), `POST /report` (business analytics report generator). Model: `meta/llama-3.2-90b-vision-instruct`. Requires `NVIDIA_API_KEY` env var. Admin-only (`authenticate` + `authorize` guard). |
+| `installer-payments` | `/api/v1/installer-payments` | **Cubicle Installer Payment Tracking** — Models master CRUD (Super Admin only), atomic sequential bill generation (`PPSI-00001`), NCR logic (locks travel expenses to 0.00), installment payments ledger, auto-clearance status, automatic invoice-style PDF bill email dispatch on full clearance, and full historical Excel (.xlsx) export (Super Admin only). |
 
 ---
 
@@ -578,9 +585,31 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - Enforced hard cap of maximum 50 notifications per batch with immediate feedback notices.
             - Backend atomic batch deletion via `POST /api/v1/notifications/bulk-delete` and `DELETE /api/v1/notifications/bulk` validated with `BulkDeleteNotificationsSchema` (max 50 limit).
             - Full cross-stack synchronization across `PRC-Backend`, `adminApi.ts`, and Storefront `notificationService.ts`.
+    28. **Cubicle Installer Payment Tracking System (`InstallerPaymentsPage.tsx`, `installerPaymentsService.ts`, `installer-bill-pdf.service.ts`, `installer-export.service.ts`)**:
+          - **Role-Based Access Control & Dual-Layer Enforcement**:
+            - **Super Admin**: Full unrestricted access including Cubicle Model Master CRUD (`/api/v1/installer-payments/models`) and Full Payment History Excel Export (`/api/v1/installer-payments/export/excel`), enforced at both backend routes (`requireSuperAdmin` returning HTTP 403 Forbidden) and Admin UI tabs/actions.
+            - **Admin**: Can create, inspect, and edit installer payment records, log payment installments, download individual bill PDFs, and manually trigger email re-send. Blocked on backend and hidden on UI from model master management and full historical exports.
+          - **Atomic Sequential Bill Numbering**:
+            - Uses dedicated PostgreSQL sequence `ppsi_bill_seq` with atomic zero-padded formatting `PPSI-00001` (strictly incrementing, never reused or duplicated across concurrent transactions).
+          - **NCR (National Capital Region) Dynamic Business Logic**:
+            - Boolean toggle `isNcr`.
+            - When `isNcr = true`: Travel Expenses is locked to `0.00` in the database and disabled/hidden in the UI.
+            - When `isNcr = false`: Travel Expenses is enabled and required for non-NCR outstation installation sites.
+          - **Itemized Multi-Model Billing & Financial Calculations**:
+            - Live auto-computation: `Subtotal = Σ (Quantity × Unit Price)`, `Total Amount = Subtotal + Travel Expenses`, `Balance Due = Total Amount - Amount Paid`.
+            - Status transitions: `PARTIAL` when `amountPaid < totalAmount`, and `CLEARED` when `amountPaid >= totalAmount`.
+          - **Payment Installments Ledger**:
+            - Supports recording partial installments (`InstallerBillPayment`) with payment date, mode (Bank Transfer, UPI, Cash, Cheque), reference/UTR number, and notes, updating `amountPaid` and `balanceDue` atomically.
+          - **Automated Bill PDF Generation & Transactional Email Dispatch**:
+            - Itemized PDF bill generated using `pdfmake` featuring Pacific Products & Solutions corporate styling, obsidian navy headers (`#0F172A`), amber accents (`#D97706`), clean vector icons, job/site details, itemized breakdown, payment summary, and authorized signature seal.
+            - Triggered automatically when bill status flips to `CLEARED` (or upon manual retry): dispatches high-priority email via `sendMail` with the PDF attached directly to the installer (`installerEmail`) and logs dispatch status (`emailStatus: SENT` / `FAILED`, `emailSentAt`, `emailError`).
+          - **Admin Console 3-Tab Operational Hub**:
+            - Tab 1 ("Installer Bills"): 4 KPI metric cards (Total Bills, Cleared Payments ₹, Outstanding Balance ₹, Pending Clearance), comprehensive multi-field filters (Search by installer/bill/phone, Payment Status, NCR filter), desktop data table, and touch-optimized mobile cards. Includes modals for Creating Bills (dynamic model selector, auto-filling rate, live total calculation), Recording Installments, and a slide-over Job Dossier Drawer with timeline history.
+            - Tab 2 ("Cubicle Models Master - Super Admin"): Model CRUD with name, rate, active status toggle, and soft deletion.
+            - Tab 3 ("Full Payment Export - Super Admin"): Date range filtering, status filtering, and one-click binary `.xlsx` workbook generation with styled navy headers, Indian currency formatting, and totals row.
 
 ---
 
-*Last Updated: 2026-09-05 (Implemented Admin Notification Detail Modal with auto-mark-read, direct entity navigation, and max-50 bulk deletion across backend, admin, and storefront)*
+*Last Updated: 2026-09-11 (Implemented Cubicle Installer Payment Tracking System with atomic PPSI billing, NCR travel logic, installment ledger, auto-clearance PDF email dispatch, and Super-Admin-only model master CRUD and Excel export across backend and admin)*
 
 

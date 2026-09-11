@@ -1868,6 +1868,107 @@ const STATEMENTS = [
           'High-impact engineered thermoplastic polymer designed for self-lubricating, vibration-absorbing, and electrical-insulating applications.',
           'Engineered High-Durability Polymer', ARRAY['Virgin Polyamide 6 Resin', 'High Impact Shock Absorption', 'Self-Lubricating & Non-Marking', 'Anti-Static & Chemical Safe']::TEXT[], true, true, 4
    WHERE NOT EXISTS (SELECT 1 FROM "materials" WHERE "slug" = 'nylon-polyamide-6')`,
+
+  // ─── CUBICLE INSTALLER PAYMENT TRACKING MODULE TABLES ──────────────────────
+  `CREATE SEQUENCE IF NOT EXISTS ppsi_bill_seq START WITH 1 INCREMENT BY 1;`,
+
+  `DO $ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'InstallerPaymentStatus') THEN
+      CREATE TYPE "InstallerPaymentStatus" AS ENUM ('PARTIAL', 'CLEARED');
+    END IF;
+  END $`,
+
+  `CREATE TABLE IF NOT EXISTS "cubicle_models" (
+    "id"                 TEXT NOT NULL,
+    "model_name"         TEXT NOT NULL,
+    "installation_price" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "is_active"          BOOLEAN NOT NULL DEFAULT true,
+    "created_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "cubicle_models_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "cubicle_models_model_name_key" UNIQUE ("model_name")
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "installer_bills" (
+    "id"               TEXT NOT NULL,
+    "bill_no"          TEXT NOT NULL,
+    "installer_name"   TEXT NOT NULL,
+    "installer_email"  TEXT NOT NULL,
+    "install_date"     TIMESTAMP(3) NOT NULL,
+    "is_ncr"           BOOLEAN NOT NULL DEFAULT false,
+    "travel_expenses"  DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "site_address"     TEXT NOT NULL,
+    "site_pin"         VARCHAR(6) NOT NULL,
+    "subtotal"         DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "total"            DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "amount_paid"      DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "balance_due"      DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "payment_status"   "InstallerPaymentStatus" NOT NULL DEFAULT 'PARTIAL',
+    "payment_date"     TIMESTAMP(3),
+    "notes"            TEXT,
+    "email_sent"       BOOLEAN NOT NULL DEFAULT false,
+    "email_sent_at"    TIMESTAMP(3),
+    "email_status"     TEXT,
+    "email_error"      TEXT,
+    "created_by_id"    TEXT,
+    "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "deleted_at"       TIMESTAMP(3),
+    CONSTRAINT "installer_bills_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "installer_bills_bill_no_key" UNIQUE ("bill_no")
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "installer_bill_items" (
+    "id"                 TEXT NOT NULL,
+    "bill_id"            TEXT NOT NULL,
+    "model_id"           TEXT NOT NULL,
+    "model_name"         TEXT NOT NULL,
+    "quantity"           INTEGER NOT NULL DEFAULT 1,
+    "installation_price" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "line_total"         DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "created_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "installer_bill_items_pkey" PRIMARY KEY ("id")
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "installer_bill_payments" (
+    "id"               TEXT NOT NULL,
+    "bill_id"          TEXT NOT NULL,
+    "amount"           DECIMAL(12,2) NOT NULL DEFAULT 0,
+    "payment_date"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "payment_mode"     TEXT,
+    "reference_note"   TEXT,
+    "recorded_by_id"   TEXT,
+    "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "installer_bill_payments_pkey" PRIMARY KEY ("id")
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "installer_bill_sequences" (
+    "id"          TEXT NOT NULL,
+    "prefix"      TEXT NOT NULL DEFAULT 'PPSI',
+    "last_number" INTEGER NOT NULL DEFAULT 0,
+    "updated_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "installer_bill_sequences_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "installer_bill_sequences_prefix_key" UNIQUE ("prefix")
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS "cubicle_models_is_active_idx" ON "cubicle_models"("is_active")`,
+  `CREATE INDEX IF NOT EXISTS "installer_bills_bill_no_idx" ON "installer_bills"("bill_no")`,
+  `CREATE INDEX IF NOT EXISTS "installer_bills_installer_email_idx" ON "installer_bills"("installer_email")`,
+  `CREATE INDEX IF NOT EXISTS "installer_bills_payment_status_idx" ON "installer_bills"("payment_status")`,
+  `CREATE INDEX IF NOT EXISTS "installer_bills_install_date_idx" ON "installer_bills"("install_date")`,
+  `CREATE INDEX IF NOT EXISTS "installer_bills_created_at_idx" ON "installer_bills"("created_at")`,
+  `CREATE INDEX IF NOT EXISTS "installer_bill_items_bill_id_idx" ON "installer_bill_items"("bill_id")`,
+  `CREATE INDEX IF NOT EXISTS "installer_bill_items_model_id_idx" ON "installer_bill_items"("model_id")`,
+  `CREATE INDEX IF NOT EXISTS "installer_bill_payments_bill_id_idx" ON "installer_bill_payments"("bill_id")`,
+
+  // Seed default cubicle models if none exist
+  `INSERT INTO "cubicle_models" ("id", "model_name", "installation_price", "is_active", "created_at", "updated_at")
+   SELECT 'cmod-001', 'Delight', 900.00, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+   WHERE NOT EXISTS (SELECT 1 FROM "cubicle_models" WHERE "model_name" = 'Delight')`,
+  `INSERT INTO "cubicle_models" ("id", "model_name", "installation_price", "is_active", "created_at", "updated_at")
+   SELECT 'cmod-002', 'Sky Light', 1000.00, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+   WHERE NOT EXISTS (SELECT 1 FROM "cubicle_models" WHERE "model_name" = 'Sky Light')`,
 ];
 
 async function run() {

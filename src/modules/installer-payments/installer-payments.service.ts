@@ -1,0 +1,689 @@
+import prisma from '../../config/database';
+import { logger } from '../../config/logger';
+import { sendMail } from '../../utils/email.utils';
+import { generateInstallerBillPdf, InstallerBillPdfData } from './installer-bill-pdf.service';
+import { generateInstallerBillsExcel, ExportBillItem, ExportFilterSummary } from './installer-export.service';
+import {
+  CreateCubicleModelInput,
+  UpdateCubicleModelInput,
+  CreateInstallerBillInput,
+  UpdateInstallerBillInput,
+  RecordPaymentInput,
+  ListInstallerBillsQuery,
+  ExportBillsQuery,
+} from './installer-payments.schema';
+import { Prisma } from '@prisma/client';
+
+// ─── Sequence Generation ─────────────────────────────────────────────────────
+
+/**
+ * Generate an atomic, strictly incrementing Bill Number in format:
+ * PPSI-00001
+ * Uses PostgreSQL sequence 'ppsi_bill_seq' to guarantee thread-safe concurrency.
+ */
+export async function generateBillNumber(): Promise<string> {
+  try {
+    const res = await prisma.$queryRaw<{ nextval: bigint | number }[]>`
+      SELECT nextval('ppsi_bill_seq') AS nextval;
+    `;
+    if (res && res.length > 0 && res[0].nextval) {
+      const seqNum = Number(res[0].nextval);
+      const billNo = `PPSI-${String(seqNum).padStart(5, '0')}`;
+      logger.info(`[Installer Sequence] Generated Bill Number via Postgres sequence: ${billNo}`);
+      return billNo;
+    }
+  } catch (err: any) {
+    logger.warn(`[Installer Sequence] Raw nextval failed (${err?.message}). Falling back to atomic table increment.`);
+  }
+
+  // Fallback: Atomic sequence table upsert
+  const seq = await prisma.installerBillSequence.upsert({
+    where: { prefix: 'PPSI' },
+    create: { prefix: 'PPSI', lastNumber: 1 },
+    update: { lastNumber: { increment: 1 } },
+  });
+  return `PPSI-${String(seq.lastNumber).padStart(5, '0')}`;
+}
+
+// ─── Cubicle Model Master Services (Super Admin Only) ────────────────────────
+
+export async function listCubicleModels(activeOnly = false) {
+  const where: Prisma.CubicleModelWhereInput = {};
+  if (activeOnly) {
+    where.isActive = true;
+  }
+  return await prisma.cubicleModel.findMany({
+    where,
+    orderBy: [{ isActive: 'desc' }, { modelName: 'asc' }],
+    include: {
+      _count: {
+        select: { billItems: true },
+      },
+    },
+  });
+}
+
+export async function createCubicleModel(data: CreateCubicleModelInput) {
+  const existing = await prisma.cubicleModel.findUnique({
+    where: { modelName: data.modelName },
+  });
+  if (existing) {
+    const error: any = new Error(`Cubicle model "${data.modelName}" already exists`);
+    error.statusCode = 409;
+    throw error;
+  }
+
+  return await prisma.cubicleModel.create({
+    data: {
+      modelName: data.modelName,
+      installationPrice: new Prisma.Decimal(data.installationPrice),
+      isActive: data.isActive ?? true,
+    },
+  });
+}
+
+export async function updateCubicleModel(id: string, data: UpdateCubicleModelInput) {
+  const existing = await prisma.cubicleModel.findUnique({ where: { id } });
+  if (!existing) {
+    const error: any = new Error('Cubicle model not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (data.modelName && data.modelName !== existing.modelName) {
+    const duplicate = await prisma.cubicleModel.findUnique({
+      where: { modelName: data.modelName },
+    });
+    if (duplicate && duplicate.id !== id) {
+      const error: any = new Error(`Cubicle model name "${data.modelName}" is already taken`);
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
+  return await prisma.cubicleModel.update({
+    where: { id },
+    data: {
+      ...(data.modelName && { modelName: data.modelName }),
+      ...(data.installationPrice !== undefined && {
+        installationPrice: new Prisma.Decimal(data.installationPrice),
+      }),
+      ...(data.isActive !== undefined && { isActive: data.isActive }),
+    },
+  });
+}
+
+/**
+ * Soft delete / deactivate cubicle model.
+ * Protects existing bills and historical audit records from breaking.
+ */
+export async function deactivateCubicleModel(id: string) {
+  const existing = await prisma.cubicleModel.findUnique({ where: { id } });
+  if (!existing) {
+    const error: any = new Error('Cubicle model not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return await prisma.cubicleModel.update({
+    where: { id },
+    data: { isActive: false },
+  });
+}
+
+// ─── Installer Payment Bills Services ────────────────────────────────────────
+
+export async function listInstallerBills(query: ListInstallerBillsQuery) {
+  const { search, status, isNcr, startDate, endDate, page, limit } = query;
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.InstallerBillWhereInput = {
+    deletedAt: null,
+  };
+
+  // Status filter
+  if (status && status !== 'ALL') {
+    where.paymentStatus = status as any;
+  }
+
+  // NCR filter
+  if (isNcr && isNcr !== 'all') {
+    where.isNcr = isNcr === 'true';
+  }
+
+  // Date range filter
+  if (startDate || endDate) {
+    where.installDate = {};
+    if (startDate) where.installDate.gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      where.installDate.lte = end;
+    }
+  }
+
+  // Search filter
+  if (search && search.trim().length > 0) {
+    const q = search.trim();
+    where.OR = [
+      { billNo: { contains: q, mode: 'insensitive' } },
+      { installerName: { contains: q, mode: 'insensitive' } },
+      { installerEmail: { contains: q, mode: 'insensitive' } },
+      { siteAddress: { contains: q, mode: 'insensitive' } },
+      { sitePin: { contains: q } },
+      { items: { some: { modelName: { contains: q, mode: 'insensitive' } } } },
+    ];
+  }
+
+  const [bills, totalCount] = await Promise.all([
+    prisma.installerBill.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        items: true,
+        payments: {
+          orderBy: { paymentDate: 'desc' },
+        },
+        createdBy: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
+      },
+    }),
+    prisma.installerBill.count({ where }),
+  ]);
+
+  // Aggregate high-level operational KPIs across matching records
+  const allMatching = await prisma.installerBill.findMany({
+    where,
+    select: {
+      total: true,
+      amountPaid: true,
+      balanceDue: true,
+      paymentStatus: true,
+    },
+  });
+
+  let totalAmount = 0;
+  let totalPaid = 0;
+  let totalDue = 0;
+  let clearedCount = 0;
+  let partialCount = 0;
+
+  for (const b of allMatching) {
+    totalAmount += Number(b.total || 0);
+    totalPaid += Number(b.amountPaid || 0);
+    totalDue += Number(b.balanceDue || 0);
+    if (b.paymentStatus === 'CLEARED') {
+      clearedCount++;
+    } else {
+      partialCount++;
+    }
+  }
+
+  return {
+    bills,
+    total: totalCount,
+    page,
+    limit,
+    totalPages: Math.ceil(totalCount / limit) || 1,
+    kpis: {
+      totalBills: totalCount,
+      totalAmount,
+      totalPaid,
+      totalDue,
+      clearedCount,
+      partialCount,
+    },
+  };
+}
+
+export async function getInstallerBillById(id: string) {
+  const bill = await prisma.installerBill.findUnique({
+    where: { id },
+    include: {
+      items: {
+        include: { model: true },
+      },
+      payments: {
+        orderBy: { paymentDate: 'desc' },
+      },
+      createdBy: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+    },
+  });
+
+  if (!bill || bill.deletedAt) {
+    const error: any = new Error('Installer bill not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return bill;
+}
+
+export async function createInstallerBill(input: CreateInstallerBillInput, createdById?: string) {
+  // 1. Fetch active models to pull snapshot installation prices
+  const modelIds = input.items.map((i) => i.modelId);
+  const models = await prisma.cubicleModel.findMany({
+    where: { id: { in: modelIds } },
+  });
+
+  if (models.length !== modelIds.length) {
+    const error: any = new Error('One or more selected cubicle models were not found');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const modelMap = new Map<string, (typeof models)[0]>();
+  models.forEach((m) => modelMap.set(m.id, m));
+
+  // 2. Calculate subtotal & prepare item rows
+  let subtotal = 0;
+  const itemsToCreate = input.items.map((item) => {
+    const model = modelMap.get(item.modelId)!;
+    const price = Number(model.installationPrice);
+    const lineTotal = item.quantity * price;
+    subtotal += lineTotal;
+    return {
+      modelId: model.id,
+      modelName: model.modelName,
+      quantity: item.quantity,
+      installationPrice: new Prisma.Decimal(price),
+      lineTotal: new Prisma.Decimal(lineTotal),
+    };
+  });
+
+  // 3. Travel Expenses & Total calculation:
+  // If NCR = Yes, Travel Expenses is force-locked to 0
+  const travelExpenses = input.isNcr ? 0 : Number(input.travelExpenses || 0);
+  const total = subtotal + travelExpenses;
+
+  // 4. Amount Paid & Balance Due calculation:
+  const initialAmountPaid = Number(input.initialAmountPaid || 0);
+  const balanceDue = Math.max(0, total - initialAmountPaid);
+  const isCleared = initialAmountPaid >= total;
+  const paymentStatus = isCleared ? 'CLEARED' : 'PARTIAL';
+
+  // 5. Generate atomic Bill No (PPSI-00001)
+  const billNo = await generateBillNumber();
+
+  // 6. Persist bill + items + optional initial payment in transaction
+  const bill = await prisma.$transaction(async (tx) => {
+    const createdBill = await tx.installerBill.create({
+      data: {
+        billNo,
+        installerName: input.installerName,
+        installerEmail: input.installerEmail,
+        installDate: new Date(input.installDate),
+        isNcr: input.isNcr,
+        travelExpenses: new Prisma.Decimal(travelExpenses),
+        siteAddress: input.siteAddress,
+        sitePin: input.sitePin,
+        subtotal: new Prisma.Decimal(subtotal),
+        total: new Prisma.Decimal(total),
+        amountPaid: new Prisma.Decimal(initialAmountPaid),
+        balanceDue: new Prisma.Decimal(balanceDue),
+        paymentStatus: paymentStatus as any,
+        paymentDate: input.paymentDate
+          ? new Date(input.paymentDate)
+          : initialAmountPaid > 0
+          ? new Date()
+          : null,
+        notes: input.notes,
+        createdById,
+        items: {
+          create: itemsToCreate,
+        },
+      },
+      include: {
+        items: true,
+      },
+    });
+
+    if (initialAmountPaid > 0) {
+      await tx.installerBillPayment.create({
+        data: {
+          billId: createdBill.id,
+          amount: new Prisma.Decimal(initialAmountPaid),
+          paymentDate: input.paymentDate ? new Date(input.paymentDate) : new Date(),
+          paymentMode: input.paymentMode || 'BANK_TRANSFER',
+          referenceNote: 'Initial payment upon bill creation',
+          recordedById: createdById,
+        },
+      });
+    }
+
+    return createdBill;
+  });
+
+  // 7. Trigger auto-email if bill is created in CLEARED status
+  if (isCleared) {
+    setImmediate(() => {
+      dispatchClearanceEmailWithPdf(bill.id).catch((e) =>
+        logger.error(`[Installer Email] Auto-dispatch failed on creation: ${e?.message || e}`)
+      );
+    });
+  }
+
+  return await getInstallerBillById(bill.id);
+}
+
+export async function recordBillPayment(billId: string, input: RecordPaymentInput, recordedById?: string) {
+  const bill = await prisma.installerBill.findUnique({
+    where: { id: billId },
+    include: { payments: true },
+  });
+
+  if (!bill || bill.deletedAt) {
+    const error: any = new Error('Installer bill not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const paymentAmount = Number(input.amount);
+  const currentPaid = Number(bill.amountPaid || 0);
+  const billTotal = Number(bill.total);
+  const newAmountPaid = currentPaid + paymentAmount;
+  const newBalanceDue = Math.max(0, billTotal - newAmountPaid);
+  const newlyCleared = newAmountPaid >= billTotal && bill.paymentStatus !== 'CLEARED';
+  const newStatus = newAmountPaid >= billTotal ? 'CLEARED' : 'PARTIAL';
+
+  await prisma.$transaction(async (tx) => {
+    await tx.installerBillPayment.create({
+      data: {
+        billId,
+        amount: new Prisma.Decimal(paymentAmount),
+        paymentDate: new Date(input.paymentDate),
+        paymentMode: input.paymentMode,
+        referenceNote: input.referenceNote,
+        recordedById,
+      },
+    });
+
+    await tx.installerBill.update({
+      where: { id: billId },
+      data: {
+        amountPaid: new Prisma.Decimal(newAmountPaid),
+        balanceDue: new Prisma.Decimal(newBalanceDue),
+        paymentStatus: newStatus as any,
+        paymentDate: new Date(input.paymentDate),
+      },
+    });
+  });
+
+  // Trigger auto-email if transitioning into CLEARED status
+  if (newlyCleared) {
+    setImmediate(() => {
+      dispatchClearanceEmailWithPdf(billId).catch((e) =>
+        logger.error(`[Installer Email] Auto-dispatch failed on clearance: ${e?.message || e}`)
+      );
+    });
+  }
+
+  return await getInstallerBillById(billId);
+}
+
+export async function updateInstallerBill(id: string, input: UpdateInstallerBillInput) {
+  const existing = await prisma.installerBill.findUnique({ where: { id } });
+  if (!existing || existing.deletedAt) {
+    const error: any = new Error('Installer bill not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const updateData: Prisma.InstallerBillUpdateInput = {};
+  if (input.installerName !== undefined) updateData.installerName = input.installerName;
+  if (input.installerEmail !== undefined) updateData.installerEmail = input.installerEmail;
+  if (input.installDate !== undefined) updateData.installDate = new Date(input.installDate);
+  if (input.siteAddress !== undefined) updateData.siteAddress = input.siteAddress;
+  if (input.sitePin !== undefined) updateData.sitePin = input.sitePin;
+  if (input.notes !== undefined) updateData.notes = input.notes;
+
+  // If NCR or Travel Expenses changed, recalculate total and balance
+  if (input.isNcr !== undefined || input.travelExpenses !== undefined) {
+    const isNcr = input.isNcr !== undefined ? input.isNcr : existing.isNcr;
+    const travelExpenses = isNcr ? 0 : (input.travelExpenses !== undefined ? input.travelExpenses : Number(existing.travelExpenses));
+    const subtotal = Number(existing.subtotal);
+    const newTotal = subtotal + travelExpenses;
+    const amountPaid = Number(existing.amountPaid);
+    const newBalanceDue = Math.max(0, newTotal - amountPaid);
+    const newStatus = amountPaid >= newTotal ? 'CLEARED' : 'PARTIAL';
+
+    updateData.isNcr = isNcr;
+    updateData.travelExpenses = new Prisma.Decimal(travelExpenses);
+    updateData.total = new Prisma.Decimal(newTotal);
+    updateData.balanceDue = new Prisma.Decimal(newBalanceDue);
+    updateData.paymentStatus = newStatus as any;
+  }
+
+  await prisma.installerBill.update({
+    where: { id },
+    data: updateData,
+  });
+
+  return await getInstallerBillById(id);
+}
+
+// ─── PDF Generation & Email Dispatch ─────────────────────────────────────────
+
+export async function getBillPdfBuffer(billId: string): Promise<{ buffer: Buffer; billNo: string }> {
+  const bill = await getInstallerBillById(billId);
+
+  const pdfData: InstallerBillPdfData = {
+    billNo: bill.billNo,
+    installerName: bill.installerName,
+    installerEmail: bill.installerEmail,
+    installDate: bill.installDate,
+    isNcr: bill.isNcr,
+    travelExpenses: Number(bill.travelExpenses),
+    siteAddress: bill.siteAddress,
+    sitePin: bill.sitePin,
+    subtotal: Number(bill.subtotal),
+    total: Number(bill.total),
+    amountPaid: Number(bill.amountPaid),
+    balanceDue: Number(bill.balanceDue),
+    paymentStatus: bill.paymentStatus,
+    paymentDate: bill.paymentDate,
+    notes: bill.notes,
+    items: bill.items.map((i) => ({
+      modelName: i.modelName,
+      quantity: i.quantity,
+      installationPrice: Number(i.installationPrice),
+      lineTotal: Number(i.lineTotal),
+    })),
+    payments: bill.payments.map((p) => ({
+      amount: Number(p.amount),
+      paymentDate: p.paymentDate,
+      paymentMode: p.paymentMode,
+      referenceNote: p.referenceNote,
+    })),
+  };
+
+  const buffer = await generateInstallerBillPdf(pdfData);
+  return { buffer, billNo: bill.billNo };
+}
+
+/**
+ * Dispatch clearance notification email with the bill PDF attached.
+ * Logs success/failure so admins can inspect or retry.
+ */
+export async function dispatchClearanceEmailWithPdf(billId: string): Promise<boolean> {
+  const bill = await getInstallerBillById(billId);
+  logger.info(`[Installer Email] Preparing clearance email for Bill ${bill.billNo} to ${bill.installerEmail}`);
+
+  try {
+    const { buffer } = await getBillPdfBuffer(billId);
+
+    const totalFormatted = `₹${Number(bill.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    const installDateFormatted = new Date(bill.installDate).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h2 style="color: #0f172a; margin: 0 0 4px 0;">PACIFIC PRODUCTS & SOLUTIONS</h2>
+          <p style="color: #64748b; font-size: 13px; margin: 0;">Installation Disbursement Advice & Clearance Receipt</p>
+        </div>
+
+        <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px;">
+          <h3 style="color: #166534; margin: 0 0 6px 0; font-size: 15px;">✓ Payment Full & Cleared</h3>
+          <p style="margin: 0; font-size: 13.5px; color: #15803d;">
+            Dear <strong>${bill.installerName}</strong>, your payment of <strong>${totalFormatted}</strong> for installation job <strong>#${bill.billNo}</strong> has been successfully cleared and disbursed.
+          </p>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 8px 0; color: #64748b;">Bill Number:</td>
+            <td style="padding: 8px 0; font-weight: bold; text-align: right;">${bill.billNo}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 8px 0; color: #64748b;">Installation Date:</td>
+            <td style="padding: 8px 0; font-weight: bold; text-align: right;">${installDateFormatted}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 8px 0; color: #64748b;">Site Address:</td>
+            <td style="padding: 8px 0; text-align: right;">${bill.siteAddress} (${bill.sitePin})</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 8px 0; color: #64748b;">Total Disbursed:</td>
+            <td style="padding: 8px 0; font-weight: bold; color: #047857; text-align: right;">${totalFormatted}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0; color: #64748b;">Outstanding Balance Due:</td>
+            <td style="padding: 8px 0; font-weight: bold; color: #047857; text-align: right;">₹0.00</td>
+          </tr>
+        </table>
+
+        <p style="font-size: 12.5px; color: #475569; line-height: 1.5; margin-bottom: 24px;">
+          Please find attached your official payment voucher PDF (<strong>${bill.billNo}-Payment-Advice.pdf</strong>) for your records. Thank you for your continued partnership with Pacific Products & Solutions.
+        </p>
+
+        <div style="border-top: 1px solid #e2e8f0; padding-top: 14px; font-size: 11.5px; color: #94a3b8; text-align: center;">
+          Pacific Products & Solutions • Restroom Cubicles & Commercial Architectural Hardware<br/>
+          New Delhi HQ • support@prchardware.com
+        </div>
+      </div>
+    `;
+
+    await sendMail({
+      to: bill.installerEmail,
+      subject: `Payment Cleared — Bill #${bill.billNo} — Pacific Products & Solutions`,
+      html: emailHtml,
+      attachments: [
+        {
+          filename: `${bill.billNo}-Payment-Advice.pdf`,
+          content: buffer,
+          contentType: 'application/pdf',
+        },
+      ],
+    });
+
+    await prisma.installerBill.update({
+      where: { id: billId },
+      data: {
+        emailSent: true,
+        emailSentAt: new Date(),
+        emailStatus: 'SENT',
+        emailError: null,
+      },
+    });
+
+    logger.info(`[Installer Email] Successfully sent clearance email for Bill ${bill.billNo} to ${bill.installerEmail}`);
+    return true;
+  } catch (err: any) {
+    const errorMsg = err?.message || String(err);
+    logger.error(`[Installer Email] Error sending clearance email for Bill ${bill.billNo}: ${errorMsg}`);
+
+    await prisma.installerBill.update({
+      where: { id: billId },
+      data: {
+        emailSent: false,
+        emailStatus: 'FAILED',
+        emailError: errorMsg,
+      },
+    });
+    return false;
+  }
+}
+
+// ─── Super Admin Full History Export ─────────────────────────────────────────
+
+export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buffer> {
+  const where: Prisma.InstallerBillWhereInput = {
+    deletedAt: null,
+  };
+
+  if (query.status && query.status !== 'ALL') {
+    where.paymentStatus = query.status as any;
+  }
+
+  if (query.month && query.year) {
+    const start = new Date(query.year, query.month - 1, 1);
+    const end = new Date(query.year, query.month, 0, 23, 59, 59, 999);
+    where.installDate = { gte: start, lte: end };
+  } else if (query.year) {
+    const start = new Date(query.year, 0, 1);
+    const end = new Date(query.year, 11, 31, 23, 59, 59, 999);
+    where.installDate = { gte: start, lte: end };
+  } else if (query.startDate || query.endDate) {
+    where.installDate = {};
+    if (query.startDate) where.installDate.gte = new Date(query.startDate);
+    if (query.endDate) {
+      const end = new Date(query.endDate);
+      end.setHours(23, 59, 59, 999);
+      where.installDate.lte = end;
+    }
+  }
+
+  const bills = await prisma.installerBill.findMany({
+    where,
+    orderBy: { installDate: 'desc' },
+    include: {
+      items: true,
+    },
+  });
+
+  const exportItems: ExportBillItem[] = bills.map((b) => {
+    const modelsSummary = b.items.map((i) => `${i.modelName} (×${i.quantity})`).join(', ');
+    const totalQuantity = b.items.reduce((acc, i) => acc + i.quantity, 0);
+
+    return {
+      billNo: b.billNo,
+      installerName: b.installerName,
+      installerEmail: b.installerEmail,
+      installDate: b.installDate,
+      isNcr: b.isNcr,
+      travelExpenses: Number(b.travelExpenses),
+      siteAddress: b.siteAddress,
+      sitePin: b.sitePin,
+      modelsSummary,
+      totalQuantity,
+      subtotal: Number(b.subtotal),
+      total: Number(b.total),
+      amountPaid: Number(b.amountPaid),
+      balanceDue: Number(b.balanceDue),
+      paymentStatus: b.paymentStatus,
+      paymentDate: b.paymentDate,
+      emailStatus: b.emailStatus,
+      emailSentAt: b.emailSentAt,
+      createdAt: b.createdAt,
+    };
+  });
+
+  const filterSummary: ExportFilterSummary = {
+    month: query.month,
+    year: query.year,
+    startDate: query.startDate,
+    endDate: query.endDate,
+    status: query.status,
+  };
+
+  return await generateInstallerBillsExcel(exportItems, filterSummary);
+}
