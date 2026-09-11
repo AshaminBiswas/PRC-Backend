@@ -18,6 +18,26 @@ export const UpdateCubicleModelSchema = z.object({
 
 export type UpdateCubicleModelInput = z.infer<typeof UpdateCubicleModelSchema>;
 
+// ─── Cubicle Installer Directory Schemas (Master) ───────────────────────────
+
+export const CreateCubicleInstallerSchema = z.object({
+  name: z.string().min(1, 'Installer name is required').trim(),
+  email: z.string().email('Valid installer email is required').trim().toLowerCase(),
+  phone: z.string().trim().optional(),
+  isActive: z.boolean().optional().default(true),
+});
+
+export type CreateCubicleInstallerInput = z.infer<typeof CreateCubicleInstallerSchema>;
+
+export const UpdateCubicleInstallerSchema = z.object({
+  name: z.string().min(1, 'Installer name cannot be empty').trim().optional(),
+  email: z.string().email('Valid installer email is required').trim().toLowerCase().optional(),
+  phone: z.string().trim().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type UpdateCubicleInstallerInput = z.infer<typeof UpdateCubicleInstallerSchema>;
+
 // ─── Bill Line Item Schema ───────────────────────────────────────────────────
 
 export const BillItemInputSchema = z.object({
@@ -31,6 +51,7 @@ export type BillItemInput = z.infer<typeof BillItemInputSchema>;
 
 export const CreateInstallerBillSchema = z
   .object({
+    installerId: z.string().optional(),
     installerName: z.string().min(1, 'Installer name is required').trim(),
     installerEmail: z.string().email('Valid installer email is required').trim().toLowerCase(),
     installDate: z.string().min(1, 'Date of installation is required'),
@@ -45,7 +66,7 @@ export const CreateInstallerBillSchema = z
     initialAmountPaid: z.coerce.number().min(0).default(0).optional(),
     paymentDate: z.string().optional(),
     paymentMode: z.string().optional(),
-    notes: z.string().optional(),
+    notes: z.string().min(1, 'Internal Notes are mandatory').trim(),
   })
   .superRefine((data, ctx) => {
     // If NCR is false, travelExpenses is enabled + required (must be >= 0, can be 0 or more, but when NCR is true, must be forced to 0)

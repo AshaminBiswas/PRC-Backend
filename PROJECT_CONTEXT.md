@@ -77,7 +77,7 @@ D:\
 
 ## 3. Database Schema & Prisma Models (`prisma/schema.prisma`)
 
-### Core Models Registry (64 Active Models):
+### Core Models Registry (65 Active Models):
 
 1. **Authentication, Users & RBAC**:
    - `User`: Customers, staff, and superadmins (`email`, `phone`, `role`, `status`, `isTwoFactorEnabled`, `twoFactorSecret`, `b2bCompanyName`, `b2bGstin`).
@@ -144,8 +144,9 @@ D:\
     - `ProformaInvoice` & `ProformaInvoiceItem`: Commercial advance demand invoices (`piNumber`, `financialYear`, `sequenceNo`, `status`, `subtotal`, `taxableAmount`, `cgst`, `sgst`, `igst`, `grandTotal`, `advancePercentage`, `advanceAmount`, `balanceDue`, `paymentTerms`, `deliveryTimeline`, `validUntil`, `verificationToken`, `verificationId`, `documentHash`, `digitalSignature`, `signedBy`, `signedAt`, `qrCodeDataUrl`, `bankDetails`, `reminderCount`, `emailReminderCount`, `whatsappReminderCount`, `lastReminderAt`, `lastWhatsappAt`, `lastEmailAt`).
     - `ProformaInvoiceHistory` & `ProformaInvoiceSequence`: Atomic annual sequence tracking (`PRC/PI/2026-27/0001`) and chronological state transitions audit trail.
 13. **Cubicle Installer Payment Tracking System**:
+    - `CubicleInstaller`: Master installer credentials directory (`id`, `name`, `email` unique, `phone`, `isActive`, `createdAt`, `updatedAt`).
     - `CubicleModel`: Master rate catalog for cubicle models (`modelName` unique, `installationPrice`, `isActive`, `createdAt`, `updatedAt`).
-    - `InstallerBill`: Itemized installer job billing records (`billNumber` unique sequential `PPSI-00001`, `installerName`, `installerPhone`, `installerEmail`, `siteAddress`, `jobDate`, `isNcr`, `travelExpenses`, `subtotal`, `totalAmount`, `amountPaid`, `balanceDue`, `paymentStatus` enum `PARTIAL`/`CLEARED`, `paymentNotes`, `emailStatus`, `emailSentAt`, `emailError`, `createdById`, `createdAt`, `updatedAt`).
+    - `InstallerBill`: Itemized installer job billing records (`billNumber` unique sequential `PPSI-00001`, `installerId` foreign key to `CubicleInstaller`, `installerName`, `installerPhone`, `installerEmail`, `siteAddress`, `jobDate`, `isNcr`, `travelExpenses`, `subtotal`, `totalAmount`, `amountPaid`, `balanceDue`, `paymentStatus` enum `PARTIAL`/`CLEARED`, `paymentDate`, `notes` mandatory internal audit notes, `emailStatus`, `emailSentAt`, `emailError`, `createdById`, `createdAt`, `updatedAt`).
     - `InstallerBillItem`: Line items mapped to cubicle models (`billId`, `cubicleModelId`, `modelName`, `quantity`, `unitPrice`, `lineTotal`).
     - `InstallerBillPayment`: Payment installment audit records (`billId`, `amount`, `paymentDate`, `paymentMode`, `referenceNumber`, `notes`, `recordedById`, `createdAt`).
     - `InstallerBillSequence`: Atomic sequence generator tracking sequential numbers (`PPSI-XXXXX`).
@@ -603,13 +604,18 @@ The Storefront was architected and optimized for native app-like responsiveness 
           - **Automated Bill PDF Generation & Transactional Email Dispatch**:
             - Itemized PDF bill generated using `pdfmake` featuring Pacific Products & Solutions corporate styling, obsidian navy headers (`#0F172A`), amber accents (`#D97706`), clean vector icons, job/site details, itemized breakdown, payment summary, and authorized signature seal.
             - Triggered automatically when bill status flips to `CLEARED` (or upon manual retry): dispatches high-priority email via `sendMail` with the PDF attached directly to the installer (`installerEmail`) and logs dispatch status (`emailStatus: SENT` / `FAILED`, `emailSentAt`, `emailError`).
-          - **Admin Console 3-Tab Operational Hub**:
-            - Tab 1 ("Installer Bills"): 4 KPI metric cards (Total Bills, Cleared Payments ₹, Outstanding Balance ₹, Pending Clearance), comprehensive multi-field filters (Search by installer/bill/phone, Payment Status, NCR filter), desktop data table, and touch-optimized mobile cards. Includes modals for Creating Bills (dynamic model selector, auto-filling rate, live total calculation), Recording Installments, and a slide-over Job Dossier Drawer with timeline history.
-            - Tab 2 ("Cubicle Models Master - Super Admin"): Model CRUD with name, rate, active status toggle, and soft deletion.
-            - Tab 3 ("Full Payment Export - Super Admin"): Date range filtering, status filtering, and one-click binary `.xlsx` workbook generation with styled navy headers, Indian currency formatting, and totals row.
+          - **Admin Console Operational Hub & Dedicated New Bill Page**:
+            - **Dedicated "New Installer Bill" Page (`CreateInstallerBillPage.tsx`, route `'create-installer-bill'`)**: Replaced modal popup with a full-page view featuring breadcrumbs, "Back to Bills" navigation, installer auto-fetch selector, dynamic model rows, NCR travel toggle, explicit **Payment Date** picker, and **Mandatory Internal Notes** textarea.
+            - **Super Admin Installers Directory (`cubicle_installers` & Admin Tab 2)**: Super Admin can register, edit, and deactivate installers (`name`, `email`, `phone`). Gated on API (`requireSuperAdmin`) and Admin UI.
+            - **Admin Auto-Fetch**: When generating a new bill, Admins can choose from registered installers in a dropdown, automatically pre-filling the installer's legal name, registered email, and contact phone.
+            - **Mandatory Internal Notes**: Required internal audit and verification notes field enforced with strict validation at both backend Zod schema and UI form levels.
+            - **Tab 1 ("Payment Records & Bills")**: 4 KPI metric cards (Total Bills, Cleared Payments ₹, Outstanding Balance ₹, Pending Clearance), comprehensive multi-field filters (Search by installer/bill/phone, Payment Status, NCR filter), desktop data table showing Payment Date, and touch-optimized mobile cards. Includes modal for Recording Installments and a slide-over Job Dossier Drawer with timeline history.
+            - **Tab 3 ("Cubicle Models Master - Super Admin")**: Model CRUD with name, rate, active status toggle, and soft deletion.
+            - **Tab 4 ("Full Payment Export - Super Admin")**: Date range filtering, status filtering, and one-click binary `.xlsx` workbook generation with styled navy headers, Indian currency formatting, and totals row.
 
 ---
 
-*Last Updated: 2026-09-11 (Implemented Cubicle Installer Payment Tracking System with atomic PPSI billing, NCR travel logic, installment ledger, auto-clearance PDF email dispatch, and Super-Admin-only model master CRUD and Excel export across backend and admin)*
+*Last Updated: 2026-09-11 (Implemented Cubicle Installer Payment Tracking System with dedicated New Installer Bill page, Super Admin Installers Directory, Admin details auto-fetch, explicit payment date, and mandatory internal audit notes)*
+
 
 

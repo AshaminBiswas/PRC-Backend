@@ -2302,9 +2302,26 @@ model CubicleModel {
   @@map("cubicle_models")
 }
 
+model CubicleInstaller {
+  id        String          @id @default(uuid())
+  name      String
+  email     String          @unique
+  phone     String?
+  isActive  Boolean         @default(true) @map("is_active")
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  bills     InstallerBill[]
+
+  @@index([isActive])
+  @@index([email])
+  @@map("cubicle_installers")
+}
+
 model InstallerBill {
   id                String                 @id @default(uuid())
   billNo            String                 @unique @map("bill_no")
+  installerId       String?                @map("installer_id")
   installerName     String                 @map("installer_name")
   installerEmail    String                 @map("installer_email")
   installDate       DateTime               @map("install_date")
@@ -2334,11 +2351,13 @@ model InstallerBill {
   deletedAt         DateTime?              @map("deleted_at")
 
   // Relations
+  installer         CubicleInstaller?      @relation(fields: [installerId], references: [id], onDelete: SetNull)
   items             InstallerBillItem[]
   payments          InstallerBillPayment[]
   createdBy         User?                  @relation("InstallerBillsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([billNo])
+  @@index([installerId])
   @@index([installerEmail])
   @@index([paymentStatus])
   @@index([installDate])

@@ -4,6 +4,8 @@ import * as installerService from './installer-payments.service';
 import {
   CreateCubicleModelSchema,
   UpdateCubicleModelSchema,
+  CreateCubicleInstallerSchema,
+  UpdateCubicleInstallerSchema,
   CreateInstallerBillSchema,
   UpdateInstallerBillSchema,
   RecordPaymentSchema,
@@ -49,6 +51,49 @@ export const deactivateCubicleModelHandler = async (req: Request, res: Response,
     const id = req.params.id as string;
     const model = await installerService.deactivateCubicleModel(id);
     sendSuccess(res, model, 'Cubicle model deactivated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── Cubicle Installer Master Handlers (Directory) ──────────────────────────
+
+export const listCubicleInstallersHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const includeInactive = req.query.includeInactive === 'true';
+    const installers = await installerService.listCubicleInstallers(includeInactive);
+    sendSuccess(res, installers, 'Cubicle installers retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createCubicleInstallerHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = CreateCubicleInstallerSchema.parse(req.body);
+    const installer = await installerService.createCubicleInstaller(body);
+    sendSuccess(res, installer, 'Cubicle installer created successfully', 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateCubicleInstallerHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const body = UpdateCubicleInstallerSchema.parse(req.body);
+    const installer = await installerService.updateCubicleInstaller(id, body);
+    sendSuccess(res, installer, 'Cubicle installer updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deactivateCubicleInstallerHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const installer = await installerService.deactivateCubicleInstaller(id);
+    sendSuccess(res, installer, 'Cubicle installer deactivated successfully');
   } catch (error) {
     next(error);
   }

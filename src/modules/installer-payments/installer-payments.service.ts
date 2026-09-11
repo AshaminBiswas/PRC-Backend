@@ -6,6 +6,8 @@ import { generateInstallerBillsExcel, ExportBillItem, ExportFilterSummary } from
 import {
   CreateCubicleModelInput,
   UpdateCubicleModelInput,
+  CreateCubicleInstallerInput,
+  UpdateCubicleInstallerInput,
   CreateInstallerBillInput,
   UpdateInstallerBillInput,
   RecordPaymentInput,
@@ -131,6 +133,84 @@ export async function deactivateCubicleModel(id: string) {
   });
 }
 
+// ─── Cubicle Installer Master Services (Directory) ──────────────────────────
+
+export async function listCubicleInstallers(includeInactive = false) {
+  return await prisma.cubicleInstaller.findMany({
+    where: includeInactive ? {} : { isActive: true },
+    orderBy: { name: 'asc' },
+    include: {
+      _count: {
+        select: { bills: true },
+      },
+    },
+  });
+}
+
+export async function createCubicleInstaller(input: CreateCubicleInstallerInput) {
+  const existing = await prisma.cubicleInstaller.findUnique({
+    where: { email: input.email },
+  });
+  if (existing) {
+    const error: any = new Error(`Installer with email "${input.email}" already exists`);
+    error.statusCode = 409;
+    throw error;
+  }
+
+  return await prisma.cubicleInstaller.create({
+    data: {
+      name: input.name,
+      email: input.email,
+      phone: input.phone || null,
+      isActive: input.isActive ?? true,
+    },
+  });
+}
+
+export async function updateCubicleInstaller(id: string, input: UpdateCubicleInstallerInput) {
+  const existing = await prisma.cubicleInstaller.findUnique({ where: { id } });
+  if (!existing) {
+    const error: any = new Error('Cubicle installer not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (input.email && input.email !== existing.email) {
+    const duplicate = await prisma.cubicleInstaller.findUnique({
+      where: { email: input.email },
+    });
+    if (duplicate && duplicate.id !== id) {
+      const error: any = new Error(`Installer with email "${input.email}" already exists`);
+      error.statusCode = 409;
+      throw error;
+    }
+  }
+
+  return await prisma.cubicleInstaller.update({
+    where: { id },
+    data: {
+      ...(input.name && { name: input.name }),
+      ...(input.email && { email: input.email }),
+      ...(input.phone !== undefined && { phone: input.phone || null }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+    },
+  });
+}
+
+export async function deactivateCubicleInstaller(id: string) {
+  const existing = await prisma.cubicleInstaller.findUnique({ where: { id } });
+  if (!existing) {
+    const error: any = new Error('Cubicle installer not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return await prisma.cubicleInstaller.update({
+    where: { id },
+    data: { isActive: false },
+  });
+}
+
 // ─── Installer Payment Bills Services ────────────────────────────────────────
 
 export async function listInstallerBills(query: ListInstallerBillsQuery) {
@@ -243,6 +323,7 @@ export async function getInstallerBillById(id: string) {
   const bill = await prisma.installerBill.findUnique({
     where: { id },
     include: {
+      installer: true,
       items: {
         include: { model: true },
       },
@@ -278,33 +359,42 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
   }
 
   const modelMap = new Map<string, (typeof models)[0]>();
-  models.forEach((m) => modelMap.set(m.id, m));
+  for (const m of models) {
+    modelMap.set(m.id, m);
+  }
 
-  // 2. Calculate subtotal & prepare item rows
+  // 2. Validate installer if installerId is passed
+  if (input.installerId) {
+    const installerExists = await prisma.cubicleInstaller.findUnique({
+      where: { id: input.installerId },
+    });
+    if (!installerExists) {
+      logger.warn(`[Installer Bill] installerId "${input.installerId}" not found; proceeding with raw name and email.`);
+    }
+  }
+
+  // 3. Compute itemized line totals & subtotal
   let subtotal = 0;
   const itemsToCreate = input.items.map((item) => {
     const model = modelMap.get(item.modelId)!;
-    const price = Number(model.installationPrice);
-    const lineTotal = item.quantity * price;
+    const unitPrice = Number(model.installationPrice);
+    const lineTotal = unitPrice * item.quantity;
     subtotal += lineTotal;
     return {
-      modelId: model.id,
+      modelId: item.modelId,
       modelName: model.modelName,
       quantity: item.quantity,
-      installationPrice: new Prisma.Decimal(price),
+      installationPrice: new Prisma.Decimal(unitPrice),
       lineTotal: new Prisma.Decimal(lineTotal),
     };
   });
 
-  // 3. Travel Expenses & Total calculation:
-  // If NCR = Yes, Travel Expenses is force-locked to 0
+  // 4. NCR dynamic travel expense logic
   const travelExpenses = input.isNcr ? 0 : Number(input.travelExpenses || 0);
   const total = subtotal + travelExpenses;
-
-  // 4. Amount Paid & Balance Due calculation:
   const initialAmountPaid = Number(input.initialAmountPaid || 0);
   const balanceDue = Math.max(0, total - initialAmountPaid);
-  const isCleared = initialAmountPaid >= total;
+  const isCleared = balanceDue === 0 && initialAmountPaid >= total;
   const paymentStatus = isCleared ? 'CLEARED' : 'PARTIAL';
 
   // 5. Generate atomic Bill No (PPSI-00001)
@@ -315,6 +405,7 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
     const createdBill = await tx.installerBill.create({
       data: {
         billNo,
+        installerId: input.installerId || null,
         installerName: input.installerName,
         installerEmail: input.installerEmail,
         installDate: new Date(input.installDate),

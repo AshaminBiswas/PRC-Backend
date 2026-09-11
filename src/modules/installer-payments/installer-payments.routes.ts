@@ -6,6 +6,10 @@ import {
   createCubicleModelHandler,
   updateCubicleModelHandler,
   deactivateCubicleModelHandler,
+  listCubicleInstallersHandler,
+  createCubicleInstallerHandler,
+  updateCubicleInstallerHandler,
+  deactivateCubicleInstallerHandler,
   listInstallerBillsHandler,
   getInstallerBillHandler,
   createInstallerBillHandler,
@@ -77,6 +81,14 @@ router.get('/models', authenticate, requireAdminOrSuperAdmin, listCubicleModelsH
 router.post('/models', authenticate, requireSuperAdmin, createCubicleModelHandler);
 router.patch('/models/:id', authenticate, requireSuperAdmin, updateCubicleModelHandler);
 router.delete('/models/:id', authenticate, requireSuperAdmin, deactivateCubicleModelHandler);
+
+// ─── Cubicle Installer Master Routes (Directory) ─────────────────────────────
+// Listing active installers is open to Admins for auto-fetching details in the bill creation form;
+// Creating, updating, and deactivating is strictly locked to Super Admin.
+router.get('/installers', authenticate, requireAdminOrSuperAdmin, listCubicleInstallersHandler);
+router.post('/installers', authenticate, requireSuperAdmin, createCubicleInstallerHandler);
+router.patch('/installers/:id', authenticate, requireSuperAdmin, updateCubicleInstallerHandler);
+router.delete('/installers/:id', authenticate, requireSuperAdmin, deactivateCubicleInstallerHandler);
 
 // ─── Full Payment History Export (Super Admin Only) ──────────────────────────
 router.get('/export/excel', authenticate, requireSuperAdmin, exportInstallerBillsExcelHandler);

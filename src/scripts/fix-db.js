@@ -1872,11 +1872,11 @@ const STATEMENTS = [
   // ─── CUBICLE INSTALLER PAYMENT TRACKING MODULE TABLES ──────────────────────
   `CREATE SEQUENCE IF NOT EXISTS ppsi_bill_seq START WITH 1 INCREMENT BY 1;`,
 
-  `DO $ BEGIN
+  `DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'InstallerPaymentStatus') THEN
       CREATE TYPE "InstallerPaymentStatus" AS ENUM ('PARTIAL', 'CLEARED');
     END IF;
-  END $`,
+  END $$`,
 
   `CREATE TABLE IF NOT EXISTS "cubicle_models" (
     "id"                 TEXT NOT NULL,
@@ -1969,6 +1969,24 @@ const STATEMENTS = [
   `INSERT INTO "cubicle_models" ("id", "model_name", "installation_price", "is_active", "created_at", "updated_at")
    SELECT 'cmod-002', 'Sky Light', 1000.00, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
    WHERE NOT EXISTS (SELECT 1 FROM "cubicle_models" WHERE "model_name" = 'Sky Light')`,
+
+  // ─── Cubicle Installers Directory (Master) ─────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS "cubicle_installers" (
+    "id"         TEXT NOT NULL,
+    "name"       TEXT NOT NULL,
+    "email"      TEXT NOT NULL,
+    "phone"      TEXT,
+    "is_active"  BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "cubicle_installers_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "cubicle_installers_email_key" UNIQUE ("email")
+  )`,
+
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "installer_id" TEXT`,
+  `CREATE INDEX IF NOT EXISTS "cubicle_installers_is_active_idx" ON "cubicle_installers"("is_active")`,
+  `CREATE INDEX IF NOT EXISTS "cubicle_installers_email_idx" ON "cubicle_installers"("email")`,
+  `CREATE INDEX IF NOT EXISTS "installer_bills_installer_id_idx" ON "installer_bills"("installer_id")`,
 ];
 
 async function run() {
