@@ -30,11 +30,11 @@ const prisma = new PrismaClient();
 
 const STATEMENTS = [
   // ─── DEDICATED PROFORMA INVOICES MODULE TABLES & TYPES (TOP PRIORITY) ───
-  `DO $ BEGIN
+  `DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ProformaInvoiceStatus') THEN
       CREATE TYPE "ProformaInvoiceStatus" AS ENUM ('DRAFT', 'ISSUED', 'SENT', 'APPROVED', 'ACCEPTED', 'ADVANCE_RECEIVED', 'CONVERTED_TO_INVOICE', 'CANCELLED', 'EXPIRED');
     END IF;
-  END $`,
+  END $$`,
 
   `CREATE TABLE IF NOT EXISTS "proforma_invoices" (
     "id"                       TEXT NOT NULL,

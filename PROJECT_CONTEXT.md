@@ -592,10 +592,11 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - **Admin**: Can create, inspect, and edit installer payment records, log payment installments, download individual bill PDFs, and manually trigger email re-send. Blocked on backend and hidden on UI from model master management and full historical exports.
           - **Atomic Sequential Bill Numbering**:
             - Uses dedicated PostgreSQL sequence `ppsi_bill_seq` with atomic zero-padded formatting `PPSI-00001` (strictly incrementing, never reused or duplicated across concurrent transactions).
-          - **NCR (National Capital Region) Dynamic Business Logic**:
-            - Boolean toggle `isNcr`.
-            - When `isNcr = true`: Travel Expenses is locked to `0.00` in the database and disabled/hidden in the UI.
-            - When `isNcr = false`: Travel Expenses is enabled and required for non-NCR outstation installation sites.
+          - **NCR (National Capital Region) Dynamic Business Logic & Automated PIN Code Detection**:
+            - Master PIN Code Registry (`admin/src/utils/ncrPincodes.ts`) containing comprehensive coverage of 137+ official NCR postal PINs across Delhi (110xxx), Haryana (121xxx Faridabad, 122xxx Gurugram, 123xxx Rewari, 124xxx Rohtak/Jhajjar, 126xxx Jind, 127xxx Bhiwani, 131xxx Sonipat, 132xxx Panipat/Karnal), Uttar Pradesh (201xxx Ghaziabad/Noida, 203xxx Bulandshahr, 212xxx, 245xxx Hapur, 250xxx Meerut, 247xxx Shamli, 251xxx Muzaffarnagar), and Rajasthan (301xxx Alwar, 321xxx Bharatpur).
+            - Real-time PIN auto-matching: As soon as a 6-digit postal PIN is typed/pasted on bill creation (`CreateInstallerBillPage.tsx`), it automatically evaluates against `isNcrPinCode(pin)`.
+            - When matched: automatically selects `isNcr = true`, locks `travelExpenses = 0`, and displays a clear green confirmation badge (`NCR Territory Matched - Travel locked to ₹0.00`).
+            - When outside NCR: automatically selects `isNcr = false`, enables the Travel Expenses input for outstation allowance, and displays a blue outstation badge. Manual override remains accessible if needed.
           - **Itemized Multi-Model Billing & Financial Calculations**:
             - Live auto-computation: `Subtotal = Σ (Quantity × Unit Price)`, `Total Amount = Subtotal + Travel Expenses`, `Balance Due = Total Amount - Amount Paid`.
             - Status transitions: `PARTIAL` when `amountPaid < totalAmount`, and `CLEARED` when `amountPaid >= totalAmount`.
@@ -605,17 +606,17 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - Itemized PDF bill generated using `pdfmake` featuring Pacific Products & Solutions corporate styling, obsidian navy headers (`#0F172A`), amber accents (`#D97706`), clean vector icons, job/site details, itemized breakdown, payment summary, and authorized signature seal.
             - Triggered automatically when bill status flips to `CLEARED` (or upon manual retry): dispatches high-priority email via `sendMail` with the PDF attached directly to the installer (`installerEmail`) and logs dispatch status (`emailStatus: SENT` / `FAILED`, `emailSentAt`, `emailError`).
           - **Admin Console Operational Hub & Dedicated New Bill Page**:
-            - **Dedicated "New Installer Bill" Page (`CreateInstallerBillPage.tsx`, route `'create-installer-bill'`)**: Replaced modal popup with a full-page view featuring breadcrumbs, "Back to Bills" navigation, installer auto-fetch selector, dynamic model rows, NCR travel toggle, explicit **Payment Date** picker, and **Mandatory Internal Notes** textarea.
+            - **Dedicated "New Installer Bill" Page (`CreateInstallerBillPage.tsx`, route `'create-installer-bill'`)**: Replaced modal popup with a full-page view featuring breadcrumbs, "Back to Bills" navigation, installer auto-fetch selector, dynamic model rows, automated NCR postal PIN detection, explicit **Payment Date** picker, and **Mandatory Internal Notes** textarea.
             - **Super Admin Installers Directory (`cubicle_installers` & Admin Tab 2)**: Super Admin can register, edit, and deactivate installers (`name`, `email`, `phone`). Gated on API (`requireSuperAdmin`) and Admin UI.
             - **Admin Auto-Fetch**: When generating a new bill, Admins can choose from registered installers in a dropdown, automatically pre-filling the installer's legal name, registered email, and contact phone.
             - **Mandatory Internal Notes**: Required internal audit and verification notes field enforced with strict validation at both backend Zod schema and UI form levels.
             - **Tab 1 ("Payment Records & Bills")**: 4 KPI metric cards (Total Bills, Cleared Payments ₹, Outstanding Balance ₹, Pending Clearance), comprehensive multi-field filters (Search by installer/bill/phone, Payment Status, NCR filter), desktop data table showing Payment Date, and touch-optimized mobile cards. Includes modal for Recording Installments and a slide-over Job Dossier Drawer with timeline history.
-            - **Tab 3 ("Cubicle Models Master - Super Admin")**: Model CRUD with name, rate, active status toggle, and soft deletion.
+            - **Tab 3 ("Cubicle Models Master - Super Admin")**: Model CRUD with name, rate, active status toggle, and soft deletion. Hardened with defensive array checks, fallback seeds, and safe date/number formatters to prevent runtime view errors.
             - **Tab 4 ("Full Payment Export - Super Admin")**: Date range filtering, status filtering, and one-click binary `.xlsx` workbook generation with styled navy headers, Indian currency formatting, and totals row.
 
 ---
 
-*Last Updated: 2026-09-11 (Implemented Cubicle Installer Payment Tracking System with dedicated New Installer Bill page, Super Admin Installers Directory, Admin details auto-fetch, explicit payment date, and mandatory internal audit notes)*
+*Last Updated: 2026-09-11 (Implemented automated NCR postal PIN code matching with 137+ pin master registry, fixed Cubicle Model Master view loading error with defensive guards, dedicated New Installer Bill page, Super Admin Installers Directory, Admin details auto-fetch, explicit payment date, and mandatory internal audit notes)*
 
 
 
