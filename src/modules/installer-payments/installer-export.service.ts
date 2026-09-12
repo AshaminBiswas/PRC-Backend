@@ -1,5 +1,13 @@
 import ExcelJS from 'exceljs';
 
+/** One line-item inside a bill (mirrors BillItem prisma model) */
+export interface ExportBillItemLine {
+  category: string; // e.g. 'CUBICLE', 'UMP', 'LOCKER'
+  modelName: string;
+  quantity: number;
+  lineTotal: number;
+}
+
 export interface ExportBillItem {
   billNo: string;
   installerName: string;
@@ -9,15 +17,8 @@ export interface ExportBillItem {
   travelExpenses: number;
   siteAddress: string;
   sitePin: string;
-  modelsSummary: string;
-  // Category Breakdown
-  cubicleQuantity: number;
-  cubicleTotal: number;
-  umpQuantity: number;
-  umpRate: number;
-  umpTotal: number;
-  lockerQuantity: number;
-  lockerTotal: number;
+  /** Per-model line items used to build dynamic pivot columns */
+  items: ExportBillItemLine[];
   // Deductions & Penalties
   deductionAmount: number;
   deductionReason?: string | null;
@@ -44,10 +45,75 @@ export interface ExportFilterSummary {
   status?: string;
 }
 
+// ── Palette ─────────────────────────────────────────────────────────────────
+const NAVY_ARGB = 'FF0F172A';
+const NAVY_DARK_ARGB = 'FF1E293B';
+const AMBER_ARGB = 'FFD97706';
+const RED_ARGB = 'FFDC2626';
+const EMERALD_ARGB = 'FF047857';
+const SLATE_ARGB = 'FF64748B';
+const BORDER_LIGHT = 'FFE2E8F0';
+const BORDER_DARK = 'FF334155';
+
+/** Return the category-specific header fill ARGB for dynamic pivot columns */
+function categoryHeaderArgb(category: string): string {
+  switch (category.toUpperCase()) {
+    case 'UMP':    return 'FF5B4A00'; // Dark amber
+    case 'LOCKER': return 'FF2D4739'; // Dark green
+    default:       return 'FF1E3A5F'; // Deep blue for CUBICLE
+  }
+}
+
+/** Convert 1-based column index to Excel letter(s) e.g. 27 → "AA" */
+function colLetter(n: number): string {
+  let s = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/**
+ * Generate an Excel workbook with:
+ * - 7 fixed prefix columns (Bill No … Site PIN)
+ * - N dynamic columns — one per distinct [CATEGORY] Model, showing installation quantity
+ * - 11 fixed suffix columns (Total Units, Subtotal, Travel, Deductions, Reason, Net, Paid, Balance, Status, Date, Email)
+ *
+ * Model columns are sorted CUBICLE → UMP → LOCKER, then alphabetically.
+ * Zero-quantity cells are shown as "—" in light grey.
+ */
 export async function generateInstallerBillsExcel(
   records: ExportBillItem[],
   filters: ExportFilterSummary = {}
 ): Promise<Buffer> {
+  // ── 1. Discover all distinct models ──────────────────────────────────────
+  const modelKeySet = new Map<string, { category: string; modelName: string }>();
+  for (const rec of records) {
+    for (const item of rec.items) {
+      const key = `[${item.category}] ${item.modelName}`;
+      if (!modelKeySet.has(key)) {
+        modelKeySet.set(key, { category: item.category, modelName: item.modelName });
+      }
+    }
+  }
+
+  const catOrder: Record<string, number> = { CUBICLE: 0, UMP: 1, LOCKER: 2 };
+  const modelColumns = [...modelKeySet.entries()].sort(([aKey, aVal], [bKey, bVal]) => {
+    const aOrd = catOrder[aVal.category.toUpperCase()] ?? 99;
+    const bOrd = catOrder[bVal.category.toUpperCase()] ?? 99;
+    return aOrd !== bOrd ? aOrd - bOrd : aKey.localeCompare(bKey);
+  });
+
+  // ── 2. Column layout counts ───────────────────────────────────────────────
+  const PREFIX_COLS  = 7;
+  const SUFFIX_COLS  = 11;
+  const modelColCount = modelColumns.length;
+  const totalCols     = PREFIX_COLS + modelColCount + SUFFIX_COLS;
+  const lastCol       = colLetter(totalCols);
+
+  // ── 3. Workbook ───────────────────────────────────────────────────────────
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Pacific Products & Solutions Admin';
   workbook.created = new Date();
@@ -56,248 +122,263 @@ export async function generateInstallerBillsExcel(
     views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }],
   });
 
-  // Title Banner (Spans 26 columns A-Z)
-  worksheet.mergeCells('A1:Z1');
+  // ── 4. Title banner (row 1) ───────────────────────────────────────────────
+  worksheet.mergeCells(`A1:${lastCol}1`);
   const titleCell = worksheet.getCell('A1');
-  titleCell.value = 'PACIFIC PRODUCTS & SOLUTIONS — CUBICLE, UMP & LOCKER INSTALLER PAYMENT HISTORY REPORT';
-  titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+  titleCell.value =
+    'PACIFIC PRODUCTS & SOLUTIONS — INSTALLER PAYMENT HISTORY REPORT (PER-MODEL BREAKDOWN)';
+  titleCell.font  = { name: 'Calibri', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY_ARGB } };
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
   worksheet.getRow(1).height = 30;
 
-  // Filter & Generation Metadata Subtitle
+  // ── 5. Filter metadata (row 2) ────────────────────────────────────────────
   let filterText = 'All Dates';
   if (filters.month && filters.year) {
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    filterText = `${monthNames[filters.month - 1]} ${filters.year}`;
+    const mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    filterText = `${mn[filters.month - 1]} ${filters.year}`;
   } else if (filters.year) {
     filterText = `Year ${filters.year}`;
   } else if (filters.startDate || filters.endDate) {
     filterText = `${filters.startDate || 'Beginning'} to ${filters.endDate || 'Present'}`;
   }
-
   const installerInfo = filters.installerName ? ` | Technician: ${filters.installerName}` : '';
-  worksheet.mergeCells('A2:Z2');
+
+  worksheet.mergeCells(`A2:${lastCol}2`);
   const metaCell = worksheet.getCell('A2');
-  metaCell.value = `Filter Scope: ${filterText}${installerInfo} | Status Filter: ${filters.status || 'ALL'} | Total Records: ${records.length} | Export Timestamp: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
-  metaCell.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
+  metaCell.value =
+    `Filter: ${filterText}${installerInfo} | Status: ${filters.status || 'ALL'} | ` +
+    `Records: ${records.length} | Models: ${modelColCount} | ` +
+    `Exported: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+  metaCell.font      = { name: 'Calibri', size: 9, italic: true, color: { argb: SLATE_ARGB } };
   metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
   worksheet.getRow(2).height = 18;
 
-  // Blank spacer row
+  // Spacer row 3
   worksheet.getRow(3).height = 8;
 
-  // Header Row
-  const headerRow = worksheet.getRow(4);
-  headerRow.values = [
-    'Bill No',
-    'Install Date',
-    'Installer Name',
-    'Installer Email',
-    'NCR Region',
-    'Site Address',
-    'Site PIN',
-    'Models & Items Summary',
-    'Cubicle Units',
-    'Cubicle Subtotal (₹)',
-    'UMP Units',
-    'UMP Rate (₹)',
-    'UMP Total (₹)',
-    'Locker Units',
-    'Locker Subtotal (₹)',
-    'Total Units',
-    'Subtotal (₹)',
-    'Travel Expenses (₹)',
-    'Deductions (₹)',
-    'Deduction Reason',
-    'Total Due (₹)',
-    'Amount Paid (₹)',
-    'Balance Due (₹)',
-    'Payment Status',
-    'Payment Date',
-    'Clearance Email Status',
+  // ── 6. Header row (row 4) ─────────────────────────────────────────────────
+  const headerValues: string[] = [
+    'Bill No', 'Install Date', 'Installer Name', 'Installer Email',
+    'NCR Region', 'Site Address', 'Site PIN',
+    ...modelColumns.map(([key]) => key),
+    'Total Units', 'Subtotal (₹)', 'Travel Expenses (₹)',
+    'Deductions (₹)', 'Deduction Reason',
+    'Net Total Due (₹)', 'Amount Paid (₹)', 'Balance Due (₹)',
+    'Payment Status', 'Payment Date', 'Email Status',
   ];
 
-  headerRow.eachCell((cell) => {
-    cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.border = {
-      top: { style: 'thin', color: { argb: 'FF334155' } },
-      left: { style: 'thin', color: { argb: 'FF334155' } },
-      bottom: { style: 'thin', color: { argb: 'FF334155' } },
-      right: { style: 'thin', color: { argb: 'FF334155' } },
+  const headerRow = worksheet.getRow(4);
+  headerRow.values = headerValues;
+  headerRow.height = 34;
+
+  headerRow.eachCell((cell, colNum) => {
+    let fillArgb = NAVY_DARK_ARGB;
+    if (colNum > PREFIX_COLS && colNum <= PREFIX_COLS + modelColCount) {
+      const [, meta] = modelColumns[colNum - PREFIX_COLS - 1];
+      fillArgb = categoryHeaderArgb(meta.category);
+    } else {
+      const sIdx = colNum - PREFIX_COLS - modelColCount;
+      if (sIdx === 4 || sIdx === 5) fillArgb = 'FF7F1D1D'; // dark red for deduction cols
+    }
+    cell.font      = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillArgb } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border    = {
+      top: { style: 'thin', color: { argb: BORDER_DARK } }, left: { style: 'thin', color: { argb: BORDER_DARK } },
+      bottom: { style: 'thin', color: { argb: BORDER_DARK } }, right: { style: 'thin', color: { argb: BORDER_DARK } },
     };
   });
-  headerRow.height = 24;
 
-  // Column Widths
+  // ── 7. Column widths ──────────────────────────────────────────────────────
   worksheet.columns = [
-    { key: 'billNo', width: 14 },
-    { key: 'installDate', width: 13 },
-    { key: 'installerName', width: 20 },
-    { key: 'installerEmail', width: 26 },
-    { key: 'isNcr', width: 12 },
-    { key: 'siteAddress', width: 34 },
-    { key: 'sitePin', width: 12 },
-    { key: 'modelsSummary', width: 32 },
-    { key: 'cubicleQuantity', width: 14 },
-    { key: 'cubicleTotal', width: 17 },
-    { key: 'umpQuantity', width: 12 },
-    { key: 'umpRate', width: 14 },
-    { key: 'umpTotal', width: 16 },
-    { key: 'lockerQuantity', width: 13 },
-    { key: 'lockerTotal', width: 17 },
-    { key: 'totalQuantity', width: 13 },
-    { key: 'subtotal', width: 16 },
-    { key: 'travelExpenses', width: 18 },
+    { key: 'billNo',          width: 14 },
+    { key: 'installDate',     width: 13 },
+    { key: 'installerName',   width: 20 },
+    { key: 'installerEmail',  width: 28 },
+    { key: 'isNcr',           width: 13 },
+    { key: 'siteAddress',     width: 34 },
+    { key: 'sitePin',         width: 11 },
+    ...modelColumns.map(([key]) => ({ key: `model_${key}`, width: 14 })),
+    { key: 'totalQuantity',   width: 13 },
+    { key: 'subtotal',        width: 16 },
+    { key: 'travelExpenses',  width: 19 },
     { key: 'deductionAmount', width: 16 },
-    { key: 'deductionReason', width: 24 },
-    { key: 'total', width: 16 },
-    { key: 'amountPaid', width: 16 },
-    { key: 'balanceDue', width: 16 },
-    { key: 'paymentStatus', width: 15 },
-    { key: 'paymentDate', width: 14 },
-    { key: 'emailStatus', width: 22 },
+    { key: 'deductionReason', width: 26 },
+    { key: 'total',           width: 16 },
+    { key: 'amountPaid',      width: 16 },
+    { key: 'balanceDue',      width: 16 },
+    { key: 'paymentStatus',   width: 15 },
+    { key: 'paymentDate',     width: 14 },
+    { key: 'emailStatus',     width: 24 },
   ];
 
-  // Totals Accumulator
-  let totalCubicleUnits = 0;
-  let totalCubicleTotal = 0;
-  let totalUmpUnits = 0;
-  let totalUmpTotal = 0;
-  let totalLockerUnits = 0;
-  let totalLockerTotal = 0;
-  let totalAllUnits = 0;
-  let totalSubtotal = 0;
-  let totalTravel = 0;
-  let totalDeductions = 0;
-  let totalGrand = 0;
-  let totalPaid = 0;
-  let totalDue = 0;
+  // ── 8. Totals accumulators ────────────────────────────────────────────────
+  const modelTotals = new Map<string, number>();
+  modelColumns.forEach(([key]) => modelTotals.set(key, 0));
+  let totalAllUnits = 0, totalSubtotal = 0, totalTravel = 0;
+  let totalDeductions = 0, totalGrand = 0, totalPaid = 0, totalDue = 0;
 
+  // ── 9. Data rows ──────────────────────────────────────────────────────────
   records.forEach((rec, idx) => {
-    const isEven = idx % 2 === 0;
-    const rowBg = isEven ? 'FFFFFFFF' : 'FFF8FAFC';
+    const rowBg = idx % 2 === 0 ? 'FFFFFFFF' : 'FFF8FAFC';
 
     const installDateStr = rec.installDate
       ? new Date(rec.installDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
       : 'N/A';
     const paymentDateStr = rec.paymentDate
       ? new Date(rec.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-      : '-';
-
-    totalCubicleUnits += Number(rec.cubicleQuantity || 0);
-    totalCubicleTotal += Number(rec.cubicleTotal || 0);
-    totalUmpUnits += Number(rec.umpQuantity || 0);
-    totalUmpTotal += Number(rec.umpTotal || 0);
-    totalLockerUnits += Number(rec.lockerQuantity || 0);
-    totalLockerTotal += Number(rec.lockerTotal || 0);
-    totalAllUnits += Number(rec.totalQuantity || 0);
-    totalSubtotal += Number(rec.subtotal || 0);
-    totalTravel += Number(rec.travelExpenses || 0);
-    totalDeductions += Number(rec.deductionAmount || 0);
-    totalGrand += Number(rec.total || 0);
-    totalPaid += Number(rec.amountPaid || 0);
-    totalDue += Number(rec.balanceDue || 0);
-
+      : '—';
     const emailStatusText = rec.emailStatus
       ? `${rec.emailStatus}${rec.emailSentAt ? ` (${new Date(rec.emailSentAt).toLocaleDateString('en-IN')})` : ''}`
       : 'PENDING';
 
-    const row = worksheet.addRow({
-      billNo: rec.billNo,
-      installDate: installDateStr,
-      installerName: rec.installerName,
-      installerEmail: rec.installerEmail,
-      isNcr: rec.isNcr ? 'YES (NCR)' : 'NO (Outstation)',
-      siteAddress: rec.siteAddress,
-      sitePin: rec.sitePin,
-      modelsSummary: rec.modelsSummary || 'N/A',
-      cubicleQuantity: Number(rec.cubicleQuantity || 0),
-      cubicleTotal: Number(rec.cubicleTotal || 0),
-      umpQuantity: Number(rec.umpQuantity || 0),
-      umpRate: Number(rec.umpRate || 0),
-      umpTotal: Number(rec.umpTotal || 0),
-      lockerQuantity: Number(rec.lockerQuantity || 0),
-      lockerTotal: Number(rec.lockerTotal || 0),
-      totalQuantity: Number(rec.totalQuantity || 0),
-      subtotal: Number(rec.subtotal || 0),
-      travelExpenses: Number(rec.travelExpenses || 0),
-      deductionAmount: Number(rec.deductionAmount || 0),
-      deductionReason: rec.deductionReason || '—',
-      total: Number(rec.total || 0),
-      amountPaid: Number(rec.amountPaid || 0),
-      balanceDue: Number(rec.balanceDue || 0),
-      paymentStatus: rec.paymentStatus === 'CLEARED' ? 'Full / Cleared' : 'Partial',
-      paymentDate: paymentDateStr,
-      emailStatus: emailStatusText,
-    });
+    // Build quantity lookup for this bill
+    const itemQtyMap = new Map<string, number>();
+    for (const item of rec.items) {
+      const key = `[${item.category}] ${item.modelName}`;
+      itemQtyMap.set(key, (itemQtyMap.get(key) || 0) + item.quantity);
+    }
 
+    // Accumulate totals
+    for (const [key] of modelColumns) {
+      modelTotals.set(key, (modelTotals.get(key) || 0) + (itemQtyMap.get(key) || 0));
+    }
+    totalAllUnits   += Number(rec.totalQuantity   || 0);
+    totalSubtotal   += Number(rec.subtotal         || 0);
+    totalTravel     += Number(rec.travelExpenses   || 0);
+    totalDeductions += Number(rec.deductionAmount  || 0);
+    totalGrand      += Number(rec.total            || 0);
+    totalPaid       += Number(rec.amountPaid       || 0);
+    totalDue        += Number(rec.balanceDue       || 0);
+
+    const rowValues: (string | number)[] = [
+      rec.billNo, installDateStr, rec.installerName, rec.installerEmail,
+      rec.isNcr ? 'YES (NCR)' : 'NO (Outstation)',
+      rec.siteAddress, rec.sitePin,
+      ...modelColumns.map(([key]) => itemQtyMap.get(key) || 0),
+      Number(rec.totalQuantity  || 0),
+      Number(rec.subtotal        || 0),
+      Number(rec.travelExpenses  || 0),
+      Number(rec.deductionAmount || 0),
+      rec.deductionReason || '—',
+      Number(rec.total       || 0),
+      Number(rec.amountPaid  || 0),
+      Number(rec.balanceDue  || 0),
+      rec.paymentStatus === 'CLEARED' ? 'Full / Cleared' : 'Partial',
+      paymentDateStr,
+      emailStatusText,
+    ];
+
+    const row = worksheet.addRow(rowValues);
     row.height = 20;
 
+    const suffixStart = PREFIX_COLS + modelColCount + 1; // 1-based col where suffix begins
+
     row.eachCell((cell, colNum) => {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+      cell.fill   = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
       cell.border = {
-        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        top: { style: 'thin', color: { argb: BORDER_LIGHT } }, left: { style: 'thin', color: { argb: BORDER_LIGHT } },
+        bottom: { style: 'thin', color: { argb: BORDER_LIGHT } }, right: { style: 'thin', color: { argb: BORDER_LIGHT } },
       };
       cell.font = { name: 'Calibri', size: 9 };
 
-      // Formatting
-      // Center aligned: 1: billNo, 2: installDate, 5: isNcr, 7: sitePin, 9: cubicleQuantity, 11: umpQuantity, 14: lockerQuantity, 16: totalQuantity, 24: paymentStatus, 25: paymentDate, 26: emailStatus
-      if ([1, 2, 5, 7, 9, 11, 14, 16, 24, 25, 26].includes(colNum)) {
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      } else if ([10, 12, 13, 15, 17, 18, 19, 21, 22, 23].includes(colNum)) {
-        // Currency formatting for amounts (including Col 19: deductions)
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        cell.numFmt = '₹#,##0.00';
-      } else {
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-      }
+      const isDynamic = colNum > PREFIX_COLS && colNum <= PREFIX_COLS + modelColCount;
+      const sIdx      = colNum - suffixStart + 1; // 1-based within suffix (≤0 if not in suffix)
 
-      // Status color highlighting
-      if (colNum === 24) {
-        if (rec.paymentStatus === 'CLEARED') {
-          cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF047857' } };
+      if ([1, 2, 5, 7].includes(colNum)) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+      } else if (isDynamic) {
+        const qty = (cell.value as number) || 0;
+        if (qty === 0) {
+          cell.value     = '—';
+          cell.font      = { name: 'Calibri', size: 9, color: { argb: 'FFCBD5E1' } };
         } else {
-          cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFD97706' } };
+          cell.font      = { name: 'Calibri', size: 9, bold: true };
         }
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+      } else if (sIdx === 1) {
+        // Total Units
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+      } else if (sIdx === 2 || sIdx === 3) {
+        // Subtotal | Travel Expenses
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.numFmt    = '₹#,##0.00';
+
+      } else if (sIdx === 4) {
+        // Deductions — red
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.numFmt    = '₹#,##0.00';
+        if (Number(cell.value) > 0) {
+          cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: RED_ARGB } };
+        }
+
+      } else if (sIdx === 5) {
+        // Deduction Reason
+        cell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+        if (cell.value && String(cell.value) !== '—') {
+          cell.font = { name: 'Calibri', size: 9, italic: true, color: { argb: RED_ARGB } };
+        }
+
+      } else if (sIdx === 6 || sIdx === 7 || sIdx === 8) {
+        // Net Total Due | Amount Paid | Balance Due
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.numFmt    = '₹#,##0.00';
+        if (sIdx === 7) {
+          cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: EMERALD_ARGB } };
+        }
+
+      } else if (sIdx === 9) {
+        // Payment Status
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.font = {
+          name: 'Calibri', size: 9, bold: true,
+          color: { argb: rec.paymentStatus === 'CLEARED' ? EMERALD_ARGB : AMBER_ARGB },
+        };
+
+      } else {
+        // Payment Date | Email Status
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
       }
     });
   });
 
-  // Summary Row at the bottom
-  const summaryRowIndex = records.length + 5;
-  const summaryRow = worksheet.getRow(summaryRowIndex);
-  summaryRow.getCell(1).value = 'TOTALS';
-  summaryRow.getCell(9).value = totalCubicleUnits;
-  summaryRow.getCell(10).value = totalCubicleTotal;
-  summaryRow.getCell(11).value = totalUmpUnits;
-  summaryRow.getCell(13).value = totalUmpTotal;
-  summaryRow.getCell(14).value = totalLockerUnits;
-  summaryRow.getCell(15).value = totalLockerTotal;
-  summaryRow.getCell(16).value = totalAllUnits;
-  summaryRow.getCell(17).value = totalSubtotal;
-  summaryRow.getCell(18).value = totalTravel;
-  summaryRow.getCell(19).value = totalDeductions;
-  summaryRow.getCell(21).value = totalGrand;
-  summaryRow.getCell(22).value = totalPaid;
-  summaryRow.getCell(23).value = totalDue;
+  // ── 10. Summary / Totals row ──────────────────────────────────────────────
+  const summaryValues: (string | number)[] = [
+    'TOTALS', '', '', '', '', '', '',
+    ...modelColumns.map(([key]) => modelTotals.get(key) || 0),
+    totalAllUnits, totalSubtotal, totalTravel,
+    totalDeductions, '',
+    totalGrand, totalPaid, totalDue,
+    '', '', '',
+  ];
 
-  summaryRow.height = 22;
+  const summaryRow = worksheet.getRow(records.length + 5);
+  summaryRow.values = summaryValues;
+  summaryRow.height = 24;
+
+  const suffixStart = PREFIX_COLS + modelColCount + 1;
+
   summaryRow.eachCell((cell, colNum) => {
-    cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    cell.font  = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY_ARGB } };
     cell.border = {
-      top: { style: 'medium', color: { argb: 'FF334155' } },
-      bottom: { style: 'double', color: { argb: 'FF334155' } },
+      top:    { style: 'medium', color: { argb: BORDER_DARK } },
+      bottom: { style: 'double', color: { argb: BORDER_DARK } },
     };
-    if ([10, 12, 13, 15, 17, 18, 19, 21, 22, 23].includes(colNum)) {
+
+    const isDynamic  = colNum > PREFIX_COLS && colNum <= PREFIX_COLS + modelColCount;
+    const sIdx       = colNum - suffixStart + 1;
+    const currencyS  = new Set([2, 3, 4, 6, 7, 8]);
+
+    if (isDynamic || sIdx === 1) {
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    } else if (currencyS.has(sIdx)) {
       cell.alignment = { horizontal: 'right', vertical: 'middle' };
-      cell.numFmt = '₹#,##0.00';
+      cell.numFmt    = '₹#,##0.00';
     } else {
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
     }
@@ -306,3 +387,5 @@ export async function generateInstallerBillsExcel(
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
+
+

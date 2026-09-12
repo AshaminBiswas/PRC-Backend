@@ -728,6 +728,11 @@ export async function dispatchClearanceEmailWithPdf(
     const totalFormatted = `₹${Number(bill.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     const paidFormatted = `₹${Number(bill.amountPaid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     const balanceFormatted = `₹${Number(bill.balanceDue).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    const deductionAmountVal = Number(bill.deductionAmount || 0);
+    const deductionFormatted = `-₹${deductionAmountVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    const deductionLabel = bill.deductionReason
+      ? `Deductions / Penalties (${bill.deductionReason}):`
+      : 'Deductions / Penalties:';
     const installDateFormatted = new Date(bill.installDate).toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
@@ -778,8 +783,13 @@ export async function dispatchClearanceEmailWithPdf(
             <td style="padding: 8px 0; color: #64748b;">Site Address:</td>
             <td style="padding: 8px 0; text-align: right;">${bill.siteAddress} (${bill.sitePin})</td>
           </tr>
+          ${deductionAmountVal > 0 ? `
           <tr style="border-bottom: 1px solid #e2e8f0;">
-            <td style="padding: 8px 0; color: #64748b;">Total Bill Value:</td>
+            <td style="padding: 8px 0; color: #dc2626;">${deductionLabel}</td>
+            <td style="padding: 8px 0; font-weight: bold; color: #dc2626; text-align: right;">${deductionFormatted}</td>
+          </tr>` : ''}
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 8px 0; color: #64748b;">Net Disbursement Due:</td>
             <td style="padding: 8px 0; font-weight: bold; color: #0f172a; text-align: right;">${totalFormatted}</td>
           </tr>
           <tr style="border-bottom: 1px solid #e2e8f0;">
@@ -902,35 +912,37 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
   });
 
   const exportItems: ExportBillItem[] = bills.map((b) => {
-    const modelParts = b.items.map((i) => `[${i.category || 'CUBICLE'}] ${i.modelName} (×${i.quantity})`);
+    // Build the items array including legacy UMP/Locker stored at bill level (not as items)
+    const lineItems: import('./installer-export.service').ExportBillItemLine[] = b.items.map((i) => ({
+      category: i.category || 'CUBICLE',
+      modelName: i.modelName,
+      quantity: i.quantity,
+      lineTotal: Number(i.lineTotal),
+    }));
+
+    // Legacy UMP stored at bill level (not as a line item)
     const hasUmpInItems = b.items.some((i) => i.category === 'UMP');
     if (b.umpQuantity && Number(b.umpQuantity) > 0 && !hasUmpInItems) {
-      modelParts.push(`[UMP] Urinal Modesty Panel (×${b.umpQuantity})`);
+      lineItems.push({
+        category: 'UMP',
+        modelName: 'Urinal Modesty Panel',
+        quantity: Number(b.umpQuantity),
+        lineTotal: Number(b.umpTotal || 0),
+      });
     }
+
+    // Legacy Locker stored at bill level (not as a line item)
     const hasLockerInItems = b.items.some((i) => i.category === 'LOCKER');
     if (b.lockerQuantity && Number(b.lockerQuantity) > 0 && !hasLockerInItems) {
-      modelParts.push(`[LOCKER] Locker Unit (×${b.lockerQuantity})`);
+      lineItems.push({
+        category: 'LOCKER',
+        modelName: 'Locker Unit',
+        quantity: Number(b.lockerQuantity),
+        lineTotal: Number(b.lockerTotal || 0),
+      });
     }
-    const modelsSummary = modelParts.join(', ');
 
-    // Cubicle breakdown
-    const cubicleItems = b.items.filter((i) => (i.category || 'CUBICLE') === 'CUBICLE');
-    const cubicleQuantity = b.cubicleQuantity || cubicleItems.reduce((acc, i) => acc + i.quantity, 0);
-    const cubicleTotal = Number(b.cubicleTotal) || cubicleItems.reduce((acc, i) => acc + Number(i.lineTotal), 0);
-
-    // UMP breakdown
-    const umpItems = b.items.filter((i) => i.category === 'UMP');
-    const umpItemsQty = umpItems.reduce((acc, i) => acc + i.quantity, 0);
-    const umpQuantity = b.umpQuantity || umpItemsQty;
-    const umpRate = Number(b.umpRate) || (umpItemsQty > 0 ? umpItems.reduce((acc, i) => acc + Number(i.lineTotal), 0) / umpItemsQty : 0);
-    const umpTotal = Number(b.umpTotal) || (umpItemsQty > 0 ? umpItems.reduce((acc, i) => acc + Number(i.lineTotal), 0) : (umpQuantity * umpRate));
-
-    // Locker breakdown
-    const lockerItems = b.items.filter((i) => i.category === 'LOCKER');
-    const lockerQuantity = b.lockerQuantity || lockerItems.reduce((acc, i) => acc + i.quantity, 0);
-    const lockerTotal = Number(b.lockerTotal) || lockerItems.reduce((acc, i) => acc + Number(i.lineTotal), 0);
-
-    const totalQuantity = cubicleQuantity + umpQuantity + lockerQuantity;
+    const totalQuantity = lineItems.reduce((acc, i) => acc + i.quantity, 0);
 
     return {
       billNo: b.billNo,
@@ -941,14 +953,7 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
       travelExpenses: Number(b.travelExpenses),
       siteAddress: b.siteAddress,
       sitePin: b.sitePin,
-      modelsSummary,
-      cubicleQuantity,
-      cubicleTotal,
-      umpQuantity,
-      umpRate,
-      umpTotal,
-      lockerQuantity,
-      lockerTotal,
+      items: lineItems,
       deductionAmount: Number(b.deductionAmount || 0),
       deductionReason: b.deductionReason || null,
       totalQuantity,
@@ -963,6 +968,7 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
       createdAt: b.createdAt,
     };
   });
+
 
   const filterSummary: ExportFilterSummary = {
     installerId: query.installerId,
