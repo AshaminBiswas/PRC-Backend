@@ -15,6 +15,7 @@ import {
   getInstallerBillHandler,
   createInstallerBillHandler,
   updateInstallerBillHandler,
+  getBillAuditLogsHandler,
   recordBillPaymentHandler,
   downloadBillPdfHandler,
   resendBillEmailHandler,
@@ -100,10 +101,14 @@ router.get('/export/excel', authenticate, requireSuperAdmin, exportInstallerBill
 router.get('/', authenticate, requireAdminOrSuperAdmin, listInstallerBillsHandler);
 router.get('/:id', authenticate, requireAdminOrSuperAdmin, getInstallerBillHandler);
 router.post('/', authenticate, requireAdminOrSuperAdmin, createInstallerBillHandler);
-router.patch('/:id', authenticate, requireAdminOrSuperAdmin, updateInstallerBillHandler);
+// Bill edit is Super Admin only — changes are audit-logged
+router.patch('/:id', authenticate, requireSuperAdmin, updateInstallerBillHandler);
 router.post('/:id/payments', authenticate, requireAdminOrSuperAdmin, recordBillPaymentHandler);
 router.get('/:id/pdf', authenticate, requireAdminOrSuperAdmin, downloadBillPdfHandler);
 router.post('/:id/resend-email', authenticate, requireAdminOrSuperAdmin, resendBillEmailHandler);
 router.delete('/:id', authenticate, requireSuperAdmin, deleteInstallerBillHandler);
+// Audit log — readable by all admins, written only on SuperAdmin edits
+router.get('/:id/audit-logs', authenticate, requireAdminOrSuperAdmin, getBillAuditLogsHandler);
 
 export default router;
+

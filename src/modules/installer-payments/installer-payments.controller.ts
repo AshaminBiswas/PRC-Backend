@@ -148,12 +148,25 @@ export const updateInstallerBillHandler = async (req: Request, res: Response, ne
   try {
     const id = req.params.id as string;
     const body = UpdateInstallerBillSchema.parse(req.body);
-    const bill = await installerService.updateInstallerBill(id, body);
+    const editedById = req.user?.id;
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    const bill = await installerService.updateInstallerBill(id, body, editedById, ipAddress);
     sendSuccess(res, bill, 'Installer bill updated successfully');
   } catch (error) {
     next(error);
   }
 };
+
+export const getBillAuditLogsHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const billId = req.params.id as string;
+    const logs = await installerService.getBillAuditLogs(billId);
+    sendSuccess(res, logs, 'Bill audit logs retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 export const recordBillPaymentHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {

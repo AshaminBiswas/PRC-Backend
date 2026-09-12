@@ -574,13 +574,34 @@ export async function recordBillPayment(billId: string, input: RecordPaymentInpu
   return await getInstallerBillById(billId);
 }
 
-export async function updateInstallerBill(id: string, input: UpdateInstallerBillInput) {
+export async function updateInstallerBill(
+  id: string,
+  input: UpdateInstallerBillInput,
+  editedById?: string,
+  ipAddress?: string
+) {
   const existing = await prisma.installerBill.findUnique({ where: { id } });
   if (!existing || existing.deletedAt) {
     const error: any = new Error('Installer bill not found');
     error.statusCode = 404;
     throw error;
   }
+
+  // ── Snapshot "before" values for every field that may change ────────────
+  type FieldBefore = Record<string, unknown>;
+  const beforeSnapshot: FieldBefore = {};
+  if (input.installerName !== undefined) beforeSnapshot.installerName = existing.installerName;
+  if (input.installerEmail !== undefined) beforeSnapshot.installerEmail = existing.installerEmail;
+  if (input.installDate !== undefined) beforeSnapshot.installDate = existing.installDate?.toISOString();
+  if (input.siteAddress !== undefined) beforeSnapshot.siteAddress = existing.siteAddress;
+  if (input.sitePin !== undefined) beforeSnapshot.sitePin = existing.sitePin;
+  if (input.notes !== undefined) beforeSnapshot.notes = existing.notes;
+  if (input.deductionReason !== undefined) beforeSnapshot.deductionReason = existing.deductionReason;
+  if (input.isNcr !== undefined) beforeSnapshot.isNcr = existing.isNcr;
+  if (input.travelExpenses !== undefined) beforeSnapshot.travelExpenses = Number(existing.travelExpenses);
+  if (input.umpQuantity !== undefined) beforeSnapshot.umpQuantity = existing.umpQuantity;
+  if (input.umpRate !== undefined) beforeSnapshot.umpRate = Number(existing.umpRate);
+  if (input.deductionAmount !== undefined) beforeSnapshot.deductionAmount = Number(existing.deductionAmount);
 
   const updateData: Prisma.InstallerBillUpdateInput = {};
   if (input.installerName !== undefined) updateData.installerName = input.installerName;
@@ -645,8 +666,82 @@ export async function updateInstallerBill(id: string, input: UpdateInstallerBill
     data: updateData,
   });
 
+  // ── Write Audit Log ───────────────────────────────────────────────────────
+  if (editedById && Object.keys(beforeSnapshot).length > 0) {
+    // Build after-values using resolved updateData values
+    const afterSnapshot: FieldBefore = {};
+    if (input.installerName !== undefined) afterSnapshot.installerName = input.installerName;
+    if (input.installerEmail !== undefined) afterSnapshot.installerEmail = input.installerEmail;
+    if (input.installDate !== undefined) afterSnapshot.installDate = new Date(input.installDate).toISOString();
+    if (input.siteAddress !== undefined) afterSnapshot.siteAddress = input.siteAddress;
+    if (input.sitePin !== undefined) afterSnapshot.sitePin = input.sitePin;
+    if (input.notes !== undefined) afterSnapshot.notes = input.notes ?? null;
+    if (input.deductionReason !== undefined) afterSnapshot.deductionReason = input.deductionReason ?? null;
+    if (input.isNcr !== undefined) afterSnapshot.isNcr = updateData.isNcr as boolean;
+    if (input.travelExpenses !== undefined) afterSnapshot.travelExpenses = Number(updateData.travelExpenses);
+    if (input.umpQuantity !== undefined) afterSnapshot.umpQuantity = Number(updateData.umpQuantity);
+    if (input.umpRate !== undefined) afterSnapshot.umpRate = Number(updateData.umpRate);
+    if (input.deductionAmount !== undefined) afterSnapshot.deductionAmount = Number(updateData.deductionAmount);
+
+    // Only log fields that actually changed
+    const changedFields: Record<string, { before: unknown; after: unknown }> = {};
+    for (const key of Object.keys(beforeSnapshot)) {
+      const before = beforeSnapshot[key];
+      const after = afterSnapshot[key];
+      // Normalize for comparison
+      const bStr = before === null || before === undefined ? '' : String(before);
+      const aStr = after === null || after === undefined ? '' : String(after);
+      if (bStr !== aStr) {
+        changedFields[key] = { before, after };
+      }
+    }
+
+    if (Object.keys(changedFields).length > 0) {
+      await prisma.auditLog.create({
+        data: {
+          userId: editedById,
+          action: 'UPDATE',
+          entity: 'InstallerBill',
+          entityId: id,
+          ipAddress: ipAddress || null,
+          changes: {
+            billNo: existing.billNo,
+            fields: changedFields,
+          },
+        },
+      }).catch((err: any) => {
+        // Non-fatal: log but don't fail the update if audit write fails
+        logger.warn(`[InstallerBill Audit] Failed to write audit log for bill ${id}: ${err?.message}`);
+      });
+    }
+  }
+
   return await getInstallerBillById(id);
 }
+
+// ─── Bill Audit Log ───────────────────────────────────────────────────────────
+
+/**
+ * Retrieve the full edit history for a specific InstallerBill from the audit_logs table.
+ * Includes the editor's name and email for display in the admin UI.
+ */
+export async function getBillAuditLogs(billId: string) {
+  return await prisma.auditLog.findMany({
+    where: {
+      entity: 'InstallerBill',
+      entityId: billId,
+      action: 'UPDATE',
+    },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      user: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+    },
+  });
+}
+
+
 
 // ─── PDF Generation & Email Dispatch ─────────────────────────────────────────
 
