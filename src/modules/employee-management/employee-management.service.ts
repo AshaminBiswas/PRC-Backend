@@ -128,12 +128,13 @@ export async function getEmployee(id: string) {
 }
 
 export async function listEmployees(query: ListEmployeesQuery) {
-  const { search, department, status, page, limit } = query;
+  const { search, department, designation, status, page, limit } = query;
   const skip = (page - 1) * limit;
 
   const where: Prisma.EmployeeWhereInput = {};
   if (status) where.status = status;
   if (department) where.department = { equals: department, mode: 'insensitive' };
+  if (designation) where.designation = { equals: designation, mode: 'insensitive' };
   if (search) {
     where.OR = [
       { name: { contains: search, mode: 'insensitive' } },

@@ -705,6 +705,16 @@ The Storefront was architected and optimized for native app-like responsiveness 
           - **Master Employee Directory**:
             - Auto-generated alphanumeric ID (`EMP-0001` upwards, strictly formatted and system-generated).
             - Complete employee profile: Full Name, unique Email, Phone, Address, Government ID (Aadhaar / PAN / Voter / Passport / Driving License), Bank Account details (Account Number, IFSC, Bank Name, Account Holder Name), Department, Designation, Joining Date, and Active/Inactive status.
+            - **Designation Hierarchy & "Workers" First-Class Role**:
+              - Default designation for new staff is **"Workers"** (`COMMON_DESIGNATIONS` includes `Workers`, `Hardware Technician`, `Cubicle Installer`, `Site Supervisor`, `Operations Executive`, `Senior Hardware Engineer`, `Sales & Business Development`, `Finance & Accounts`, `Administration & HR`, `Fabricator / Carpenter`, `Helper / Support Staff`).
+              - Quick 1-tap designation pill buttons (`[Workers]`, `[Hardware Technician]`, `[Cubicle Installer]`, `[Site Supervisor]`) for fast mobile/touch logging.
+              - Custom designation support (`+ Other`) for specialized trades or custom job titles.
+              - Employee Directory toolbar filter dropdown for **Designation** allowing 1-click filtering of staff by "Workers" or other roles, with backend query support (`GET /api/v1/employees?designation=Workers`).
+            - **Optional Bank Disbursement Account Protocol**:
+              - Bank account section in Add/Edit Employee is completely optional, supporting cash-based workers and daily wage staff who do not have immediate bank credentials.
+              - Clear "(Optional)" visual badges and helper guidance in the modal.
+              - Backend Zod schemas (`CreateEmployeeSchema`, `UpdateEmployeeSchema`) sanitize empty strings, whitespace, and placeholder strings (`N/A`, `NA`, `NONE`, `NIL`) to `null` without triggering IFSC regex validation failures.
+              - Directory table gracefully indicates `Optional (Not Provided)` for staff without bank credentials.
             - Compensation profile: Monthly CTC, Basic Salary (50% of CTC), HRA (40% of Basic), Special Allowance (remainder), and dynamic Leave Balances (CL, EL).
           - **Daily Attendance Matrix & Instant Operations**:
             - 0ms optimistic UI updates with silent background API persistence for zero perceived latency.
@@ -740,7 +750,7 @@ The Storefront was architected and optimized for native app-like responsiveness 
 
 ---
 
-*Last Updated: 2026-09-12 (Updated Payment Slips and Installer Bills with the new official Pacific Restroom Cubicle & Locker Solutions brand logo, replacing the legacy monogram, verified both PDF generation pipelines, and validated 0 TypeScript errors across stack)*
+*Last Updated: 2026-09-12 (Configured optional Bank Disbursement Account section with resilient sanitization in Employee Management, added default 'Workers' designation with quick-pick suggestion pills and Directory toolbar filtering, verified builds, and validated 0 TypeScript errors across stack)*
 
 
 

@@ -27,12 +27,20 @@ export const CreateEmployeeSchema = z
       .string()
       .optional()
       .nullable()
-      .transform((val) => (val && val.trim() ? val.trim() : null)),
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim();
+        return clean && clean.toUpperCase() !== 'N/A' && clean.toUpperCase() !== 'NA' ? clean : null;
+      }),
     bankIfsc: z
       .string()
       .optional()
       .nullable()
-      .transform((val) => (val && val.trim() ? val.trim().toUpperCase() : null))
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim().toUpperCase();
+        return clean && clean !== 'N/A' && clean !== 'NA' && clean !== 'NONE' && clean !== 'NIL' ? clean : null;
+      })
       .refine((val) => !val || IFSC_REGEX.test(val), {
         message: 'Invalid IFSC code format (e.g. SBIN0001234)',
       }),
@@ -40,12 +48,20 @@ export const CreateEmployeeSchema = z
       .string()
       .optional()
       .nullable()
-      .transform((val) => (val && val.trim() ? val.trim() : null)),
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim();
+        return clean && clean.toUpperCase() !== 'N/A' && clean.toUpperCase() !== 'NA' ? clean : null;
+      }),
     bankAccountHolder: z
       .string()
       .optional()
       .nullable()
-      .transform((val) => (val && val.trim() ? val.trim() : null)),
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim();
+        return clean && clean.toUpperCase() !== 'N/A' && clean.toUpperCase() !== 'NA' ? clean : null;
+      }),
     designation: z.string().min(2, 'Designation is required'),
     department: z.string().min(2, 'Department is required'),
     responsibilities: z.string().optional().nullable(),
@@ -88,12 +104,20 @@ export const UpdateEmployeeSchema = z
       .string()
       .optional()
       .nullable()
-      .transform((val) => (val && val.trim() ? val.trim() : null)),
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim();
+        return clean && clean.toUpperCase() !== 'N/A' && clean.toUpperCase() !== 'NA' ? clean : null;
+      }),
     bankIfsc: z
       .string()
       .optional()
       .nullable()
-      .transform((val) => (val && val.trim() ? val.trim().toUpperCase() : null))
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim().toUpperCase();
+        return clean && clean !== 'N/A' && clean !== 'NA' && clean !== 'NONE' && clean !== 'NIL' ? clean : null;
+      })
       .refine((val) => !val || IFSC_REGEX.test(val), {
         message: 'Invalid IFSC code format (e.g. SBIN0001234)',
       }),
@@ -101,12 +125,20 @@ export const UpdateEmployeeSchema = z
       .string()
       .optional()
       .nullable()
-      .transform((val) => (val && val.trim() ? val.trim() : null)),
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim();
+        return clean && clean.toUpperCase() !== 'N/A' && clean.toUpperCase() !== 'NA' ? clean : null;
+      }),
     bankAccountHolder: z
       .string()
       .optional()
       .nullable()
-      .transform((val) => (val && val.trim() ? val.trim() : null)),
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim();
+        return clean && clean.toUpperCase() !== 'N/A' && clean.toUpperCase() !== 'NA' ? clean : null;
+      }),
     designation: z.string().min(2).optional(),
     department: z.string().min(2).optional(),
     responsibilities: z.string().optional().nullable(),
@@ -142,6 +174,7 @@ export const UpdateEmployeeSchema = z
 export const ListEmployeesQuerySchema = z.object({
   search: z.string().optional(),
   department: z.string().optional(),
+  designation: z.string().optional(),
   status: EmployeeStatusEnum.optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(50),
