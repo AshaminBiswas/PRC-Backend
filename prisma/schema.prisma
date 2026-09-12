@@ -2560,6 +2560,7 @@ model EmployeeAdvance {
   employeeId    String              @map("employee_id")
   amount        Decimal             @db.Decimal(12, 2)
   reason        String              @db.Text
+  advanceDate   DateTime            @default(now()) @map("advance_date")
   recoveryMonth Int                 @map("recovery_month")
   recoveryYear  Int                 @map("recovery_year")
   isRecovered   Boolean             @default(false) @map("is_recovered")

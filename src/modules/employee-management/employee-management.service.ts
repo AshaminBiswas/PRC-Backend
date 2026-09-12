@@ -178,7 +178,90 @@ export async function recordAttendance(data: RecordAttendanceItemInput, markedBy
   const dateObj = new Date(data.date);
   const isSunday = dateObj.getDay() === 0;
 
-  // Check previous attendance to adjust leave balances if needed
+  // Fast path: If neither the current attendance nor the new status involves CL/EL,
+  // execute direct upsert in a single roundtrip without extra employee queries.
+  const involvesLeave = data.status === 'CL' || data.status === 'EL';
+
+  if (!involvesLeave) {
+    const existing = await prisma.employeeAttendance.findUnique({
+      where: {
+        employeeId_date: {
+          employeeId: data.employeeId,
+          date: dateObj,
+        },
+      },
+      select: { status: true },
+    });
+
+    if (existing && (existing.status === 'CL' || existing.status === 'EL')) {
+      // Must refund previous leave
+      const employee = await prisma.employee.findUnique({ where: { id: data.employeeId } });
+      if (employee) {
+        if (existing.status === 'CL') {
+          const newCl = Number(employee.clBalance) + 1;
+          await prisma.employee.update({ where: { id: data.employeeId }, data: { clBalance: newCl } });
+          await prisma.employeeLeaveLedger.create({
+            data: {
+              employeeId: data.employeeId,
+              leaveType: 'CL',
+              transactionType: 'ADJUSTMENT',
+              amount: new Prisma.Decimal(1),
+              balanceAfter: new Prisma.Decimal(newCl),
+              month: dateObj.getMonth() + 1,
+              year: dateObj.getFullYear(),
+              reason: `Refund 1 CL due to attendance status change from CL to ${data.status} on ${data.date}`,
+              recordedById: markedById,
+            },
+          });
+        } else if (existing.status === 'EL') {
+          const newEl = Number(employee.elBalance) + 1;
+          await prisma.employee.update({ where: { id: data.employeeId }, data: { elBalance: newEl } });
+          await prisma.employeeLeaveLedger.create({
+            data: {
+              employeeId: data.employeeId,
+              leaveType: 'EL',
+              transactionType: 'ADJUSTMENT',
+              amount: new Prisma.Decimal(1),
+              balanceAfter: new Prisma.Decimal(newEl),
+              month: dateObj.getMonth() + 1,
+              year: dateObj.getFullYear(),
+              reason: `Refund 1 EL due to attendance status change from EL to ${data.status} on ${data.date}`,
+              recordedById: markedById,
+            },
+          });
+        }
+      }
+    }
+
+    return await prisma.employeeAttendance.upsert({
+      where: {
+        employeeId_date: {
+          employeeId: data.employeeId,
+          date: dateObj,
+        },
+      },
+      create: {
+        employeeId: data.employeeId,
+        date: dateObj,
+        status: data.status,
+        isSunday,
+        isSundayOverride: data.isSundayOverride || false,
+        overtimeHours: new Prisma.Decimal(data.overtimeHours || 0),
+        notes: data.notes || null,
+        markedById,
+      },
+      update: {
+        status: data.status,
+        isSunday,
+        isSundayOverride: data.isSundayOverride || false,
+        overtimeHours: new Prisma.Decimal(data.overtimeHours || 0),
+        notes: data.notes || null,
+        markedById,
+      },
+    });
+  }
+
+  // Slow path: only runs when new status is CL or EL
   const existing = await prisma.employeeAttendance.findUnique({
     where: {
       employeeId_date: {
@@ -191,9 +274,7 @@ export async function recordAttendance(data: RecordAttendanceItemInput, markedBy
   const employee = await prisma.employee.findUnique({ where: { id: data.employeeId } });
   if (!employee) throw new Error('Employee not found');
 
-  // Handle leave balance mutations on status transition
   if (existing?.status !== data.status) {
-    // If was CL and changing to something else: refund 1 CL
     if (existing?.status === 'CL') {
       const newCl = Number(employee.clBalance) + 1;
       await prisma.employee.update({
@@ -214,7 +295,6 @@ export async function recordAttendance(data: RecordAttendanceItemInput, markedBy
         },
       });
     }
-    // If was EL and changing to something else: refund 1 EL
     if (existing?.status === 'EL') {
       const newEl = Number(employee.elBalance) + 1;
       await prisma.employee.update({
@@ -236,7 +316,6 @@ export async function recordAttendance(data: RecordAttendanceItemInput, markedBy
       });
     }
 
-    // If new status is CL: consume 1 CL
     if (data.status === 'CL') {
       const newCl = Math.max(0, Number(employee.clBalance) - 1);
       await prisma.employee.update({
@@ -257,7 +336,6 @@ export async function recordAttendance(data: RecordAttendanceItemInput, markedBy
         },
       });
     }
-    // If new status is EL: consume 1 EL
     if (data.status === 'EL') {
       const newEl = Math.max(0, Number(employee.elBalance) - 1);
       await prisma.employee.update({
@@ -309,9 +387,9 @@ export async function recordAttendance(data: RecordAttendanceItemInput, markedBy
 }
 
 export async function batchRecordAttendance(data: BatchAttendanceInput, markedById?: string) {
-  const results = [];
-  for (const item of data.records) {
-    const res = await recordAttendance(
+  // Execute all operations concurrently via Promise.all for high performance
+  const promises = data.records.map((item) =>
+    recordAttendance(
       {
         employeeId: item.employeeId,
         date: data.date,
@@ -321,10 +399,10 @@ export async function batchRecordAttendance(data: BatchAttendanceInput, markedBy
         notes: item.notes,
       },
       markedById
-    );
-    results.push(res);
-  }
-  return { updatedCount: results.length, records: results };
+    )
+  );
+  const records = await Promise.all(promises);
+  return { updatedCount: records.length, records };
 }
 
 export async function listAttendance(query: ListAttendanceQuery) {
@@ -458,11 +536,24 @@ export async function adjustLeave(employeeId: string, input: AdjustLeaveInput, r
   if (!employee) throw new Error('Employee not found');
 
   const currentBal = input.leaveType === 'CL' ? Number(employee.clBalance) : Number(employee.elBalance);
-  const newBal = Math.max(0, currentBal + input.amount);
 
-  await prisma.employee.update({
+  // Compute signed delta based on transactionType:
+  // USAGE (Debit): Must ALWAYS deduct from balance -> negative delta
+  // ACCRUAL (Credit): Must ALWAYS add to balance -> positive delta
+  // ADJUSTMENT: Use signed amount as provided
+  let delta = input.amount;
+  if (input.transactionType === 'USAGE') {
+    delta = -Math.abs(input.amount);
+  } else if (input.transactionType === 'ACCRUAL') {
+    delta = Math.abs(input.amount);
+  }
+
+  const newBal = Math.max(0, currentBal + delta);
+
+  const updatedEmployee = await prisma.employee.update({
     where: { id: employeeId },
     data: input.leaveType === 'CL' ? { clBalance: newBal } : { elBalance: newBal },
+    select: { id: true, employeeId: true, name: true, clBalance: true, elBalance: true },
   });
 
   const entry = await prisma.employeeLeaveLedger.create({
@@ -470,11 +561,11 @@ export async function adjustLeave(employeeId: string, input: AdjustLeaveInput, r
       employeeId,
       leaveType: input.leaveType,
       transactionType: input.transactionType,
-      amount: new Prisma.Decimal(input.amount),
+      amount: new Prisma.Decimal(delta),
       balanceAfter: new Prisma.Decimal(newBal),
       month: input.month,
       year: input.year,
-      reason: input.reason,
+      reason: input.reason.trim(),
       recordedById,
     },
   });
@@ -482,6 +573,9 @@ export async function adjustLeave(employeeId: string, input: AdjustLeaveInput, r
   return {
     entry,
     currentBalance: newBal,
+    previousBalance: currentBal,
+    delta,
+    employee: updatedEmployee,
   };
 }
 
@@ -510,6 +604,7 @@ export async function createAdvance(data: CreateAdvanceInput, createdById?: stri
       employeeId: data.employeeId,
       amount: new Prisma.Decimal(data.amount),
       reason: data.reason.trim(),
+      advanceDate: data.advanceDate ? new Date(data.advanceDate) : new Date(),
       recoveryMonth: data.recoveryMonth,
       recoveryYear: data.recoveryYear,
       createdById,
@@ -526,6 +621,7 @@ export async function updateAdvance(id: string, data: UpdateAdvanceInput) {
   const updateData: any = {};
   if (data.amount !== undefined) updateData.amount = new Prisma.Decimal(data.amount);
   if (data.reason !== undefined) updateData.reason = data.reason.trim();
+  if (data.advanceDate !== undefined) updateData.advanceDate = new Date(data.advanceDate);
   if (data.recoveryMonth !== undefined) updateData.recoveryMonth = data.recoveryMonth;
   if (data.recoveryYear !== undefined) updateData.recoveryYear = data.recoveryYear;
   if (data.isRecovered !== undefined) {

@@ -2177,6 +2177,7 @@ const STATEMENTS = [
     "last_number" INTEGER NOT NULL DEFAULT 0,
     "updated_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `ALTER TABLE "employee_advances" ADD COLUMN IF NOT EXISTS "advance_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
 ];
 
 async function run() {

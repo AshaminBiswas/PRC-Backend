@@ -169,6 +169,7 @@ export const CreateAdvanceSchema = z.object({
   employeeId: z.string().uuid('Invalid employee ID'),
   amount: z.coerce.number().positive('Advance amount must be greater than 0'),
   reason: z.string().min(2, 'Advance reason is required'),
+  advanceDate: z.coerce.date().default(() => new Date()),
   recoveryMonth: z.coerce.number().int().min(1).max(12),
   recoveryYear: z.coerce.number().int().min(2020).max(2100),
 });
@@ -176,6 +177,7 @@ export const CreateAdvanceSchema = z.object({
 export const UpdateAdvanceSchema = z.object({
   amount: z.coerce.number().positive().optional(),
   reason: z.string().min(2).optional(),
+  advanceDate: z.coerce.date().optional(),
   recoveryMonth: z.coerce.number().int().min(1).max(12).optional(),
   recoveryYear: z.coerce.number().int().min(2020).max(2100).optional(),
   isRecovered: z.boolean().optional(),
