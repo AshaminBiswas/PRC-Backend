@@ -67,6 +67,7 @@ export const CreateInstallerBillSchema = z
     paymentDate: z.string().optional(),
     paymentMode: z.string().optional(),
     notes: z.string().min(1, 'Internal Notes are mandatory').trim(),
+    sendEmailToInstaller: z.boolean().optional().default(true),
   })
   .superRefine((data, ctx) => {
     // If NCR is false, travelExpenses is enabled + required (must be >= 0, can be 0 or more, but when NCR is true, must be forced to 0)
@@ -128,3 +129,9 @@ export const ExportBillsQuerySchema = z.object({
 });
 
 export type ExportBillsQuery = z.infer<typeof ExportBillsQuerySchema>;
+
+export const ResendBillEmailSchema = z.object({
+  recipientEmail: z.string().email('Valid installer email is required').trim().toLowerCase().optional(),
+});
+
+export type ResendBillEmailInput = z.infer<typeof ResendBillEmailSchema>;

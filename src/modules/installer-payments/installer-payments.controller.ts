@@ -11,6 +11,7 @@ import {
   RecordPaymentSchema,
   ListInstallerBillsQuerySchema,
   ExportBillsQuerySchema,
+  ResendBillEmailSchema,
 } from './installer-payments.schema';
 
 // ─── Cubicle Model Master Handlers (Super Admin Only) ────────────────────────
@@ -172,12 +173,32 @@ export const downloadBillPdfHandler = async (req: Request, res: Response, next: 
 export const resendBillEmailHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const billId = req.params.id as string;
-    const success = await installerService.dispatchClearanceEmailWithPdf(billId);
+    const body = ResendBillEmailSchema.safeParse(req.body);
+    const recipientEmail = body.success ? body.data.recipientEmail : undefined;
+    const success = await installerService.dispatchClearanceEmailWithPdf(billId, recipientEmail);
     if (success) {
-      sendSuccess(res, { success: true }, 'Clearance email dispatched successfully');
+      sendSuccess(res, { success: true }, 'Email dispatched successfully to installer');
     } else {
-      sendError(res, { code: 'EMAIL_DISPATCH_FAILED', message: 'Failed to dispatch email to installer. Please verify SMTP/Resend credentials.' }, 500);
+      sendError(
+        res,
+        {
+          code: 'EMAIL_DISPATCH_FAILED',
+          message: 'Failed to dispatch email to installer. Please check recipient address or email credentials.',
+        },
+        500
+      );
     }
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteInstallerBillHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const billId = req.params.id as string;
+    const superAdminId = req.user?.id;
+    await installerService.deleteInstallerBill(billId, superAdminId);
+    sendSuccess(res, { success: true }, 'Installer bill deleted successfully');
   } catch (error) {
     next(error);
   }

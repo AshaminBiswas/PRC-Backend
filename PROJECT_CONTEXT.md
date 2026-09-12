@@ -602,21 +602,33 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - Status transitions: `PARTIAL` when `amountPaid < totalAmount`, and `CLEARED` when `amountPaid >= totalAmount`.
           - **Payment Installments Ledger**:
             - Supports recording partial installments (`InstallerBillPayment`) with payment date, mode (Bank Transfer, UPI, Cash, Cheque), reference/UTR number, and notes, updating `amountPaid` and `balanceDue` atomically.
-          - **Automated Bill PDF Generation & Transactional Email Dispatch**:
+          - **Automated Bill PDF Generation & Dedicated Installer Email Dispatch**:
             - Itemized PDF bill generated using `pdfmake` featuring Pacific Products & Solutions corporate styling, obsidian navy headers (`#0F172A`), amber accents (`#D97706`), clean vector icons, job/site details, itemized breakdown, payment summary, and authorized signature seal.
-            - Triggered automatically when bill status flips to `CLEARED` (or upon manual retry): dispatches high-priority email via `sendMail` with the PDF attached directly to the installer (`installerEmail`) and logs dispatch status (`emailStatus: SENT` / `FAILED`, `emailSentAt`, `emailError`).
+            - **Dedicated Recipient Routing (`to: bill.installerEmail`)**: Emails are explicitly dispatched to the installer's verified email address (`installerEmail`).
+            - **Dynamic Cleared vs Partial Styling**:
+              - **CLEARED bills**: Dispatches receipt with subject `Payment Cleared — Bill #${bill.billNo} — Pacific Products & Solutions`, green cleared banner, and zero balance confirmation.
+              - **PARTIAL bills**: Dispatches advice with subject `Payment Advice & Installation Bill #${bill.billNo} — Pacific Products & Solutions`, amber statement banner, and itemized breakdown of Amount Disbursed to Date vs Outstanding Balance Due.
+            - **Automatic Auto-Dispatch on Creation**: Configurable checkbox on `CreateInstallerBillPage.tsx` (`sendEmailToInstaller: true` by default) dispatches official payment voucher immediately upon generation.
+            - **Interactive Email Dispatch Modal (`SendBillEmailModal`)**: Admins can click "Send Email", "Resend", or "Retry" to open an interactive modal displaying Installer Name, editable destination email address, bill financial summary, and attached PDF voucher filename before dispatching.
+            - **Table Email Clearance Action**: Removed previous disabled "On Clearance" gating; now permits dispatching advice for any bill with an installer email, displaying a live green "Sent" badge alongside a "Resend" button.
+          - **Super Admin-Only Bill Deletion (`DELETE /api/v1/installer-payments/:id`)**:
+            - **Strict Security & RBAC**: Endpoint strictly protected by `authenticate` and `requireSuperAdmin` middleware. Rejects non-super-admins with HTTP 403 Forbidden.
+            - **Soft-Delete Safety**: Updates `deletedAt: new Date()`, safely preserving payment history, line items, and audit integrity while completely removing the bill from lists, KPI metrics, and Excel exports.
+            - **UI Integration**: Red trash action button rendered exclusively for `isSuperAdmin` in the desktop bills table, mobile touch cards, and the Bill Dossier Drawer.
+            - **Confirmation Modal (`DeleteBillConfirmationModal`)**: Double-confirmation dialog displaying bill number, installer details, site address, and amount before executing deletion.
           - **Admin Console Operational Hub & Dedicated New Bill Page**:
-            - **Dedicated "New Installer Bill" Page (`CreateInstallerBillPage.tsx`, route `'create-installer-bill'`)**: Replaced modal popup with a full-page view featuring breadcrumbs, "Back to Bills" navigation, installer auto-fetch selector, dynamic model rows, automated NCR postal PIN detection, explicit **Payment Date** picker, and **Mandatory Internal Notes** textarea.
+            - **Dedicated "New Installer Bill" Page (`CreateInstallerBillPage.tsx`, route `'create-installer-bill'`)**: Full-page view featuring breadcrumbs, "Back to Bills" navigation, installer auto-fetch selector, dynamic model rows, automated NCR postal PIN detection, explicit **Payment Date** picker, **Mandatory Internal Notes** textarea, and auto-dispatch email toggle.
             - **Super Admin Installers Directory (`cubicle_installers` & Admin Tab 2)**: Super Admin can register, edit, and deactivate installers (`name`, `email`, `phone`). Gated on API (`requireSuperAdmin`) and Admin UI.
             - **Admin Auto-Fetch**: When generating a new bill, Admins can choose from registered installers in a dropdown, automatically pre-filling the installer's legal name, registered email, and contact phone.
             - **Mandatory Internal Notes**: Required internal audit and verification notes field enforced with strict validation at both backend Zod schema and UI form levels.
-            - **Tab 1 ("Payment Records & Bills")**: 4 KPI metric cards (Total Bills, Cleared Payments ₹, Outstanding Balance ₹, Pending Clearance), comprehensive multi-field filters (Search by installer/bill/phone, Payment Status, NCR filter), desktop data table showing Payment Date, and touch-optimized mobile cards. Includes modal for Recording Installments and a slide-over Job Dossier Drawer with timeline history.
+            - **Tab 1 ("Payment Records & Bills")**: 4 KPI metric cards, multi-field search and filters, desktop table with Super Admin Delete and Email Dispatch actions, and touch-optimized mobile cards. Includes modal for Recording Installments and a slide-over Job Dossier Drawer with timeline history.
             - **Tab 3 ("Cubicle Models Master - Super Admin")**: Model CRUD with name, rate, active status toggle, and soft deletion. Hardened with defensive array checks, fallback seeds, and safe date/number formatters to prevent runtime view errors.
             - **Tab 4 ("Full Payment Export - Super Admin")**: Date range filtering, status filtering, and one-click binary `.xlsx` workbook generation with styled navy headers, Indian currency formatting, and totals row.
 
 ---
 
-*Last Updated: 2026-09-11 (Implemented automated NCR postal PIN code matching with 137+ pin master registry, fixed Cubicle Model Master view loading error with defensive guards, dedicated New Installer Bill page, Super Admin Installers Directory, Admin details auto-fetch, explicit payment date, and mandatory internal audit notes)*
+*Last Updated: 2026-09-12 (Implemented Super Admin-only Bill Deletion with soft-delete safety and confirmation modal; implemented Dedicated Installer Email Dispatch with recipient verification modal, dynamic Cleared vs Partial email templates, and auto-dispatch upon bill generation)*
+
 
 
 

@@ -450,8 +450,8 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
     return createdBill;
   });
 
-  // 7. Trigger auto-email if bill is created in CLEARED status
-  if (isCleared) {
+  // 7. Trigger auto-email to installer if requested (or cleared)
+  if (input.sendEmailToInstaller !== false) {
     setImmediate(() => {
       dispatchClearanceEmailWithPdf(bill.id).catch((e) =>
         logger.error(`[Installer Email] Auto-dispatch failed on creation: ${e?.message || e}`)
@@ -598,36 +598,76 @@ export async function getBillPdfBuffer(billId: string): Promise<{ buffer: Buffer
 }
 
 /**
- * Dispatch clearance notification email with the bill PDF attached.
+ * Dispatch clearance or partial payment advice notification email with the bill PDF attached.
+ * Supports customRecipient override and dynamically styles content for CLEARED vs PARTIAL bills.
  * Logs success/failure so admins can inspect or retry.
  */
-export async function dispatchClearanceEmailWithPdf(billId: string): Promise<boolean> {
+export async function dispatchClearanceEmailWithPdf(
+  billId: string,
+  customRecipient?: string
+): Promise<boolean> {
   const bill = await getInstallerBillById(billId);
-  logger.info(`[Installer Email] Preparing clearance email for Bill ${bill.billNo} to ${bill.installerEmail}`);
+  const targetEmail = (customRecipient || bill.installerEmail || '').trim().toLowerCase();
+
+  if (!targetEmail || !targetEmail.includes('@')) {
+    const errorMsg = `Invalid or missing installer email address: "${targetEmail}"`;
+    logger.error(`[Installer Email] Cannot send email for Bill ${bill.billNo}: ${errorMsg}`);
+    await prisma.installerBill.update({
+      where: { id: billId },
+      data: {
+        emailSent: false,
+        emailStatus: 'FAILED',
+        emailError: errorMsg,
+      },
+    });
+    return false;
+  }
+
+  logger.info(`[Installer Email] Preparing advice/clearance email for Bill ${bill.billNo} to ${targetEmail}`);
 
   try {
     const { buffer } = await getBillPdfBuffer(billId);
 
+    const isCleared = bill.paymentStatus === 'CLEARED';
     const totalFormatted = `₹${Number(bill.total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    const paidFormatted = `₹${Number(bill.amountPaid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+    const balanceFormatted = `₹${Number(bill.balanceDue).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
     const installDateFormatted = new Date(bill.installDate).toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
     });
 
-    const emailHtml = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b;">
-        <div style="text-align: center; margin-bottom: 24px;">
-          <h2 style="color: #0f172a; margin: 0 0 4px 0;">PACIFIC PRODUCTS & SOLUTIONS</h2>
-          <p style="color: #64748b; font-size: 13px; margin: 0;">Installation Disbursement Advice & Clearance Receipt</p>
-        </div>
+    const subject = isCleared
+      ? `Payment Cleared — Bill #${bill.billNo} — Pacific Products & Solutions`
+      : `Payment Advice & Installation Bill #${bill.billNo} — Pacific Products & Solutions`;
 
+    const statusBannerHtml = isCleared
+      ? `
         <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px;">
           <h3 style="color: #166534; margin: 0 0 6px 0; font-size: 15px;">✓ Payment Full & Cleared</h3>
           <p style="margin: 0; font-size: 13.5px; color: #15803d;">
             Dear <strong>${bill.installerName}</strong>, your payment of <strong>${totalFormatted}</strong> for installation job <strong>#${bill.billNo}</strong> has been successfully cleared and disbursed.
           </p>
         </div>
+      `
+      : `
+        <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px;">
+          <h3 style="color: #92400e; margin: 0 0 6px 0; font-size: 15px;">Installation Payment Advice & Statement</h3>
+          <p style="margin: 0; font-size: 13.5px; color: #b45309;">
+            Dear <strong>${bill.installerName}</strong>, please find below your current payment statement and attached installation voucher for job <strong>#${bill.billNo}</strong>.
+          </p>
+        </div>
+      `;
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h2 style="color: #0f172a; margin: 0 0 4px 0;">PACIFIC PRODUCTS & SOLUTIONS</h2>
+          <p style="color: #64748b; font-size: 13px; margin: 0;">Installation Disbursement Advice & Voucher</p>
+        </div>
+
+        ${statusBannerHtml}
 
         <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
           <tr style="border-bottom: 1px solid #e2e8f0;">
@@ -643,12 +683,16 @@ export async function dispatchClearanceEmailWithPdf(billId: string): Promise<boo
             <td style="padding: 8px 0; text-align: right;">${bill.siteAddress} (${bill.sitePin})</td>
           </tr>
           <tr style="border-bottom: 1px solid #e2e8f0;">
-            <td style="padding: 8px 0; color: #64748b;">Total Disbursed:</td>
-            <td style="padding: 8px 0; font-weight: bold; color: #047857; text-align: right;">${totalFormatted}</td>
+            <td style="padding: 8px 0; color: #64748b;">Total Bill Value:</td>
+            <td style="padding: 8px 0; font-weight: bold; color: #0f172a; text-align: right;">${totalFormatted}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 8px 0; color: #64748b;">Amount Disbursed:</td>
+            <td style="padding: 8px 0; font-weight: bold; color: #047857; text-align: right;">${paidFormatted}</td>
           </tr>
           <tr>
             <td style="padding: 8px 0; color: #64748b;">Outstanding Balance Due:</td>
-            <td style="padding: 8px 0; font-weight: bold; color: #047857; text-align: right;">₹0.00</td>
+            <td style="padding: 8px 0; font-weight: bold; color: ${Number(bill.balanceDue) > 0 ? '#b45309' : '#047857'}; text-align: right;">${balanceFormatted}</td>
           </tr>
         </table>
 
@@ -664,8 +708,8 @@ export async function dispatchClearanceEmailWithPdf(billId: string): Promise<boo
     `;
 
     await sendMail({
-      to: bill.installerEmail,
-      subject: `Payment Cleared — Bill #${bill.billNo} — Pacific Products & Solutions`,
+      to: targetEmail,
+      subject,
       html: emailHtml,
       attachments: [
         {
@@ -676,21 +720,27 @@ export async function dispatchClearanceEmailWithPdf(billId: string): Promise<boo
       ],
     });
 
+    const updatePayload: Prisma.InstallerBillUpdateInput = {
+      emailSent: true,
+      emailSentAt: new Date(),
+      emailStatus: 'SENT',
+      emailError: null,
+    };
+
+    if (customRecipient && customRecipient !== bill.installerEmail) {
+      updatePayload.installerEmail = customRecipient;
+    }
+
     await prisma.installerBill.update({
       where: { id: billId },
-      data: {
-        emailSent: true,
-        emailSentAt: new Date(),
-        emailStatus: 'SENT',
-        emailError: null,
-      },
+      data: updatePayload,
     });
 
-    logger.info(`[Installer Email] Successfully sent clearance email for Bill ${bill.billNo} to ${bill.installerEmail}`);
+    logger.info(`[Installer Email] Successfully sent advice/clearance email for Bill ${bill.billNo} to ${targetEmail}`);
     return true;
   } catch (err: any) {
     const errorMsg = err?.message || String(err);
-    logger.error(`[Installer Email] Error sending clearance email for Bill ${bill.billNo}: ${errorMsg}`);
+    logger.error(`[Installer Email] Error sending email for Bill ${bill.billNo}: ${errorMsg}`);
 
     await prisma.installerBill.update({
       where: { id: billId },
@@ -778,3 +828,30 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
 
   return await generateInstallerBillsExcel(exportItems, filterSummary);
 }
+
+// ─── Super Admin Bill Deletion ───────────────────────────────────────────────
+
+export async function deleteInstallerBill(billId: string, superAdminId?: string): Promise<boolean> {
+  const existing = await prisma.installerBill.findUnique({
+    where: { id: billId },
+  });
+
+  if (!existing || existing.deletedAt) {
+    const error: any = new Error('Installer bill not found or already deleted');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await prisma.installerBill.update({
+    where: { id: billId },
+    data: {
+      deletedAt: new Date(),
+    },
+  });
+
+  logger.info(
+    `[Installer Payments] Bill #${existing.billNo} (ID: ${billId}) soft-deleted by super admin ${superAdminId || 'unknown'}`
+  );
+  return true;
+}
+

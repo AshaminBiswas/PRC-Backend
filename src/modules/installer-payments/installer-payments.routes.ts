@@ -17,6 +17,7 @@ import {
   recordBillPaymentHandler,
   downloadBillPdfHandler,
   resendBillEmailHandler,
+  deleteInstallerBillHandler,
   exportInstallerBillsExcelHandler,
 } from './installer-payments.controller';
 
@@ -101,5 +102,6 @@ router.patch('/:id', authenticate, requireAdminOrSuperAdmin, updateInstallerBill
 router.post('/:id/payments', authenticate, requireAdminOrSuperAdmin, recordBillPaymentHandler);
 router.get('/:id/pdf', authenticate, requireAdminOrSuperAdmin, downloadBillPdfHandler);
 router.post('/:id/resend-email', authenticate, requireAdminOrSuperAdmin, resendBillEmailHandler);
+router.delete('/:id', authenticate, requireSuperAdmin, deleteInstallerBillHandler);
 
 export default router;
