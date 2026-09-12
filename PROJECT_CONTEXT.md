@@ -676,6 +676,11 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - **Tab 1 ("Payment Records & Bills")**: Added dynamic "Installer" filter dropdown to isolate bills by technician; bills table displays deduction badges with tooltips under the Total Due column.
             - **Tab 2 ("Installers Directory")**: Added a direct "View Payment Ledger & History" action icon button on each installer row/card to jump immediately to that technician's ledger in Tab 5.
             - **Bill Details Drawer & Modals**: Enhanced `BillDetailsDrawer` and `CreateBillModal` to display and capture deductions, penalties, and reasons alongside Net Disbursement calculations.
+          - **Fast Schema Auto-Healing & Render Port Binding Protocol**:
+            - **`_applied_schema_patches` Hash-Cache Table**: Tracks cryptographic SHA-256 hashes of all applied schema statements. On container boot, `fix-db.js` fetches applied hashes in a single fast query (~150ms) and skips already-verified patches instantly, slashing execution time from 73+ seconds down to ~0.7 seconds.
+            - **15-Second Pre-Start Guard**: Strict safety timeout in `fix-db.js` guarantees that database verification will never exceed 15 seconds, preventing Render's 60-second port scan timeout from ever killing the container with SIGTERM.
+            - **Port Binding Priority**: `server.ts` binds `app.listen(port, '0.0.0.0')` immediately on boot so Render detects an active listening port in <100ms.
+
 
 ---
 

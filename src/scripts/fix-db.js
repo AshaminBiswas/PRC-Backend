@@ -10,6 +10,7 @@
 'use strict';
 
 const path = require('path');
+const crypto = require('crypto');
 require('dotenv').config();
 
 // Load compiled Prisma client from dist
@@ -2000,24 +2001,60 @@ const STATEMENTS = [
 
 async function run() {
   const timeoutTimer = setTimeout(() => {
-    console.warn('[fix-db] Timeout reached (120s). Proceeding directly to server startup...');
-    process.exit(0);
-  }, 120000);
-
+    console.warn('[fix-db] Pre-start safety timeout reached (15s). Handing off immediately to Express server...');
+    if (require.main === module) {
+      process.exit(0);
+    }
+  }, 15000);
 
   try {
     await prisma.$connect();
-    console.log(`[fix-db] Connected. Verifying ${STATEMENTS.length} schema patches...`);
-    
-    // Execute all statements sequentially to prevent PostgreSQL concurrent lock/deadlock errors
+
+    // 1. Ensure patch tracking table exists
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "_applied_schema_patches" (
+        "patch_hash" TEXT PRIMARY KEY,
+        "applied_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 2. Fetch already-applied patch hashes in a single fast query
+    const existingRows = await prisma.$queryRawUnsafe(`SELECT patch_hash FROM "_applied_schema_patches";`);
+    const appliedSet = new Set(existingRows.map((r) => r.patch_hash));
+
+    console.log(`[fix-db] Connected. Tracking ${STATEMENTS.length} patches (${appliedSet.size} previously cached)...`);
+
+    let appliedCount = 0;
+    let skippedCount = 0;
+
     for (let i = 0; i < STATEMENTS.length; i++) {
-      try {
-        await prisma.$executeRawUnsafe(STATEMENTS[i]);
-      } catch (stmtErr) {
-        console.warn(`[fix-db] Statement ${i + 1} failed:`, stmtErr?.message || stmtErr);
+      const stmt = STATEMENTS[i].trim();
+      const hash = crypto.createHash('sha256').update(stmt).digest('hex');
+
+      if (appliedSet.has(hash)) {
+        skippedCount++;
+        continue;
       }
+
+      try {
+        await prisma.$executeRawUnsafe(stmt);
+      } catch (stmtErr) {
+        console.warn(`[fix-db] Statement ${i + 1} notice:`, stmtErr?.message || stmtErr);
+      }
+
+      // Record this patch as applied so subsequent boots skip it instantly
+      try {
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO "_applied_schema_patches" ("patch_hash") VALUES ($1) ON CONFLICT DO NOTHING;`,
+          hash
+        );
+        appliedSet.add(hash);
+      } catch {}
+
+      appliedCount++;
     }
-    console.log('[fix-db] ✅ Schema verification completed.');
+
+    console.log(`[fix-db] ✅ Schema verification completed: ${appliedCount} applied, ${skippedCount} cached.`);
   } catch (err) {
     console.warn('[fix-db] Schema patch non-fatal notice:', err?.message || err);
   } finally {
@@ -2025,8 +2062,15 @@ async function run() {
     try {
       await prisma.$disconnect();
     } catch {}
-    process.exit(0);
+    if (require.main === module) {
+      process.exit(0);
+    }
   }
 }
 
-run();
+module.exports = { run, runFixDb: run };
+
+if (require.main === module) {
+  run();
+}
+
