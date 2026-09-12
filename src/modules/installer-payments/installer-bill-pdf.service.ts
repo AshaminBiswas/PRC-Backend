@@ -210,8 +210,8 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
             alignment: 'right',
             margin: [0, 4, 0, 0],
             stack: [
-              { text: 'PACIFIC RESTROOM', bold: true, fontSize: 13, color: NAVY },
-              { text: 'Cubicle & Locker Solutions', bold: true, fontSize: 8.5, color: AMBER },
+              { text: 'PACIFIC PRODUCTS & SOLUTIONS', bold: true, fontSize: 13, color: NAVY },
+              { text: 'Modular Restroom Hardware & Cubicle Solutions', fontSize: 8, color: GRAY },
               { text: 'GSTIN: 07AAACP0123A1Z5 | Support: support@prchardware.com', fontSize: 7.5, color: GRAY, margin: [0, 2, 0, 0] },
               { text: 'New Delhi HQ | Kolkata Hub | Pan-India Installations', fontSize: 7.5, color: GRAY },
             ],
@@ -526,7 +526,7 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
             width: '50%',
             alignment: 'right',
             stack: [
-              { text: 'For PACIFIC RESTROOM CUBICLE & LOCKER SOLUTIONS', bold: true, fontSize: 8.5, color: NAVY },
+              { text: 'For PACIFIC PRODUCTS & SOLUTIONS', bold: true, fontSize: 8.5, color: NAVY },
               { text: '[Authorized Signatory / Accounts Desk]', fontSize: 7.5, color: GRAY, margin: [0, 28, 0, 0] },
               { text: `Generated On: ${formatDate(new Date())}`, fontSize: 7, color: GRAY },
             ],
