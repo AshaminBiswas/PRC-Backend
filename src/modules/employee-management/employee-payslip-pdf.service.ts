@@ -121,10 +121,10 @@ export interface EmployeePayslipPdfData {
     joiningDate: Date | string;
     governmentIdType: string;
     governmentIdNumber: string;
-    bankAccountNumber: string;
-    bankIfsc: string;
-    bankName: string;
-    bankAccountHolder: string;
+    bankAccountNumber?: string | null;
+    bankIfsc?: string | null;
+    bankName?: string | null;
+    bankAccountHolder?: string | null;
     clBalance?: number | string;
     elBalance?: number | string;
   };
@@ -179,7 +179,7 @@ export async function generateEmployeePayslipPdf(data: EmployeePayslipPdfData): 
                     margin: [0, 2, 0, 0],
                   },
                   {
-                    text: 'Contact: payroll@pacifichardware.com | Web: www.pacifichardware.com',
+                    text: 'Contact: info@pacificproduct.in | Web: www.pacificproduct.in',
                     fontSize: 7.5,
                     color: GRAY,
                   },
@@ -298,28 +298,28 @@ export async function generateEmployeePayslipPdf(data: EmployeePayslipPdfData): 
                   {
                     columns: [
                       { width: '42%', text: 'Account Holder:', bold: true, color: GRAY, fontSize: 8 },
-                      { width: '58%', text: employee.bankAccountHolder, fontSize: 8 },
+                      { width: '58%', text: employee.bankAccountHolder || 'N/A', fontSize: 8 },
                     ],
                     margin: [0, 1.5, 0, 1.5],
                   },
                   {
                     columns: [
                       { width: '42%', text: 'Bank Name:', bold: true, color: GRAY, fontSize: 8 },
-                      { width: '58%', text: employee.bankName, fontSize: 8 },
+                      { width: '58%', text: employee.bankName || 'N/A', fontSize: 8 },
                     ],
                     margin: [0, 1.5, 0, 1.5],
                   },
                   {
                     columns: [
                       { width: '42%', text: 'Account Number:', bold: true, color: GRAY, fontSize: 8 },
-                      { width: '58%', text: employee.bankAccountNumber, bold: true, fontSize: 8 },
+                      { width: '58%', text: employee.bankAccountNumber || 'N/A', bold: true, fontSize: 8 },
                     ],
                     margin: [0, 1.5, 0, 1.5],
                   },
                   {
                     columns: [
                       { width: '42%', text: 'IFSC Code:', bold: true, color: GRAY, fontSize: 8 },
-                      { width: '58%', text: employee.bankIfsc, fontSize: 8 },
+                      { width: '58%', text: employee.bankIfsc || 'N/A', fontSize: 8 },
                     ],
                     margin: [0, 1.5, 0, 1.5],
                   },
@@ -525,7 +525,7 @@ export async function generateEmployeePayslipPdf(data: EmployeePayslipPdfData): 
                 color: GRAY,
               },
               {
-                text: '3. For payroll queries, discrepancy reports, or TDS inquiries, contact accounts@pacifichardware.com within 5 working days.',
+                text: '3. For payroll queries, discrepancy reports, or TDS inquiries, contact info@pacificproduct.in within 5 working days.',
                 fontSize: 7,
                 color: GRAY,
               },

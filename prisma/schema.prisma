@@ -2482,10 +2482,10 @@ model Employee {
   address            String           @db.Text
   governmentIdType   GovernmentIdType @map("government_id_type")
   governmentIdNumber String           @map("government_id_number")
-  bankAccountNumber  String           @map("bank_account_number")
-  bankIfsc           String           @map("bank_ifsc")
-  bankName           String           @map("bank_name")
-  bankAccountHolder  String           @map("bank_account_holder")
+  bankAccountNumber  String?          @map("bank_account_number")
+  bankIfsc           String?          @map("bank_ifsc")
+  bankName           String?          @map("bank_name")
+  bankAccountHolder  String?          @map("bank_account_holder")
   designation        String
   department         String
   responsibilities   String?          @db.Text

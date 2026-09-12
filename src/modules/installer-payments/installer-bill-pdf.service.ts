@@ -212,7 +212,7 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
             stack: [
               { text: 'PACIFIC PRODUCTS & SOLUTIONS', bold: true, fontSize: 13, color: NAVY },
               { text: 'Modular Restroom Hardware & Cubicle Solutions', fontSize: 8, color: GRAY },
-              { text: 'GSTIN: 07AAACP0123A1Z5 | Support: support@prchardware.com', fontSize: 7.5, color: GRAY, margin: [0, 2, 0, 0] },
+              { text: 'Contact: info@pacificproduct.in | Web: www.pacificproduct.in', fontSize: 7.5, color: GRAY, margin: [0, 2, 0, 0] },
               { text: 'New Delhi HQ | Kolkata Hub | Pan-India Installations', fontSize: 7.5, color: GRAY },
             ],
           },

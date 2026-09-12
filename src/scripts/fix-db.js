@@ -2031,10 +2031,10 @@ const STATEMENTS = [
     "address"              TEXT NOT NULL,
     "government_id_type"   "GovernmentIdType" NOT NULL,
     "government_id_number" TEXT NOT NULL,
-    "bank_account_number"  TEXT NOT NULL,
-    "bank_ifsc"            TEXT NOT NULL,
-    "bank_name"            TEXT NOT NULL,
-    "bank_account_holder"  TEXT NOT NULL,
+    "bank_account_number"  TEXT,
+    "bank_ifsc"            TEXT,
+    "bank_name"            TEXT,
+    "bank_account_holder"  TEXT,
     "designation"          TEXT NOT NULL,
     "department"           TEXT NOT NULL,
     "responsibilities"     TEXT,
@@ -2178,6 +2178,10 @@ const STATEMENTS = [
     "updated_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
   `ALTER TABLE "employee_advances" ADD COLUMN IF NOT EXISTS "advance_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
+  `ALTER TABLE "employees" ALTER COLUMN "bank_account_number" DROP NOT NULL`,
+  `ALTER TABLE "employees" ALTER COLUMN "bank_ifsc" DROP NOT NULL`,
+  `ALTER TABLE "employees" ALTER COLUMN "bank_name" DROP NOT NULL`,
+  `ALTER TABLE "employees" ALTER COLUMN "bank_account_holder" DROP NOT NULL`,
 ];
 
 async function run() {

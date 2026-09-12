@@ -23,15 +23,29 @@ export const CreateEmployeeSchema = z
     address: z.string().min(5, 'Full residential address is required'),
     governmentIdType: GovernmentIdTypeEnum,
     governmentIdNumber: z.string().min(4, 'Government ID number is required'),
-    bankAccountNumber: z.string().min(6, 'Valid bank account number is required'),
+    bankAccountNumber: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() ? val.trim() : null)),
     bankIfsc: z
       .string()
-      .transform((val) => val.trim().toUpperCase())
-      .refine((val) => IFSC_REGEX.test(val), {
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() ? val.trim().toUpperCase() : null))
+      .refine((val) => !val || IFSC_REGEX.test(val), {
         message: 'Invalid IFSC code format (e.g. SBIN0001234)',
       }),
-    bankName: z.string().min(2, 'Bank name is required'),
-    bankAccountHolder: z.string().min(2, 'Account holder name is required'),
+    bankName: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() ? val.trim() : null)),
+    bankAccountHolder: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() ? val.trim() : null)),
     designation: z.string().min(2, 'Designation is required'),
     department: z.string().min(2, 'Department is required'),
     responsibilities: z.string().optional().nullable(),
@@ -70,16 +84,29 @@ export const UpdateEmployeeSchema = z
     address: z.string().min(5).optional(),
     governmentIdType: GovernmentIdTypeEnum.optional(),
     governmentIdNumber: z.string().min(4).optional(),
-    bankAccountNumber: z.string().min(6).optional(),
+    bankAccountNumber: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() ? val.trim() : null)),
     bankIfsc: z
       .string()
-      .transform((val) => val.trim().toUpperCase())
-      .refine((val) => IFSC_REGEX.test(val), {
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() ? val.trim().toUpperCase() : null))
+      .refine((val) => !val || IFSC_REGEX.test(val), {
         message: 'Invalid IFSC code format (e.g. SBIN0001234)',
-      })
-      .optional(),
-    bankName: z.string().min(2).optional(),
-    bankAccountHolder: z.string().min(2).optional(),
+      }),
+    bankName: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() ? val.trim() : null)),
+    bankAccountHolder: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => (val && val.trim() ? val.trim() : null)),
     designation: z.string().min(2).optional(),
     department: z.string().min(2).optional(),
     responsibilities: z.string().optional().nullable(),

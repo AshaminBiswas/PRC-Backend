@@ -903,7 +903,7 @@ export async function dispatchClearanceEmailWithPdf(
 
         <div style="border-top: 1px solid #e2e8f0; padding-top: 14px; font-size: 11.5px; color: #94a3b8; text-align: center;">
           Pacific Products & Solutions • Restroom Cubicles & Commercial Architectural Hardware<br/>
-          New Delhi HQ • support@prchardware.com
+          Contact: info@pacificproduct.in | Web: www.pacificproduct.in
         </div>
       </div>
     `;

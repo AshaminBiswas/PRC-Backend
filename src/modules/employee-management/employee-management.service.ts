@@ -71,10 +71,10 @@ export async function createEmployee(data: CreateEmployeeInput, _createdById?: s
       address: data.address.trim(),
       governmentIdType: data.governmentIdType,
       governmentIdNumber: data.governmentIdNumber.trim().toUpperCase(),
-      bankAccountNumber: data.bankAccountNumber.trim(),
-      bankIfsc: data.bankIfsc.trim().toUpperCase(),
-      bankName: data.bankName.trim(),
-      bankAccountHolder: data.bankAccountHolder.trim(),
+      bankAccountNumber: data.bankAccountNumber ? data.bankAccountNumber.trim() : null,
+      bankIfsc: data.bankIfsc ? data.bankIfsc.trim().toUpperCase() : null,
+      bankName: data.bankName ? data.bankName.trim() : null,
+      bankAccountHolder: data.bankAccountHolder ? data.bankAccountHolder.trim() : null,
       designation: data.designation.trim(),
       department: data.department.trim(),
       responsibilities: data.responsibilities?.trim() || null,
@@ -98,10 +98,10 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
   if (data.address !== undefined) updateData.address = data.address.trim();
   if (data.governmentIdType !== undefined) updateData.governmentIdType = data.governmentIdType;
   if (data.governmentIdNumber !== undefined) updateData.governmentIdNumber = data.governmentIdNumber.trim().toUpperCase();
-  if (data.bankAccountNumber !== undefined) updateData.bankAccountNumber = data.bankAccountNumber.trim();
-  if (data.bankIfsc !== undefined) updateData.bankIfsc = data.bankIfsc.trim().toUpperCase();
-  if (data.bankName !== undefined) updateData.bankName = data.bankName.trim();
-  if (data.bankAccountHolder !== undefined) updateData.bankAccountHolder = data.bankAccountHolder.trim();
+  if (data.bankAccountNumber !== undefined) updateData.bankAccountNumber = data.bankAccountNumber ? data.bankAccountNumber.trim() : null;
+  if (data.bankIfsc !== undefined) updateData.bankIfsc = data.bankIfsc ? data.bankIfsc.trim().toUpperCase() : null;
+  if (data.bankName !== undefined) updateData.bankName = data.bankName ? data.bankName.trim() : null;
+  if (data.bankAccountHolder !== undefined) updateData.bankAccountHolder = data.bankAccountHolder ? data.bankAccountHolder.trim() : null;
   if (data.designation !== undefined) updateData.designation = data.designation.trim();
   if (data.department !== undefined) updateData.department = data.department.trim();
   if (data.responsibilities !== undefined) updateData.responsibilities = data.responsibilities?.trim() || null;
@@ -1164,10 +1164,10 @@ export async function getPayslipPdfBuffer(payrollRunId: string): Promise<{ buffe
       joiningDate: run.employee.joiningDate,
       governmentIdType: run.employee.governmentIdType,
       governmentIdNumber: run.employee.governmentIdNumber,
-      bankAccountNumber: run.employee.bankAccountNumber,
-      bankIfsc: run.employee.bankIfsc,
-      bankName: run.employee.bankName,
-      bankAccountHolder: run.employee.bankAccountHolder,
+      bankAccountNumber: run.employee.bankAccountNumber || 'N/A',
+      bankIfsc: run.employee.bankIfsc || 'N/A',
+      bankName: run.employee.bankName || 'N/A',
+      bankAccountHolder: run.employee.bankAccountHolder || 'N/A',
       clBalance: run.employee.clBalance.toString(),
       elBalance: run.employee.elBalance.toString(),
     },
@@ -1237,15 +1237,22 @@ export async function dispatchPayslipEmail(payrollRunId: string, recipientEmail?
             </table>
           </div>
 
-          <p style="font-size: 13px; color: #64748b; line-height: 1.5;">
+          ${
+            run.employee.bankName && run.employee.bankAccountNumber
+              ? `<p style="font-size: 13px; color: #64748b; line-height: 1.5;">
             The net amount is disbursed to your registered bank account (<strong>${run.employee.bankName} - ${run.employee.bankAccountNumber}</strong>).
-          </p>
+          </p>`
+              : `<p style="font-size: 13px; color: #64748b; line-height: 1.5;">
+            The net amount is disbursed via <strong>${run.paymentMode || 'registered payout channel'}</strong>.
+          </p>`
+          }
           <p style="font-size: 12px; color: #94a3b8; margin-top: 24px;">
-            If you have any questions or notice any discrepancy regarding your attendance or calculations, please contact HR/Accounts at payroll@pacifichardware.com.
+            If you have any questions or notice any discrepancy regarding your attendance or calculations, please contact HR/Accounts at info@pacificproduct.in.
           </p>
         </div>
 
         <div style="background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px; text-align: center; font-size: 11px; color: #94a3b8;">
+          Pacific Products & Solutions • Contact: info@pacificproduct.in | Web: www.pacificproduct.in<br/>
           This is an automated compensation advice from Pacific Products & Solutions. Please do not reply directly to this email.
         </div>
       </div>
