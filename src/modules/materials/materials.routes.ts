@@ -15,8 +15,8 @@ router.get('/', listMaterialsHandler);
 router.get('/:idOrSlug', getMaterialHandler);
 
 // Admin-only management routes
-router.post('/', authenticate, authorize('admin', 'super_admin', 'super-admin', 'manager'), createMaterialHandler);
-router.patch('/:id', authenticate, authorize('admin', 'super_admin', 'super-admin', 'manager'), updateMaterialHandler);
-router.delete('/:id', authenticate, authorize('admin', 'super_admin', 'super-admin', 'manager'), deleteMaterialHandler);
+router.post('/', authenticate, authorize('materials.create', 'materials.manage', 'admin'), createMaterialHandler);
+router.patch('/:id', authenticate, authorize('materials.update', 'materials.manage', 'admin'), updateMaterialHandler);
+router.delete('/:id', authenticate, authorize('materials.delete', 'materials.manage', 'admin'), deleteMaterialHandler);
 
 export default router;

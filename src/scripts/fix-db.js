@@ -2240,6 +2240,14 @@ async function run() {
     }
 
     console.log(`[fix-db] ✅ Schema verification completed: ${appliedCount} applied, ${skippedCount} cached.`);
+
+    // ─── Self-Healing: Verify & Upsert Platform Permissions Catalog ───────────
+    try {
+      const { seedAllPermissions } = require('./seed-all-permissions');
+      await seedAllPermissions();
+    } catch (permErr) {
+      console.warn('[fix-db] Permissions verification non-fatal notice:', permErr?.message || permErr);
+    }
   } catch (err) {
     console.warn('[fix-db] Schema patch non-fatal notice:', err?.message || err);
   } finally {

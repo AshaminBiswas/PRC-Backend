@@ -17,7 +17,7 @@ const router = Router();
 router.use(authenticate);
 router.use(adminLimiter);
 
-// Allow customer to view their own pricing, or staff with users.read/quotes.read
+// Allow customer to view their own pricing, or staff with users.read/quotes.read/b2b_pricing.read
 const authorizeCustomerOrStaff = (req: any, res: any, next: any) => {
   if (!req.user) {
     return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } });
@@ -25,7 +25,7 @@ const authorizeCustomerOrStaff = (req: any, res: any, next: any) => {
   if (req.user.id === req.params.userId) {
     return next();
   }
-  return authorize('users.read', 'quotes.read')(req, res, next);
+  return authorize('users.read', 'quotes.read', 'b2b_pricing.read')(req, res, next);
 };
 
 // ─── Customer Self-Service Route ─────────────────────────────────────────────
@@ -41,7 +41,7 @@ router.get(
 
 router.post(
   '/customer/:userId',
-  authorize('users.update', 'quotes.update'),
+  authorize('users.update', 'quotes.update', 'b2b_pricing.create', 'b2b_pricing.update'),
   validate(UuidParamSchema, 'params'),
   validate(SetCustomerProductPriceSchema),
   controller.setCustomerProductPrice
@@ -49,7 +49,7 @@ router.post(
 
 router.post(
   '/customer/:userId/bulk',
-  authorize('users.update', 'quotes.update'),
+  authorize('users.update', 'quotes.update', 'b2b_pricing.create', 'b2b_pricing.update'),
   validate(UuidParamSchema, 'params'),
   validate(BulkSetCustomerPricesSchema),
   controller.bulkSetCustomerPrices
@@ -57,7 +57,7 @@ router.post(
 
 router.post(
   '/customer/:userId/discount',
-  authorize('users.update', 'quotes.update'),
+  authorize('users.update', 'quotes.update', 'b2b_pricing.create', 'b2b_pricing.update'),
   validate(UuidParamSchema, 'params'),
   validate(ApplyFlatDiscountSchema),
   controller.applyFlatDiscount
@@ -65,7 +65,7 @@ router.post(
 
 router.delete(
   '/customer/:userId/:productId',
-  authorize('users.update', 'quotes.update'),
+  authorize('users.update', 'quotes.update', 'b2b_pricing.delete'),
   validate(UserProductParamSchema, 'params'),
   controller.deleteCustomerProductPrice
 );
