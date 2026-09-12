@@ -1996,7 +1996,187 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS "cubicle_installers_email_idx" ON "cubicle_installers"("email")`,
   `CREATE INDEX IF NOT EXISTS "installer_bills_installer_id_idx" ON "installer_bills"("installer_id")`,
   `UPDATE "cubicle_models" SET "category" = 'UMP' WHERE ("model_name" ILIKE '%ump%' OR "model_name" ILIKE '%upm%') AND "category" != 'UMP'`,
+  `UPDATE "cubicle_models" SET "category" = 'UMP' WHERE ("model_name" ILIKE '%ump%' OR "model_name" ILIKE '%upm%') AND "category" != 'UMP'`,
   `UPDATE "cubicle_models" SET "category" = 'LOCKER' WHERE "model_name" ILIKE '%locker%' AND "category" != 'LOCKER'`,
+
+  // ─── EMPLOYEE MANAGEMENT & PAYROLL MODULE ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'EmployeeStatus') THEN
+      CREATE TYPE "EmployeeStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'TERMINATED');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'GovernmentIdType') THEN
+      CREATE TYPE "GovernmentIdType" AS ENUM ('AADHAAR', 'PAN', 'VOTER_ID');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AttendanceStatus') THEN
+      CREATE TYPE "AttendanceStatus" AS ENUM ('PRESENT', 'CL', 'EL', 'UL', 'HALF_DAY', 'LEAVE');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PayrollStatus') THEN
+      CREATE TYPE "PayrollStatus" AS ENUM ('DRAFT', 'FINALIZED', 'PAID');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'LeaveType') THEN
+      CREATE TYPE "LeaveType" AS ENUM ('CL', 'EL');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'LeaveTransactionType') THEN
+      CREATE TYPE "LeaveTransactionType" AS ENUM ('ACCRUAL', 'USAGE', 'ADJUSTMENT');
+    END IF;
+  END $$`,
+
+  // Create employees table
+  `CREATE TABLE IF NOT EXISTS "employees" (
+    "id"                   TEXT NOT NULL PRIMARY KEY,
+    "employee_id"          TEXT NOT NULL UNIQUE,
+    "name"                 TEXT NOT NULL,
+    "email"                TEXT NOT NULL UNIQUE,
+    "phone"                TEXT NOT NULL,
+    "address"              TEXT NOT NULL,
+    "government_id_type"   "GovernmentIdType" NOT NULL,
+    "government_id_number" TEXT NOT NULL,
+    "bank_account_number"  TEXT NOT NULL,
+    "bank_ifsc"            TEXT NOT NULL,
+    "bank_name"            TEXT NOT NULL,
+    "bank_account_holder"  TEXT NOT NULL,
+    "designation"          TEXT NOT NULL,
+    "department"           TEXT NOT NULL,
+    "responsibilities"     TEXT,
+    "monthly_ctc"          DECIMAL(12, 2) NOT NULL,
+    "joining_date"         TIMESTAMP(3) NOT NULL,
+    "status"               "EmployeeStatus" NOT NULL DEFAULT 'ACTIVE',
+    "cl_balance"           DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    "el_balance"           DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    "created_at"           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "employees_employee_id_idx" ON "employees"("employee_id")`,
+  `CREATE INDEX IF NOT EXISTS "employees_email_idx" ON "employees"("email")`,
+  `CREATE INDEX IF NOT EXISTS "employees_department_idx" ON "employees"("department")`,
+  `CREATE INDEX IF NOT EXISTS "employees_status_idx" ON "employees"("status")`,
+
+  // Create employee_attendances table
+  `CREATE TABLE IF NOT EXISTS "employee_attendances" (
+    "id"                 TEXT NOT NULL PRIMARY KEY,
+    "employee_id"        TEXT NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
+    "date"               DATE NOT NULL,
+    "status"             "AttendanceStatus" NOT NULL DEFAULT 'PRESENT',
+    "is_sunday"          BOOLEAN NOT NULL DEFAULT FALSE,
+    "is_sunday_override" BOOLEAN NOT NULL DEFAULT FALSE,
+    "overtime_hours"     DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    "notes"              TEXT,
+    "marked_by_id"       TEXT,
+    "created_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "employee_attendances_employee_date_unique" UNIQUE ("employee_id", "date")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "employee_attendances_employee_id_idx" ON "employee_attendances"("employee_id")`,
+  `CREATE INDEX IF NOT EXISTS "employee_attendances_date_idx" ON "employee_attendances"("date")`,
+  `CREATE INDEX IF NOT EXISTS "employee_attendances_status_idx" ON "employee_attendances"("status")`,
+
+  // Create employee_leave_ledgers table
+  `CREATE TABLE IF NOT EXISTS "employee_leave_ledgers" (
+    "id"               TEXT NOT NULL PRIMARY KEY,
+    "employee_id"      TEXT NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
+    "leave_type"       "LeaveType" NOT NULL,
+    "transaction_type" "LeaveTransactionType" NOT NULL,
+    "amount"           DECIMAL(5, 2) NOT NULL,
+    "balance_after"    DECIMAL(5, 2) NOT NULL,
+    "month"            INTEGER NOT NULL,
+    "year"             INTEGER NOT NULL,
+    "reason"           TEXT,
+    "recorded_by_id"   TEXT,
+    "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "employee_leave_ledgers_employee_id_idx" ON "employee_leave_ledgers"("employee_id")`,
+  `CREATE INDEX IF NOT EXISTS "employee_leave_ledgers_year_month_idx" ON "employee_leave_ledgers"("year", "month")`,
+
+  // Create employee_payroll_runs table
+  `CREATE TABLE IF NOT EXISTS "employee_payroll_runs" (
+    "id"                  TEXT NOT NULL PRIMARY KEY,
+    "employee_id"         TEXT NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
+    "month"               INTEGER NOT NULL,
+    "year"                INTEGER NOT NULL,
+    "monthly_ctc"         DECIMAL(12, 2) NOT NULL,
+    "total_calendar_days" INTEGER NOT NULL,
+    "sundays_count"       INTEGER NOT NULL,
+    "approved_sundays"    INTEGER NOT NULL DEFAULT 0,
+    "payable_days"        DECIMAL(6, 2) NOT NULL,
+    "per_day_rate"        DECIMAL(12, 2) NOT NULL,
+    "present_days"        DECIMAL(6, 2) NOT NULL,
+    "cl_days"             DECIMAL(6, 2) NOT NULL,
+    "el_days"             DECIMAL(6, 2) NOT NULL,
+    "half_days"           DECIMAL(6, 2) NOT NULL,
+    "unpaid_days"         DECIMAL(6, 2) NOT NULL,
+    "paid_days"           DECIMAL(6, 2) NOT NULL,
+    "overtime_hours"      DECIMAL(6, 2) NOT NULL DEFAULT 0.00,
+    "overtime_rate"       DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    "overtime_pay"        DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    "gross_salary"        DECIMAL(12, 2) NOT NULL,
+    "advance_deduction"   DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    "other_deductions"    DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    "deduction_summary"   JSONB,
+    "net_salary"          DECIMAL(12, 2) NOT NULL,
+    "status"              "PayrollStatus" NOT NULL DEFAULT 'DRAFT',
+    "paid_at"             TIMESTAMP(3),
+    "payment_mode"        TEXT,
+    "payment_reference"   TEXT,
+    "payment_notes"       TEXT,
+    "email_sent"          BOOLEAN NOT NULL DEFAULT FALSE,
+    "email_sent_at"       TIMESTAMP(3),
+    "email_status"        TEXT,
+    "email_error"         TEXT,
+    "created_by_id"       TEXT,
+    "finalized_by_id"     TEXT,
+    "created_at"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "employee_payroll_runs_employee_year_month_unique" UNIQUE ("employee_id", "year", "month")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "employee_payroll_runs_employee_id_idx" ON "employee_payroll_runs"("employee_id")`,
+  `CREATE INDEX IF NOT EXISTS "employee_payroll_runs_year_month_idx" ON "employee_payroll_runs"("year", "month")`,
+  `CREATE INDEX IF NOT EXISTS "employee_payroll_runs_status_idx" ON "employee_payroll_runs"("status")`,
+
+  // Create employee_advances table
+  `CREATE TABLE IF NOT EXISTS "employee_advances" (
+    "id"             TEXT NOT NULL PRIMARY KEY,
+    "employee_id"    TEXT NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
+    "amount"         DECIMAL(12, 2) NOT NULL,
+    "reason"         TEXT NOT NULL,
+    "recovery_month" INTEGER NOT NULL,
+    "recovery_year"  INTEGER NOT NULL,
+    "is_recovered"   BOOLEAN NOT NULL DEFAULT FALSE,
+    "recovered_at"   TIMESTAMP(3),
+    "payroll_run_id" TEXT REFERENCES "employee_payroll_runs"("id") ON DELETE SET NULL,
+    "created_by_id"  TEXT,
+    "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "employee_advances_employee_id_idx" ON "employee_advances"("employee_id")`,
+  `CREATE INDEX IF NOT EXISTS "employee_advances_recovery_idx" ON "employee_advances"("recovery_year", "recovery_month")`,
+  `CREATE INDEX IF NOT EXISTS "employee_advances_is_recovered_idx" ON "employee_advances"("is_recovered")`,
+
+  // Create employee_deductions table
+  `CREATE TABLE IF NOT EXISTS "employee_deductions" (
+    "id"             TEXT NOT NULL PRIMARY KEY,
+    "employee_id"    TEXT NOT NULL REFERENCES "employees"("id") ON DELETE CASCADE,
+    "amount"         DECIMAL(12, 2) NOT NULL,
+    "reason"         TEXT NOT NULL,
+    "apply_month"    INTEGER NOT NULL,
+    "apply_year"     INTEGER NOT NULL,
+    "is_applied"     BOOLEAN NOT NULL DEFAULT FALSE,
+    "applied_at"     TIMESTAMP(3),
+    "payroll_run_id" TEXT REFERENCES "employee_payroll_runs"("id") ON DELETE SET NULL,
+    "created_by_id"  TEXT,
+    "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "employee_deductions_employee_id_idx" ON "employee_deductions"("employee_id")`,
+  `CREATE INDEX IF NOT EXISTS "employee_deductions_apply_idx" ON "employee_deductions"("apply_year", "apply_month")`,
+  `CREATE INDEX IF NOT EXISTS "employee_deductions_is_applied_idx" ON "employee_deductions"("is_applied")`,
+
+  // Create employee_id_sequences table
+  `CREATE TABLE IF NOT EXISTS "employee_id_sequences" (
+    "id"          TEXT NOT NULL PRIMARY KEY,
+    "year_month"  TEXT NOT NULL UNIQUE,
+    "last_number" INTEGER NOT NULL DEFAULT 0,
+    "updated_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
 ];
 
 async function run() {

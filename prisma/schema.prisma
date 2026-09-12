@@ -182,6 +182,44 @@ enum InstallerPaymentStatus {
   CLEARED
 }
 
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+}
+
+enum GovernmentIdType {
+  AADHAAR
+  PAN
+  VOTER_ID
+}
+
+enum AttendanceStatus {
+  PRESENT
+  CL
+  EL
+  UL
+  HALF_DAY
+  LEAVE
+}
+
+enum PayrollStatus {
+  DRAFT
+  FINALIZED
+  PAID
+}
+
+enum LeaveType {
+  CL
+  EL
+}
+
+enum LeaveTransactionType {
+  ACCRUAL
+  USAGE
+  ADJUSTMENT
+}
+
 // ─── User & Auth ─────────────────────────────────────────────────────────────
 
 model User {
@@ -2431,6 +2469,198 @@ model InstallerBillSequence {
   updatedAt  DateTime @updatedAt @map("updated_at")
 
   @@map("installer_bill_sequences")
+}
+
+// ─── Employee Management & Payroll Models ────────────────────────────────────
+
+model Employee {
+  id                 String           @id @default(uuid())
+  employeeId         String           @unique @map("employee_id")
+  name               String
+  email              String           @unique
+  phone              String
+  address            String           @db.Text
+  governmentIdType   GovernmentIdType @map("government_id_type")
+  governmentIdNumber String           @map("government_id_number")
+  bankAccountNumber  String           @map("bank_account_number")
+  bankIfsc           String           @map("bank_ifsc")
+  bankName           String           @map("bank_name")
+  bankAccountHolder  String           @map("bank_account_holder")
+  designation        String
+  department         String
+  responsibilities   String?          @db.Text
+  monthlyCtc         Decimal          @map("monthly_ctc") @db.Decimal(12, 2)
+  joiningDate        DateTime         @map("joining_date")
+  status             EmployeeStatus   @default(ACTIVE)
+  clBalance          Decimal          @default(0) @map("cl_balance") @db.Decimal(5, 2)
+  elBalance          Decimal          @default(0) @map("el_balance") @db.Decimal(5, 2)
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  // Relations
+  attendances        EmployeeAttendance[]
+  leaveLedgers       EmployeeLeaveLedger[]
+  advances           EmployeeAdvance[]
+  deductions         EmployeeDeduction[]
+  payrollRuns        EmployeePayrollRun[]
+
+  @@index([employeeId])
+  @@index([email])
+  @@index([department])
+  @@index([status])
+  @@map("employees")
+}
+
+model EmployeeAttendance {
+  id               String           @id @default(uuid())
+  employeeId       String           @map("employee_id")
+  date             DateTime         @db.Date
+  status           AttendanceStatus @default(PRESENT)
+  isSunday         Boolean          @default(false) @map("is_sunday")
+  isSundayOverride Boolean          @default(false) @map("is_sunday_override")
+  overtimeHours    Decimal          @default(0) @map("overtime_hours") @db.Decimal(5, 2)
+  notes            String?          @db.Text
+  markedById       String?          @map("marked_by_id")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  // Relations
+  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+  @@map("employee_attendances")
+}
+
+model EmployeeLeaveLedger {
+  id              String               @id @default(uuid())
+  employeeId      String               @map("employee_id")
+  leaveType       LeaveType            @map("leave_type")
+  transactionType LeaveTransactionType @map("transaction_type")
+  amount          Decimal              @db.Decimal(5, 2)
+  balanceAfter    Decimal              @map("balance_after") @db.Decimal(5, 2)
+  month           Int
+  year            Int
+  reason          String?              @db.Text
+  recordedById    String?              @map("recorded_by_id")
+  createdAt       DateTime             @default(now()) @map("created_at")
+
+  // Relations
+  employee        Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([year, month])
+  @@map("employee_leave_ledgers")
+}
+
+model EmployeeAdvance {
+  id            String              @id @default(uuid())
+  employeeId    String              @map("employee_id")
+  amount        Decimal             @db.Decimal(12, 2)
+  reason        String              @db.Text
+  recoveryMonth Int                 @map("recovery_month")
+  recoveryYear  Int                 @map("recovery_year")
+  isRecovered   Boolean             @default(false) @map("is_recovered")
+  recoveredAt   DateTime?           @map("recovered_at")
+  payrollRunId  String?             @map("payroll_run_id")
+  createdById   String?             @map("created_by_id")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  employee      Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollRun    EmployeePayrollRun? @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([recoveryYear, recoveryMonth])
+  @@index([isRecovered])
+  @@map("employee_advances")
+}
+
+model EmployeeDeduction {
+  id           String              @id @default(uuid())
+  employeeId   String              @map("employee_id")
+  amount       Decimal             @db.Decimal(12, 2)
+  reason       String              @db.Text
+  applyMonth   Int                 @map("apply_month")
+  applyYear    Int                 @map("apply_year")
+  isApplied    Boolean             @default(false) @map("is_applied")
+  appliedAt    DateTime?           @map("applied_at")
+  payrollRunId String?             @map("payroll_run_id")
+  createdById  String?             @map("created_by_id")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  employee     Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  payrollRun   EmployeePayrollRun? @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@index([applyYear, applyMonth])
+  @@index([isApplied])
+  @@map("employee_deductions")
+}
+
+model EmployeePayrollRun {
+  id                String              @id @default(uuid())
+  employeeId        String              @map("employee_id")
+  month             Int
+  year              Int
+  monthlyCtc        Decimal             @map("monthly_ctc") @db.Decimal(12, 2)
+  totalCalendarDays Int                 @map("total_calendar_days")
+  sundaysCount      Int                 @map("sundays_count")
+  approvedSundays   Int                 @default(0) @map("approved_sundays")
+  payableDays       Decimal             @map("payable_days") @db.Decimal(6, 2)
+  perDayRate        Decimal             @map("per_day_rate") @db.Decimal(12, 2)
+  presentDays       Decimal             @map("present_days") @db.Decimal(6, 2)
+  clDays            Decimal             @map("cl_days") @db.Decimal(6, 2)
+  elDays            Decimal             @map("el_days") @db.Decimal(6, 2)
+  halfDays          Decimal             @map("half_days") @db.Decimal(6, 2)
+  unpaidDays        Decimal             @map("unpaid_days") @db.Decimal(6, 2)
+  paidDays          Decimal             @map("paid_days") @db.Decimal(6, 2)
+  overtimeHours     Decimal             @default(0) @map("overtime_hours") @db.Decimal(6, 2)
+  overtimeRate      Decimal             @default(0) @map("overtime_rate") @db.Decimal(10, 2)
+  overtimePay       Decimal             @default(0) @map("overtime_pay") @db.Decimal(12, 2)
+  grossSalary       Decimal             @map("gross_salary") @db.Decimal(12, 2)
+  advanceDeduction  Decimal             @default(0) @map("advance_deduction") @db.Decimal(12, 2)
+  otherDeductions   Decimal             @default(0) @map("other_deductions") @db.Decimal(12, 2)
+  deductionSummary  Json?               @map("deduction_summary")
+  netSalary         Decimal             @map("net_salary") @db.Decimal(12, 2)
+  status            PayrollStatus       @default(DRAFT)
+  paidAt            DateTime?           @map("paid_at")
+  paymentMode       String?             @map("payment_mode")
+  paymentReference  String?             @map("payment_reference")
+  paymentNotes      String?             @map("payment_notes") @db.Text
+  emailSent         Boolean             @default(false) @map("email_sent")
+  emailSentAt       DateTime?           @map("email_sent_at")
+  emailStatus       String?             @map("email_status")
+  emailError        String?             @map("email_error") @db.Text
+  createdById       String?             @map("created_by_id")
+  finalizedById     String?             @map("finalized_by_id")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  employee          Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  advances          EmployeeAdvance[]
+  deductions        EmployeeDeduction[]
+
+  @@unique([employeeId, year, month])
+  @@index([employeeId])
+  @@index([year, month])
+  @@index([status])
+  @@map("employee_payroll_runs")
+}
+
+model EmployeeIdSequence {
+  id         String   @id @default(uuid())
+  yearMonth  String   @unique @map("year_month")
+  lastNumber Int      @default(0) @map("last_number")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("employee_id_sequences")
 }
 
 
