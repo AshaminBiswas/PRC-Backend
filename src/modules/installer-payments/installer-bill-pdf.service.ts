@@ -80,6 +80,8 @@ export interface InstallerBillPdfData {
   umpTotal?: number;
   siteAddress: string;
   sitePin: string;
+  deductionAmount?: number;
+  deductionReason?: string | null;
   subtotal: number;
   total: number;
   amountPaid: number;
@@ -449,8 +451,15 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
                   makeCell('Travel Expenses:', { align: 'right', color: GRAY }),
                   makeCell(data.isNcr ? '₹0.00 (NCR)' : formatINR(data.travelExpenses), { align: 'right', bold: true }),
                 ]);
+                if (data.deductionAmount && Number(data.deductionAmount) > 0) {
+                  const reasonLabel = data.deductionReason ? ` (${data.deductionReason})` : '';
+                  rows.push([
+                    makeCell(`Deductions / Adjustments${reasonLabel}:`, { align: 'right', color: '#dc2626' }),
+                    makeCell(`-${formatINR(data.deductionAmount)}`, { align: 'right', bold: true, color: '#dc2626' }),
+                  ]);
+                }
                 rows.push([
-                  makeCell('Total Disbursement Due:', { align: 'right', bold: true, color: NAVY, fontSize: 9.5 }),
+                  makeCell('Net Disbursement Due:', { align: 'right', bold: true, color: NAVY, fontSize: 9.5 }),
                   makeCell(formatINR(data.total), { align: 'right', bold: true, color: NAVY, fontSize: 9.5 }),
                 ]);
                 rows.push([

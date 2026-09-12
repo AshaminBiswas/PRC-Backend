@@ -18,6 +18,9 @@ export interface ExportBillItem {
   umpTotal: number;
   lockerQuantity: number;
   lockerTotal: number;
+  // Deductions & Penalties
+  deductionAmount: number;
+  deductionReason?: string | null;
   // Overall Totals
   totalQuantity: number;
   subtotal: number;
@@ -32,6 +35,8 @@ export interface ExportBillItem {
 }
 
 export interface ExportFilterSummary {
+  installerId?: string;
+  installerName?: string;
   month?: number;
   year?: number;
   startDate?: string;
@@ -51,8 +56,8 @@ export async function generateInstallerBillsExcel(
     views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }],
   });
 
-  // Title Banner (Spans 24 columns A-X)
-  worksheet.mergeCells('A1:X1');
+  // Title Banner (Spans 26 columns A-Z)
+  worksheet.mergeCells('A1:Z1');
   const titleCell = worksheet.getCell('A1');
   titleCell.value = 'PACIFIC PRODUCTS & SOLUTIONS — CUBICLE, UMP & LOCKER INSTALLER PAYMENT HISTORY REPORT';
   titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -71,9 +76,10 @@ export async function generateInstallerBillsExcel(
     filterText = `${filters.startDate || 'Beginning'} to ${filters.endDate || 'Present'}`;
   }
 
-  worksheet.mergeCells('A2:X2');
+  const installerInfo = filters.installerName ? ` | Technician: ${filters.installerName}` : '';
+  worksheet.mergeCells('A2:Z2');
   const metaCell = worksheet.getCell('A2');
-  metaCell.value = `Filter Scope: ${filterText} | Status Filter: ${filters.status || 'ALL'} | Total Records: ${records.length} | Export Timestamp: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+  metaCell.value = `Filter Scope: ${filterText}${installerInfo} | Status Filter: ${filters.status || 'ALL'} | Total Records: ${records.length} | Export Timestamp: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
   metaCell.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
   metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
   worksheet.getRow(2).height = 18;
@@ -102,6 +108,8 @@ export async function generateInstallerBillsExcel(
     'Total Units',
     'Subtotal (₹)',
     'Travel Expenses (₹)',
+    'Deductions (₹)',
+    'Deduction Reason',
     'Total Due (₹)',
     'Amount Paid (₹)',
     'Balance Due (₹)',
@@ -143,6 +151,8 @@ export async function generateInstallerBillsExcel(
     { key: 'totalQuantity', width: 13 },
     { key: 'subtotal', width: 16 },
     { key: 'travelExpenses', width: 18 },
+    { key: 'deductionAmount', width: 16 },
+    { key: 'deductionReason', width: 24 },
     { key: 'total', width: 16 },
     { key: 'amountPaid', width: 16 },
     { key: 'balanceDue', width: 16 },
@@ -161,6 +171,7 @@ export async function generateInstallerBillsExcel(
   let totalAllUnits = 0;
   let totalSubtotal = 0;
   let totalTravel = 0;
+  let totalDeductions = 0;
   let totalGrand = 0;
   let totalPaid = 0;
   let totalDue = 0;
@@ -185,6 +196,7 @@ export async function generateInstallerBillsExcel(
     totalAllUnits += Number(rec.totalQuantity || 0);
     totalSubtotal += Number(rec.subtotal || 0);
     totalTravel += Number(rec.travelExpenses || 0);
+    totalDeductions += Number(rec.deductionAmount || 0);
     totalGrand += Number(rec.total || 0);
     totalPaid += Number(rec.amountPaid || 0);
     totalDue += Number(rec.balanceDue || 0);
@@ -212,6 +224,8 @@ export async function generateInstallerBillsExcel(
       totalQuantity: Number(rec.totalQuantity || 0),
       subtotal: Number(rec.subtotal || 0),
       travelExpenses: Number(rec.travelExpenses || 0),
+      deductionAmount: Number(rec.deductionAmount || 0),
+      deductionReason: rec.deductionReason || '—',
       total: Number(rec.total || 0),
       amountPaid: Number(rec.amountPaid || 0),
       balanceDue: Number(rec.balanceDue || 0),
@@ -233,9 +247,11 @@ export async function generateInstallerBillsExcel(
       cell.font = { name: 'Calibri', size: 9 };
 
       // Formatting
-      if ([1, 2, 5, 7, 9, 11, 14, 16, 22, 23, 24].includes(colNum)) {
+      // Center aligned: 1: billNo, 2: installDate, 5: isNcr, 7: sitePin, 9: cubicleQuantity, 11: umpQuantity, 14: lockerQuantity, 16: totalQuantity, 24: paymentStatus, 25: paymentDate, 26: emailStatus
+      if ([1, 2, 5, 7, 9, 11, 14, 16, 24, 25, 26].includes(colNum)) {
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      } else if ([10, 12, 13, 15, 17, 18, 19, 20, 21].includes(colNum)) {
+      } else if ([10, 12, 13, 15, 17, 18, 19, 21, 22, 23].includes(colNum)) {
+        // Currency formatting for amounts (including Col 19: deductions)
         cell.alignment = { horizontal: 'right', vertical: 'middle' };
         cell.numFmt = '₹#,##0.00';
       } else {
@@ -243,7 +259,7 @@ export async function generateInstallerBillsExcel(
       }
 
       // Status color highlighting
-      if (colNum === 22) {
+      if (colNum === 24) {
         if (rec.paymentStatus === 'CLEARED') {
           cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF047857' } };
         } else {
@@ -266,9 +282,10 @@ export async function generateInstallerBillsExcel(
   summaryRow.getCell(16).value = totalAllUnits;
   summaryRow.getCell(17).value = totalSubtotal;
   summaryRow.getCell(18).value = totalTravel;
-  summaryRow.getCell(19).value = totalGrand;
-  summaryRow.getCell(20).value = totalPaid;
-  summaryRow.getCell(21).value = totalDue;
+  summaryRow.getCell(19).value = totalDeductions;
+  summaryRow.getCell(21).value = totalGrand;
+  summaryRow.getCell(22).value = totalPaid;
+  summaryRow.getCell(23).value = totalDue;
 
   summaryRow.height = 22;
   summaryRow.eachCell((cell, colNum) => {
@@ -278,7 +295,7 @@ export async function generateInstallerBillsExcel(
       top: { style: 'medium', color: { argb: 'FF334155' } },
       bottom: { style: 'double', color: { argb: 'FF334155' } },
     };
-    if ([10, 12, 13, 15, 17, 18, 19, 20, 21].includes(colNum)) {
+    if ([10, 12, 13, 15, 17, 18, 19, 21, 22, 23].includes(colNum)) {
       cell.alignment = { horizontal: 'right', vertical: 'middle' };
       cell.numFmt = '₹#,##0.00';
     } else {

@@ -1989,6 +1989,8 @@ const STATEMENTS = [
   `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "ump_total" DECIMAL(12,2) NOT NULL DEFAULT 0.00`,
   `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "locker_quantity" INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "locker_total" DECIMAL(12,2) NOT NULL DEFAULT 0.00`,
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "deduction_amount" DECIMAL(12,2) NOT NULL DEFAULT 0.00`,
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "deduction_reason" TEXT`,
   `CREATE INDEX IF NOT EXISTS "cubicle_installers_is_active_idx" ON "cubicle_installers"("is_active")`,
   `CREATE INDEX IF NOT EXISTS "cubicle_installers_email_idx" ON "cubicle_installers"("email")`,
   `CREATE INDEX IF NOT EXISTS "installer_bills_installer_id_idx" ON "installer_bills"("installer_id")`,

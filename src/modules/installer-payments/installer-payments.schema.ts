@@ -68,6 +68,8 @@ export const CreateInstallerBillSchema = z
     items: z.array(BillItemInputSchema).min(1, 'At least one cubicle model is required'),
     umpQuantity: z.coerce.number().int().min(0).default(0).optional(),
     umpRate: z.coerce.number().min(0).default(0).optional(),
+    deductionAmount: z.coerce.number().min(0, 'Deduction amount cannot be negative').default(0).optional(),
+    deductionReason: z.string().trim().optional(),
     initialAmountPaid: z.coerce.number().min(0).default(0).optional(),
     paymentDate: z.string().optional(),
     paymentMode: z.string().optional(),
@@ -91,6 +93,8 @@ export const UpdateInstallerBillSchema = z.object({
   travelExpenses: z.coerce.number().min(0).optional(),
   umpQuantity: z.coerce.number().int().min(0).optional(),
   umpRate: z.coerce.number().min(0).optional(),
+  deductionAmount: z.coerce.number().min(0).optional(),
+  deductionReason: z.string().trim().optional(),
   siteAddress: z.string().min(3).trim().optional(),
   sitePin: z
     .string()
@@ -117,6 +121,8 @@ export type RecordPaymentInput = z.infer<typeof RecordPaymentSchema>;
 
 export const ListInstallerBillsQuerySchema = z.object({
   search: z.string().optional(),
+  installerId: z.string().optional(),
+  installerEmail: z.string().optional(),
   status: z.enum(['ALL', 'PARTIAL', 'CLEARED']).optional().default('ALL'),
   isNcr: z.string().optional(), // 'all' | 'true' | 'false'
   startDate: z.string().optional(),
@@ -128,6 +134,7 @@ export const ListInstallerBillsQuerySchema = z.object({
 export type ListInstallerBillsQuery = z.infer<typeof ListInstallerBillsQuerySchema>;
 
 export const ExportBillsQuerySchema = z.object({
+  installerId: z.string().optional(),
   month: z.coerce.number().int().min(1).max(12).optional(),
   year: z.coerce.number().int().min(2020).max(2099).optional(),
   startDate: z.string().optional(),

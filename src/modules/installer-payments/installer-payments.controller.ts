@@ -101,6 +101,16 @@ export const deactivateCubicleInstallerHandler = async (req: Request, res: Respo
   }
 };
 
+export const getInstallerLedgerHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const ledger = await installerService.getInstallerLedger(id);
+    sendSuccess(res, ledger, 'Installer payment ledger retrieved successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ─── Installer Payment Bills Handlers (Admin & Super Admin) ──────────────────
 
 export const listInstallerBillsHandler = async (req: Request, res: Response, next: NextFunction) => {

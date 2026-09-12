@@ -10,6 +10,7 @@ import {
   createCubicleInstallerHandler,
   updateCubicleInstallerHandler,
   deactivateCubicleInstallerHandler,
+  getInstallerLedgerHandler,
   listInstallerBillsHandler,
   getInstallerBillHandler,
   createInstallerBillHandler,
@@ -90,6 +91,7 @@ router.get('/installers', authenticate, requireAdminOrSuperAdmin, listCubicleIns
 router.post('/installers', authenticate, requireSuperAdmin, createCubicleInstallerHandler);
 router.patch('/installers/:id', authenticate, requireSuperAdmin, updateCubicleInstallerHandler);
 router.delete('/installers/:id', authenticate, requireSuperAdmin, deactivateCubicleInstallerHandler);
+router.get('/installers/:id/ledger', authenticate, requireAdminOrSuperAdmin, getInstallerLedgerHandler);
 
 // ─── Full Payment History Export (Super Admin Only) ──────────────────────────
 router.get('/export/excel', authenticate, requireSuperAdmin, exportInstallerBillsExcelHandler);

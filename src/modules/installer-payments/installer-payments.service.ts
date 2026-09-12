@@ -219,12 +219,23 @@ export async function deactivateCubicleInstaller(id: string) {
 // ─── Installer Payment Bills Services ────────────────────────────────────────
 
 export async function listInstallerBills(query: ListInstallerBillsQuery) {
-  const { search, status, isNcr, startDate, endDate, page, limit } = query;
+  const { search, installerId, installerEmail, status, isNcr, startDate, endDate, page, limit } = query;
   const skip = (page - 1) * limit;
 
   const where: Prisma.InstallerBillWhereInput = {
     deletedAt: null,
   };
+
+  // Installer filter
+  if (installerId) {
+    where.OR = [
+      { installerId },
+      { installer: { id: installerId } },
+    ];
+  }
+  if (installerEmail) {
+    where.installerEmail = installerEmail.trim().toLowerCase();
+  }
 
   // Status filter
   if (status && status !== 'ALL') {
@@ -423,12 +434,15 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
 
   const subtotal = cubicleTotal + umpTotal + lockerTotal;
 
-  // 4. NCR dynamic travel expense logic
+  // 4. Deductions, NCR travel expense logic, and totals calculation
   const travelExpenses = input.isNcr ? 0 : Number(input.travelExpenses || 0);
-  const total = subtotal + travelExpenses;
+  const deductionAmount = Math.max(0, Number(input.deductionAmount || 0));
+  const deductionReason = input.deductionReason?.trim() || null;
+  const rawTotal = subtotal + travelExpenses - deductionAmount;
+  const total = Math.max(0, rawTotal);
   const initialAmountPaid = Number(input.initialAmountPaid || 0);
   const balanceDue = Math.max(0, total - initialAmountPaid);
-  const isCleared = balanceDue === 0 && initialAmountPaid >= total;
+  const isCleared = balanceDue === 0 && initialAmountPaid >= total && total > 0;
   const paymentStatus = isCleared ? 'CLEARED' : 'PARTIAL';
 
   // 5. Generate atomic Bill No (PPSI-00001)
@@ -454,6 +468,8 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
         umpTotal: new Prisma.Decimal(umpTotal),
         lockerQuantity,
         lockerTotal: new Prisma.Decimal(lockerTotal),
+        deductionAmount: new Prisma.Decimal(deductionAmount),
+        deductionReason,
         subtotal: new Prisma.Decimal(subtotal),
         total: new Prisma.Decimal(total),
         amountPaid: new Prisma.Decimal(initialAmountPaid),
@@ -573,13 +589,17 @@ export async function updateInstallerBill(id: string, input: UpdateInstallerBill
   if (input.siteAddress !== undefined) updateData.siteAddress = input.siteAddress;
   if (input.sitePin !== undefined) updateData.sitePin = input.sitePin;
   if (input.notes !== undefined) updateData.notes = input.notes;
+  if (input.deductionReason !== undefined) {
+    updateData.deductionReason = input.deductionReason ? input.deductionReason.trim() : null;
+  }
 
-  // If NCR, Travel Expenses, UMP Quantity, or UMP Rate changed, recalculate total and balance
+  // If NCR, Travel Expenses, UMP, or Deductions changed, recalculate total and balance
   if (
     input.isNcr !== undefined ||
     input.travelExpenses !== undefined ||
     input.umpQuantity !== undefined ||
-    input.umpRate !== undefined
+    input.umpRate !== undefined ||
+    input.deductionAmount !== undefined
   ) {
     const isNcr = input.isNcr !== undefined ? input.isNcr : existing.isNcr;
     const travelExpenses = isNcr
@@ -598,10 +618,15 @@ export async function updateInstallerBill(id: string, input: UpdateInstallerBill
     const newUmpTotal = newUmpQuantity * newUmpRate;
 
     const newSubtotal = modelsSubtotal + newUmpTotal;
-    const newTotal = newSubtotal + travelExpenses;
+    const newDeduction = input.deductionAmount !== undefined
+      ? Math.max(0, Number(input.deductionAmount))
+      : Number(existing.deductionAmount || 0);
+
+    const rawTotal = newSubtotal + travelExpenses - newDeduction;
+    const newTotal = Math.max(0, rawTotal);
     const amountPaid = Number(existing.amountPaid);
     const newBalanceDue = Math.max(0, newTotal - amountPaid);
-    const newStatus = amountPaid >= newTotal ? 'CLEARED' : 'PARTIAL';
+    const newStatus = (amountPaid >= newTotal && newTotal > 0) ? 'CLEARED' : 'PARTIAL';
 
     updateData.isNcr = isNcr;
     updateData.travelExpenses = new Prisma.Decimal(travelExpenses);
@@ -609,6 +634,7 @@ export async function updateInstallerBill(id: string, input: UpdateInstallerBill
     updateData.umpRate = new Prisma.Decimal(newUmpRate);
     updateData.umpTotal = new Prisma.Decimal(newUmpTotal);
     updateData.subtotal = new Prisma.Decimal(newSubtotal);
+    updateData.deductionAmount = new Prisma.Decimal(newDeduction);
     updateData.total = new Prisma.Decimal(newTotal);
     updateData.balanceDue = new Prisma.Decimal(newBalanceDue);
     updateData.paymentStatus = newStatus as any;
@@ -639,6 +665,8 @@ export async function getBillPdfBuffer(billId: string): Promise<{ buffer: Buffer
     umpTotal: Number(bill.umpTotal || 0),
     siteAddress: bill.siteAddress,
     sitePin: bill.sitePin,
+    deductionAmount: Number(bill.deductionAmount || 0),
+    deductionReason: bill.deductionReason,
     subtotal: Number(bill.subtotal),
     total: Number(bill.total),
     amountPaid: Number(bill.amountPaid),
@@ -851,6 +879,20 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
     }
   }
 
+  let installerName: string | undefined;
+  if (query.installerId) {
+    const inst = await prisma.cubicleInstaller.findUnique({ where: { id: query.installerId } });
+    if (inst) {
+      installerName = `${inst.name} (${inst.email})`;
+      where.OR = [
+        { installerId: inst.id },
+        { installerEmail: { equals: inst.email, mode: 'insensitive' } },
+      ];
+    } else {
+      where.installerId = query.installerId;
+    }
+  }
+
   const bills = await prisma.installerBill.findMany({
     where,
     orderBy: { installDate: 'desc' },
@@ -907,6 +949,8 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
       umpTotal,
       lockerQuantity,
       lockerTotal,
+      deductionAmount: Number(b.deductionAmount || 0),
+      deductionReason: b.deductionReason || null,
       totalQuantity,
       subtotal: Number(b.subtotal),
       total: Number(b.total),
@@ -921,6 +965,8 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
   });
 
   const filterSummary: ExportFilterSummary = {
+    installerId: query.installerId,
+    installerName,
     month: query.month,
     year: query.year,
     startDate: query.startDate,
@@ -929,6 +975,92 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
   };
 
   return await generateInstallerBillsExcel(exportItems, filterSummary);
+}
+
+// ─── Installer-Wise Ledger & Payment Statement ───────────────────────────────
+
+export async function getInstallerLedger(installerId: string) {
+  const installer = await prisma.cubicleInstaller.findUnique({
+    where: { id: installerId },
+  });
+
+  if (!installer) {
+    const error: any = new Error('Installer not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const bills = await prisma.installerBill.findMany({
+    where: {
+      deletedAt: null,
+      OR: [
+        { installerId: installer.id },
+        { installerEmail: { equals: installer.email, mode: 'insensitive' } },
+      ],
+    },
+    orderBy: { installDate: 'desc' },
+    include: {
+      items: true,
+      payments: {
+        orderBy: { paymentDate: 'desc' },
+      },
+    },
+  });
+
+  let totalCubicleUnits = 0;
+  let totalUmpUnits = 0;
+  let totalLockerUnits = 0;
+  let grossSubtotal = 0;
+  let totalTravel = 0;
+  let totalDeductions = 0;
+  let netPayable = 0;
+  let totalPaid = 0;
+  let balanceDue = 0;
+  let clearedCount = 0;
+  let partialCount = 0;
+
+  for (const b of bills) {
+    const cUnits = b.cubicleQuantity || b.items.filter((i) => (i.category || 'CUBICLE') === 'CUBICLE').reduce((acc, i) => acc + i.quantity, 0);
+    const uUnits = b.umpQuantity || b.items.filter((i) => i.category === 'UMP').reduce((acc, i) => acc + i.quantity, 0);
+    const lUnits = b.lockerQuantity || b.items.filter((i) => i.category === 'LOCKER').reduce((acc, i) => acc + i.quantity, 0);
+
+    totalCubicleUnits += cUnits;
+    totalUmpUnits += uUnits;
+    totalLockerUnits += lUnits;
+
+    grossSubtotal += Number(b.subtotal || 0);
+    totalTravel += Number(b.travelExpenses || 0);
+    totalDeductions += Number(b.deductionAmount || 0);
+    netPayable += Number(b.total || 0);
+    totalPaid += Number(b.amountPaid || 0);
+    balanceDue += Number(b.balanceDue || 0);
+
+    if (b.paymentStatus === 'CLEARED') {
+      clearedCount++;
+    } else {
+      partialCount++;
+    }
+  }
+
+  return {
+    installer,
+    kpis: {
+      totalBills: bills.length,
+      totalCubicleUnits,
+      totalUmpUnits,
+      totalLockerUnits,
+      totalUnits: totalCubicleUnits + totalUmpUnits + totalLockerUnits,
+      grossSubtotal,
+      totalTravel,
+      totalDeductions,
+      netPayable,
+      totalPaid,
+      balanceDue,
+      clearedCount,
+      partialCount,
+    },
+    bills,
+  };
 }
 
 // ─── Super Admin Bill Deletion ───────────────────────────────────────────────

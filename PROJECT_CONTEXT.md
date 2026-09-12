@@ -146,7 +146,7 @@ D:\
 13. **Cubicle Installer Payment Tracking System**:
     - `CubicleInstaller`: Master installer credentials directory (`id`, `name`, `email` unique, `phone`, `isActive`, `createdAt`, `updatedAt`).
     - `CubicleModel`: Master rate catalog for installation models across categories (`modelName` unique, `installationPrice`, `category` enum `CUBICLE`/`UMP`/`LOCKER` default `CUBICLE`, `isActive`, `createdAt`, `updatedAt`).
-    - `InstallerBill`: Itemized installer job billing records (`billNumber` unique sequential `PPSI-00001`, `installerId` foreign key to `CubicleInstaller`, `installerName`, `installerPhone`, `installerEmail`, `siteAddress`, `jobDate`, `isNcr`, `travelExpenses`, `cubicleQuantity`, `cubicleTotal`, `umpQuantity`, `umpRate`, `umpTotal`, `lockerQuantity`, `lockerTotal`, `subtotal`, `totalAmount`, `amountPaid`, `balanceDue`, `paymentStatus` enum `PARTIAL`/`CLEARED`, `paymentDate`, `notes` mandatory internal audit notes, `emailStatus`, `emailSentAt`, `emailError`, `createdById`, `createdAt`, `updatedAt`).
+    - `InstallerBill`: Itemized installer job billing records (`billNumber` unique sequential `PPSI-00001`, `installerId` foreign key to `CubicleInstaller`, `installerName`, `installerPhone`, `installerEmail`, `siteAddress`, `jobDate`, `isNcr`, `travelExpenses`, `cubicleQuantity`, `cubicleTotal`, `umpQuantity`, `umpRate`, `umpTotal`, `lockerQuantity`, `lockerTotal`, `deductionAmount`, `deductionReason`, `subtotal`, `totalAmount`, `amountPaid`, `balanceDue`, `paymentStatus` enum `PARTIAL`/`CLEARED`, `paymentDate`, `notes` mandatory internal audit notes, `emailStatus`, `emailSentAt`, `emailError`, `createdById`, `createdAt`, `updatedAt`).
     - `InstallerBillItem`: Line items mapped to models (`billId`, `cubicleModelId`, `modelName`, `category` enum `CUBICLE`/`UMP`/`LOCKER` default `CUBICLE`, `quantity`, `unitPrice`, `lineTotal`).
     - `InstallerBillPayment`: Payment installment audit records (`billId`, `amount`, `paymentDate`, `paymentMode`, `referenceNumber`, `notes`, `recordedById`, `createdAt`).
     - `InstallerBillSequence`: Atomic sequence generator tracking sequential numbers (`PPSI-XXXXX`).
@@ -201,8 +201,7 @@ All modules follow a uniform, production-grade layered architecture:
 | `users` | `/api/v1/users` | Customer profiles, admin staff management, addresses |
 | `variants` | `/api/v1/variants` | Product variant matrix (color, size, finish), SKUs |
 | `wishlist` | `/api/v1/wishlist` | Customer saved wishlists & demand forecast tracking |
-| `ai-agent` | `/api/v1/ai-agent` | **NVIDIA NIM AI Copilot** — `POST /chat` (admin copilot), `POST /draft-reply` (PO email drafter with stock context), `POST /report` (business analytics report generator). Model: `meta/llama-3.2-90b-vision-instruct`. Requires `NVIDIA_API_KEY` env var. Admin-only (`authenticate` + `authorize` guard). |
-| `installer-payments` | `/api/v1/installer-payments` | **Cubicle Installer Payment Tracking** — Models master CRUD (Super Admin only), atomic sequential bill generation (`PPSI-00001`), NCR logic (locks travel expenses to 0.00), installment payments ledger, auto-clearance status, automatic invoice-style PDF bill email dispatch on full clearance, and full historical Excel (.xlsx) export (Super Admin only). |
+| `installer-payments` | `/api/v1/installer-payments` | **Cubicle Installer Payment Tracking** — Dynamic Models Master CRUD across 3 categories (`CUBICLE`, `UMP`, `LOCKER`), atomic sequential bill generation (`PPSI-00001`), automated NCR territory detection, deductions & penalties (`deductionAmount`, `deductionReason`), installment payments ledger, auto-clearance calculation (`Net Total = Math.max(0, Subtotal + Travel - Deductions)`), automated PDF advice with red deduction itemization, 26-column Excel (.xlsx) export with deduction metrics, technician filter queries, and dedicated installer payment history ledger endpoint (`GET /installers/:id/ledger`). |
 
 ---
 
@@ -650,13 +649,28 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - **Super Admin Installers Directory (`cubicle_installers` & Admin Tab 2)**: Super Admin can register, edit, and deactivate installers (`name`, `email`, `phone`). Gated on API (`requireSuperAdmin`) and Admin UI.
             - **Admin Auto-Fetch**: When generating a new bill, Admins can choose from registered installers in a dropdown, automatically pre-filling the installer's legal name, registered email, and contact phone.
             - **Mandatory Internal Notes**: Required internal audit and verification notes field enforced with strict validation at both backend Zod schema and UI form levels.
-            - **Tab 1 ("Payment Records & Bills")**: 4 KPI metric cards, multi-field search and filters, desktop table with Super Admin Delete and Email Dispatch actions, and touch-optimized mobile cards. Includes modal for Recording Installments and a slide-over Job Dossier Drawer with timeline history.
-            - **Tab 3 ("Installation Models Master - Super Admin")**: Model CRUD with category selector (`CUBICLE`, `UMP`, `LOCKER`), rate, active status toggle, and soft deletion. Hardened with defensive array checks, category tab filtering, and modal pre-selection.
-            - **Tab 4 ("Full Payment Export - Super Admin")**: Date range filtering, status filtering, and one-click binary `.xlsx` workbook generation featuring 24 columns with dedicated Cubicle, UMP, and Locker breakdowns, styled navy headers, Indian currency formatting, and totals row.
+          - **Deductions & Penalties Engine (`deductionAmount`, `deductionReason`)**:
+            - **Net Calculation Formula**: `Net Total = Math.max(0, Subtotal + Travel Expenses - Deduction Amount)`, `Balance Due = Math.max(0, Net Total - Amount Paid)`.
+            - **Mandatory Reason Guard**: Whenever a deduction amount > 0 is entered, a non-empty deduction reason is strictly enforced across backend Zod validation schemas (`CreateInstallerBillSchema`, `UpdateInstallerBillSchema`) and Admin UI forms.
+            - **Itemized PDF Payment Advice (`installer-bill-pdf.service.ts`)**: Itemizes deductions with explicit red formatting (`-₹<deductionAmount>`) and states the deduction reason, retitling the final disbursement line to `Net Disbursement Due: ₹<total>`.
+            - **26-Column Excel Audit Report (`installer-export.service.ts`)**: Expanded from 24 to 26 columns (`A` through `Z`):
+              - Col 19: `Deductions (₹)` (formatted currency `₹#,##0.00` with bottom summary sum)
+              - Col 20: `Deduction Reason` (left-aligned audit explanation text)
+              - Supported single-technician export when filtering by `installerId`.
+          - **Installer-Wise Payment History & Ledger Hub (Tab 5: "Installer Ledgers & History")**:
+            - **Dedicated Ledger API (`GET /api/v1/installer-payments/installers/:id/ledger`)**: Computes lifetime technician KPI metrics (Total Jobs Completed, Total Units across Cubicles/UMP/Lockers, Gross Subtotal, Travel Reimbursement, Total Deductions, Net Payable, Total Disbursed, Balance Due, Cleared vs Partial counts) and retrieves full chronological job records.
+            - **Admin Tab 5 Interface (`InstallerPaymentsPage.tsx`)**:
+              - **Technician Selector**: Dropdown to select any registered technician with live profile overview card.
+              - **6 Lifetime Executive KPI Cards**: Completed Jobs, Units Installed, Gross Earnings & Travel, Total Deductions (highlighted in red), Total Disbursed, and Balance Due.
+              - **Download Technician Statement (.xlsx)**: 1-click export of the installer's complete statement.
+              - **Chronological Jobs & Payment Ledger Table**: Comprehensive history showing Bill No, Date, Site Address & PIN, Units Breakdown, Subtotal, Travel, Deductions & Reason, Net Total, Disbursed, Balance, Status pill, and 1-tap PDF voucher download.
+            - **Tab 1 ("Payment Records & Bills")**: Added dynamic "Installer" filter dropdown to isolate bills by technician; bills table displays deduction badges with tooltips under the Total Due column.
+            - **Tab 2 ("Installers Directory")**: Added a direct "View Payment Ledger & History" action icon button on each installer row/card to jump immediately to that technician's ledger in Tab 5.
+            - **Bill Details Drawer & Modals**: Enhanced `BillDetailsDrawer` and `CreateBillModal` to display and capture deductions, penalties, and reasons alongside Net Disbursement calculations.
 
 ---
 
-*Last Updated: 2026-09-12 (Added dedicated Cubicle, UMP, and Locker breakdown columns to Excel export report; fixed Installation Model Master category selection, tab filtering, and form synchronization; updated live database categories; validated 0 TypeScript errors across stack)*
+*Last Updated: 2026-09-12 (Added Deductions & Penalties engine, updated PDF payment vouchers with red deduction itemization, expanded Excel export to 26 columns with deductions, implemented Tab 5 Installer Ledgers & Payment History with lifetime KPI cards and statement downloads, and verified 0 TypeScript errors across stack)*
 
 
 

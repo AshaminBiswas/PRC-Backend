@@ -2345,6 +2345,10 @@ model InstallerBill {
   lockerQuantity    Int                    @default(0) @map("locker_quantity")
   lockerTotal       Decimal                @default(0.00) @map("locker_total") @db.Decimal(12, 2)
 
+  // Deductions & Adjustments
+  deductionAmount   Decimal                @default(0.00) @map("deduction_amount") @db.Decimal(12, 2)
+  deductionReason   String?                @map("deduction_reason") @db.Text
+
   // Financial totals
   subtotal          Decimal                @default(0) @map("subtotal") @db.Decimal(12, 2)
   total             Decimal                @map("total") @db.Decimal(12, 2)
