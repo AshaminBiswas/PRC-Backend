@@ -75,6 +75,9 @@ export interface InstallerBillPdfData {
   installDate: Date | string;
   isNcr: boolean;
   travelExpenses: number;
+  umpQuantity?: number;
+  umpRate?: number;
+  umpTotal?: number;
   siteAddress: string;
   sitePin: string;
   subtotal: number;
@@ -85,6 +88,7 @@ export interface InstallerBillPdfData {
   paymentDate?: Date | string | null;
   notes?: string | null;
   items: Array<{
+    category?: string;
     modelName: string;
     quantity: number;
     installationPrice: number;
@@ -108,7 +112,7 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
   const itemRows: TableCell[][] = [
     [
       makeCell('#', { bold: true, align: 'center', color: '#ffffff', fillColor: NAVY }),
-      makeCell('Cubicle Model Specification', { bold: true, color: '#ffffff', fillColor: NAVY }),
+      makeCell('Installation Item / Scope Specification', { bold: true, color: '#ffffff', fillColor: NAVY }),
       makeCell('Quantity', { bold: true, align: 'center', color: '#ffffff', fillColor: NAVY }),
       makeCell('Installation Price', { bold: true, align: 'right', color: '#ffffff', fillColor: NAVY }),
       makeCell('Line Total', { bold: true, align: 'right', color: '#ffffff', fillColor: NAVY }),
@@ -117,14 +121,30 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
 
   data.items.forEach((item, index) => {
     const bg = index % 2 === 0 ? '#ffffff' : LIGHT_BG;
+    const categoryPrefix = item.category ? `[${item.category}] ` : '';
     itemRows.push([
       makeCell(String(index + 1), { align: 'center', fillColor: bg }),
-      makeCell(item.modelName, { bold: true, fillColor: bg }),
+      makeCell(`${categoryPrefix}${item.modelName}`, { bold: true, fillColor: bg }),
       makeCell(String(item.quantity), { align: 'center', fillColor: bg }),
       makeCell(formatINR(item.installationPrice), { align: 'right', fillColor: bg }),
       makeCell(formatINR(item.lineTotal), { bold: true, align: 'right', fillColor: bg }),
     ]);
   });
+
+  // If legacy UMP (Urinal Modesty Panel) installed without being in items array, append line item
+  const hasUmpInItems = data.items.some((i) => i.category === 'UMP');
+  if (!hasUmpInItems && data.umpQuantity && Number(data.umpQuantity) > 0) {
+    const bg = data.items.length % 2 === 0 ? '#ffffff' : LIGHT_BG;
+    const rate = Number(data.umpRate || 0);
+    const total = Number(data.umpTotal || Number(data.umpQuantity) * rate);
+    itemRows.push([
+      makeCell(String(itemRows.length), { align: 'center', fillColor: bg }),
+      makeCell('[UMP] Urinal Modesty Panel Installation', { bold: true, fillColor: bg }),
+      makeCell(String(data.umpQuantity), { align: 'center', fillColor: bg }),
+      makeCell(formatINR(rate), { align: 'right', fillColor: bg }),
+      makeCell(formatINR(total), { bold: true, align: 'right', fillColor: bg }),
+    ]);
+  }
 
   // Payment installment history rows
   const paymentHistoryContent: Content[] = [];
@@ -403,24 +423,41 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
             width: '44%',
             table: {
               widths: ['*', 90],
-              body: [
-                [
+              body: (() => {
+                const hasUmp = Boolean(data.umpQuantity && Number(data.umpQuantity) > 0);
+                const umpRateVal = Number(data.umpRate || 0);
+                const umpTotalVal = Number(data.umpTotal || (data.umpQuantity ? Number(data.umpQuantity) * umpRateVal : 0));
+                const modelsSubtotalVal = Math.max(0, data.subtotal - umpTotalVal);
+                const rows: TableCell[][] = [];
+
+                if (hasUmp) {
+                  rows.push([
+                    makeCell('Cubicle Models Subtotal:', { align: 'right', color: GRAY }),
+                    makeCell(formatINR(modelsSubtotalVal), { align: 'right', bold: true }),
+                  ]);
+                  rows.push([
+                    makeCell(`UMP Installation (${data.umpQuantity} × ${formatINR(umpRateVal)}):`, { align: 'right', color: GRAY }),
+                    makeCell(formatINR(umpTotalVal), { align: 'right', bold: true }),
+                  ]);
+                }
+
+                rows.push([
                   makeCell('Installation Subtotal:', { align: 'right', color: GRAY }),
                   makeCell(formatINR(data.subtotal), { align: 'right', bold: true }),
-                ],
-                [
+                ]);
+                rows.push([
                   makeCell('Travel Expenses:', { align: 'right', color: GRAY }),
                   makeCell(data.isNcr ? '₹0.00 (NCR)' : formatINR(data.travelExpenses), { align: 'right', bold: true }),
-                ],
-                [
+                ]);
+                rows.push([
                   makeCell('Total Disbursement Due:', { align: 'right', bold: true, color: NAVY, fontSize: 9.5 }),
                   makeCell(formatINR(data.total), { align: 'right', bold: true, color: NAVY, fontSize: 9.5 }),
-                ],
-                [
+                ]);
+                rows.push([
                   makeCell('Amount Paid to Date:', { align: 'right', bold: true, color: EMERALD }),
                   makeCell(formatINR(data.amountPaid), { align: 'right', bold: true, color: EMERALD }),
-                ],
-                [
+                ]);
+                rows.push([
                   makeCell('Balance Due:', {
                     align: 'right',
                     bold: true,
@@ -433,8 +470,9 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
                     color: data.balanceDue > 0 ? AMBER : EMERALD,
                     fontSize: 9.5,
                   }),
-                ],
-              ],
+                ]);
+                return rows;
+              })(),
             },
             layout: {
               hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 1 : 0.5),

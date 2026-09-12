@@ -10,6 +10,15 @@ export interface ExportBillItem {
   siteAddress: string;
   sitePin: string;
   modelsSummary: string;
+  // Category Breakdown
+  cubicleQuantity: number;
+  cubicleTotal: number;
+  umpQuantity: number;
+  umpRate: number;
+  umpTotal: number;
+  lockerQuantity: number;
+  lockerTotal: number;
+  // Overall Totals
   totalQuantity: number;
   subtotal: number;
   total: number;
@@ -42,10 +51,10 @@ export async function generateInstallerBillsExcel(
     views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }],
   });
 
-  // Title Banner
-  worksheet.mergeCells('A1:Q1');
+  // Title Banner (Spans 24 columns A-X)
+  worksheet.mergeCells('A1:X1');
   const titleCell = worksheet.getCell('A1');
-  titleCell.value = 'PACIFIC PRODUCTS & SOLUTIONS — CUBICLE INSTALLER PAYMENT HISTORY REPORT';
+  titleCell.value = 'PACIFIC PRODUCTS & SOLUTIONS — CUBICLE, UMP & LOCKER INSTALLER PAYMENT HISTORY REPORT';
   titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -62,7 +71,7 @@ export async function generateInstallerBillsExcel(
     filterText = `${filters.startDate || 'Beginning'} to ${filters.endDate || 'Present'}`;
   }
 
-  worksheet.mergeCells('A2:Q2');
+  worksheet.mergeCells('A2:X2');
   const metaCell = worksheet.getCell('A2');
   metaCell.value = `Filter Scope: ${filterText} | Status Filter: ${filters.status || 'ALL'} | Total Records: ${records.length} | Export Timestamp: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
   metaCell.font = { name: 'Calibri', size: 9, italic: true, color: { argb: 'FF64748B' } };
@@ -82,7 +91,14 @@ export async function generateInstallerBillsExcel(
     'NCR Region',
     'Site Address',
     'Site PIN',
-    'Cubicle Models & Qty',
+    'Models & Items Summary',
+    'Cubicle Units',
+    'Cubicle Subtotal (₹)',
+    'UMP Units',
+    'UMP Rate (₹)',
+    'UMP Total (₹)',
+    'Locker Units',
+    'Locker Subtotal (₹)',
     'Total Units',
     'Subtotal (₹)',
     'Travel Expenses (₹)',
@@ -116,9 +132,16 @@ export async function generateInstallerBillsExcel(
     { key: 'isNcr', width: 12 },
     { key: 'siteAddress', width: 34 },
     { key: 'sitePin', width: 12 },
-    { key: 'modelsSummary', width: 28 },
-    { key: 'totalQuantity', width: 12 },
-    { key: 'subtotal', width: 15 },
+    { key: 'modelsSummary', width: 32 },
+    { key: 'cubicleQuantity', width: 14 },
+    { key: 'cubicleTotal', width: 17 },
+    { key: 'umpQuantity', width: 12 },
+    { key: 'umpRate', width: 14 },
+    { key: 'umpTotal', width: 16 },
+    { key: 'lockerQuantity', width: 13 },
+    { key: 'lockerTotal', width: 17 },
+    { key: 'totalQuantity', width: 13 },
+    { key: 'subtotal', width: 16 },
     { key: 'travelExpenses', width: 18 },
     { key: 'total', width: 16 },
     { key: 'amountPaid', width: 16 },
@@ -128,7 +151,14 @@ export async function generateInstallerBillsExcel(
     { key: 'emailStatus', width: 22 },
   ];
 
-  // Data Rows
+  // Totals Accumulator
+  let totalCubicleUnits = 0;
+  let totalCubicleTotal = 0;
+  let totalUmpUnits = 0;
+  let totalUmpTotal = 0;
+  let totalLockerUnits = 0;
+  let totalLockerTotal = 0;
+  let totalAllUnits = 0;
   let totalSubtotal = 0;
   let totalTravel = 0;
   let totalGrand = 0;
@@ -136,7 +166,6 @@ export async function generateInstallerBillsExcel(
   let totalDue = 0;
 
   records.forEach((rec, idx) => {
-    const rowIndex = idx + 5;
     const isEven = idx % 2 === 0;
     const rowBg = isEven ? 'FFFFFFFF' : 'FFF8FAFC';
 
@@ -147,6 +176,13 @@ export async function generateInstallerBillsExcel(
       ? new Date(rec.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
       : '-';
 
+    totalCubicleUnits += Number(rec.cubicleQuantity || 0);
+    totalCubicleTotal += Number(rec.cubicleTotal || 0);
+    totalUmpUnits += Number(rec.umpQuantity || 0);
+    totalUmpTotal += Number(rec.umpTotal || 0);
+    totalLockerUnits += Number(rec.lockerQuantity || 0);
+    totalLockerTotal += Number(rec.lockerTotal || 0);
+    totalAllUnits += Number(rec.totalQuantity || 0);
     totalSubtotal += Number(rec.subtotal || 0);
     totalTravel += Number(rec.travelExpenses || 0);
     totalGrand += Number(rec.total || 0);
@@ -166,7 +202,14 @@ export async function generateInstallerBillsExcel(
       siteAddress: rec.siteAddress,
       sitePin: rec.sitePin,
       modelsSummary: rec.modelsSummary || 'N/A',
-      totalQuantity: rec.totalQuantity,
+      cubicleQuantity: Number(rec.cubicleQuantity || 0),
+      cubicleTotal: Number(rec.cubicleTotal || 0),
+      umpQuantity: Number(rec.umpQuantity || 0),
+      umpRate: Number(rec.umpRate || 0),
+      umpTotal: Number(rec.umpTotal || 0),
+      lockerQuantity: Number(rec.lockerQuantity || 0),
+      lockerTotal: Number(rec.lockerTotal || 0),
+      totalQuantity: Number(rec.totalQuantity || 0),
       subtotal: Number(rec.subtotal || 0),
       travelExpenses: Number(rec.travelExpenses || 0),
       total: Number(rec.total || 0),
@@ -190,9 +233,9 @@ export async function generateInstallerBillsExcel(
       cell.font = { name: 'Calibri', size: 9 };
 
       // Formatting
-      if ([1, 2, 5, 7, 9, 15, 16, 17].includes(colNum)) {
+      if ([1, 2, 5, 7, 9, 11, 14, 16, 22, 23, 24].includes(colNum)) {
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      } else if ([10, 11, 12, 13, 14].includes(colNum)) {
+      } else if ([10, 12, 13, 15, 17, 18, 19, 20, 21].includes(colNum)) {
         cell.alignment = { horizontal: 'right', vertical: 'middle' };
         cell.numFmt = '₹#,##0.00';
       } else {
@@ -200,7 +243,7 @@ export async function generateInstallerBillsExcel(
       }
 
       // Status color highlighting
-      if (colNum === 15) {
+      if (colNum === 22) {
         if (rec.paymentStatus === 'CLEARED') {
           cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF047857' } };
         } else {
@@ -214,11 +257,18 @@ export async function generateInstallerBillsExcel(
   const summaryRowIndex = records.length + 5;
   const summaryRow = worksheet.getRow(summaryRowIndex);
   summaryRow.getCell(1).value = 'TOTALS';
-  summaryRow.getCell(10).value = totalSubtotal;
-  summaryRow.getCell(11).value = totalTravel;
-  summaryRow.getCell(12).value = totalGrand;
-  summaryRow.getCell(13).value = totalPaid;
-  summaryRow.getCell(14).value = totalDue;
+  summaryRow.getCell(9).value = totalCubicleUnits;
+  summaryRow.getCell(10).value = totalCubicleTotal;
+  summaryRow.getCell(11).value = totalUmpUnits;
+  summaryRow.getCell(13).value = totalUmpTotal;
+  summaryRow.getCell(14).value = totalLockerUnits;
+  summaryRow.getCell(15).value = totalLockerTotal;
+  summaryRow.getCell(16).value = totalAllUnits;
+  summaryRow.getCell(17).value = totalSubtotal;
+  summaryRow.getCell(18).value = totalTravel;
+  summaryRow.getCell(19).value = totalGrand;
+  summaryRow.getCell(20).value = totalPaid;
+  summaryRow.getCell(21).value = totalDue;
 
   summaryRow.height = 22;
   summaryRow.eachCell((cell, colNum) => {
@@ -228,7 +278,7 @@ export async function generateInstallerBillsExcel(
       top: { style: 'medium', color: { argb: 'FF334155' } },
       bottom: { style: 'double', color: { argb: 'FF334155' } },
     };
-    if ([10, 11, 12, 13, 14].includes(colNum)) {
+    if ([10, 12, 13, 15, 17, 18, 19, 20, 21].includes(colNum)) {
       cell.alignment = { horizontal: 'right', vertical: 'middle' };
       cell.numFmt = '₹#,##0.00';
     } else {

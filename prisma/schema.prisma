@@ -2290,6 +2290,7 @@ model PoSequence {
 
 model CubicleModel {
   id                String              @id @default(uuid())
+  category          String              @default("CUBICLE")
   modelName         String              @unique @map("model_name")
   installationPrice Decimal             @map("installation_price") @db.Decimal(10, 2)
   isActive          Boolean             @default(true) @map("is_active")
@@ -2298,6 +2299,7 @@ model CubicleModel {
 
   billItems         InstallerBillItem[]
 
+  @@index([category])
   @@index([isActive])
   @@map("cubicle_models")
 }
@@ -2329,6 +2331,19 @@ model InstallerBill {
   travelExpenses    Decimal                @default(0) @map("travel_expenses") @db.Decimal(10, 2)
   siteAddress       String                 @map("site_address") @db.Text
   sitePin           String                 @map("site_pin") @db.VarChar(6)
+
+  // Scope breakdown (Cubicle, UMP, Locker)
+  cubicleQuantity   Int                    @default(0) @map("cubicle_quantity")
+  cubicleTotal      Decimal                @default(0.00) @map("cubicle_total") @db.Decimal(12, 2)
+
+  // UMP (Urinal Modesty Panel) Installation
+  umpQuantity       Int                    @default(0) @map("ump_quantity")
+  umpRate           Decimal                @default(0.00) @map("ump_rate") @db.Decimal(10, 2)
+  umpTotal          Decimal                @default(0.00) @map("ump_total") @db.Decimal(12, 2)
+
+  // Locker Installation
+  lockerQuantity    Int                    @default(0) @map("locker_quantity")
+  lockerTotal       Decimal                @default(0.00) @map("locker_total") @db.Decimal(12, 2)
 
   // Financial totals
   subtotal          Decimal                @default(0) @map("subtotal") @db.Decimal(12, 2)
@@ -2368,6 +2383,7 @@ model InstallerBill {
 model InstallerBillItem {
   id                String        @id @default(uuid())
   billId            String        @map("bill_id")
+  category          String        @default("CUBICLE")
   modelId           String        @map("model_id")
   modelName         String        @map("model_name")
   quantity          Int           @default(1)
@@ -2382,6 +2398,7 @@ model InstallerBillItem {
 
   @@index([billId])
   @@index([modelId])
+  @@index([category])
   @@map("installer_bill_items")
 }
 

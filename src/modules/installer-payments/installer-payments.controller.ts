@@ -19,7 +19,8 @@ import {
 export const listCubicleModelsHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const activeOnly = req.query.activeOnly === 'true';
-    const models = await installerService.listCubicleModels(activeOnly);
+    const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+    const models = await installerService.listCubicleModels(activeOnly, category);
     sendSuccess(res, models, 'Cubicle models retrieved successfully');
   } catch (error) {
     next(error);

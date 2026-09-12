@@ -1962,13 +1962,6 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS "installer_bill_items_model_id_idx" ON "installer_bill_items"("model_id")`,
   `CREATE INDEX IF NOT EXISTS "installer_bill_payments_bill_id_idx" ON "installer_bill_payments"("bill_id")`,
 
-  // Seed default cubicle models if none exist
-  `INSERT INTO "cubicle_models" ("id", "model_name", "installation_price", "is_active", "created_at", "updated_at")
-   SELECT 'cmod-001', 'Delight', 900.00, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-   WHERE NOT EXISTS (SELECT 1 FROM "cubicle_models" WHERE "model_name" = 'Delight')`,
-  `INSERT INTO "cubicle_models" ("id", "model_name", "installation_price", "is_active", "created_at", "updated_at")
-   SELECT 'cmod-002', 'Sky Light', 1000.00, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-   WHERE NOT EXISTS (SELECT 1 FROM "cubicle_models" WHERE "model_name" = 'Sky Light')`,
 
   // ─── Cubicle Installers Directory (Master) ─────────────────────────────────
   `CREATE TABLE IF NOT EXISTS "cubicle_installers" (
@@ -1984,16 +1977,30 @@ const STATEMENTS = [
   )`,
 
   `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "installer_id" TEXT`,
+  `ALTER TABLE "cubicle_models" ADD COLUMN IF NOT EXISTS "category" TEXT NOT NULL DEFAULT 'CUBICLE'`,
+  `CREATE INDEX IF NOT EXISTS "cubicle_models_category_idx" ON "cubicle_models"("category")`,
+  `ALTER TABLE "installer_bill_items" ADD COLUMN IF NOT EXISTS "category" TEXT NOT NULL DEFAULT 'CUBICLE'`,
+  `CREATE INDEX IF NOT EXISTS "installer_bill_items_category_idx" ON "installer_bill_items"("category")`,
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "cubicle_quantity" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "cubicle_total" DECIMAL(12,2) NOT NULL DEFAULT 0.00`,
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "ump_quantity" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "ump_rate" DECIMAL(10,2) NOT NULL DEFAULT 0.00`,
+  `ALTER TABLE "installer_bills" ALTER COLUMN "ump_rate" SET DEFAULT 0.00`,
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "ump_total" DECIMAL(12,2) NOT NULL DEFAULT 0.00`,
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "locker_quantity" INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE "installer_bills" ADD COLUMN IF NOT EXISTS "locker_total" DECIMAL(12,2) NOT NULL DEFAULT 0.00`,
   `CREATE INDEX IF NOT EXISTS "cubicle_installers_is_active_idx" ON "cubicle_installers"("is_active")`,
   `CREATE INDEX IF NOT EXISTS "cubicle_installers_email_idx" ON "cubicle_installers"("email")`,
   `CREATE INDEX IF NOT EXISTS "installer_bills_installer_id_idx" ON "installer_bills"("installer_id")`,
+  `UPDATE "cubicle_models" SET "category" = 'UMP' WHERE ("model_name" ILIKE '%ump%' OR "model_name" ILIKE '%upm%') AND "category" != 'UMP'`,
+  `UPDATE "cubicle_models" SET "category" = 'LOCKER' WHERE "model_name" ILIKE '%locker%' AND "category" != 'LOCKER'`,
 ];
 
 async function run() {
   const timeoutTimer = setTimeout(() => {
-    console.warn('[fix-db] Timeout reached (60s). Proceeding directly to server startup...');
+    console.warn('[fix-db] Timeout reached (120s). Proceeding directly to server startup...');
     process.exit(0);
-  }, 60000);
+  }, 120000);
 
 
   try {

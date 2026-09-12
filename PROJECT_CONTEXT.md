@@ -145,9 +145,9 @@ D:\
     - `ProformaInvoiceHistory` & `ProformaInvoiceSequence`: Atomic annual sequence tracking (`PRC/PI/2026-27/0001`) and chronological state transitions audit trail.
 13. **Cubicle Installer Payment Tracking System**:
     - `CubicleInstaller`: Master installer credentials directory (`id`, `name`, `email` unique, `phone`, `isActive`, `createdAt`, `updatedAt`).
-    - `CubicleModel`: Master rate catalog for cubicle models (`modelName` unique, `installationPrice`, `isActive`, `createdAt`, `updatedAt`).
-    - `InstallerBill`: Itemized installer job billing records (`billNumber` unique sequential `PPSI-00001`, `installerId` foreign key to `CubicleInstaller`, `installerName`, `installerPhone`, `installerEmail`, `siteAddress`, `jobDate`, `isNcr`, `travelExpenses`, `subtotal`, `totalAmount`, `amountPaid`, `balanceDue`, `paymentStatus` enum `PARTIAL`/`CLEARED`, `paymentDate`, `notes` mandatory internal audit notes, `emailStatus`, `emailSentAt`, `emailError`, `createdById`, `createdAt`, `updatedAt`).
-    - `InstallerBillItem`: Line items mapped to cubicle models (`billId`, `cubicleModelId`, `modelName`, `quantity`, `unitPrice`, `lineTotal`).
+    - `CubicleModel`: Master rate catalog for installation models across categories (`modelName` unique, `installationPrice`, `category` enum `CUBICLE`/`UMP`/`LOCKER` default `CUBICLE`, `isActive`, `createdAt`, `updatedAt`).
+    - `InstallerBill`: Itemized installer job billing records (`billNumber` unique sequential `PPSI-00001`, `installerId` foreign key to `CubicleInstaller`, `installerName`, `installerPhone`, `installerEmail`, `siteAddress`, `jobDate`, `isNcr`, `travelExpenses`, `cubicleQuantity`, `cubicleTotal`, `umpQuantity`, `umpRate`, `umpTotal`, `lockerQuantity`, `lockerTotal`, `subtotal`, `totalAmount`, `amountPaid`, `balanceDue`, `paymentStatus` enum `PARTIAL`/`CLEARED`, `paymentDate`, `notes` mandatory internal audit notes, `emailStatus`, `emailSentAt`, `emailError`, `createdById`, `createdAt`, `updatedAt`).
+    - `InstallerBillItem`: Line items mapped to models (`billId`, `cubicleModelId`, `modelName`, `category` enum `CUBICLE`/`UMP`/`LOCKER` default `CUBICLE`, `quantity`, `unitPrice`, `lineTotal`).
     - `InstallerBillPayment`: Payment installment audit records (`billId`, `amount`, `paymentDate`, `paymentMode`, `referenceNumber`, `notes`, `recordedById`, `createdAt`).
     - `InstallerBillSequence`: Atomic sequence generator tracking sequential numbers (`PPSI-XXXXX`).
 
@@ -616,18 +616,47 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - **Soft-Delete Safety**: Updates `deletedAt: new Date()`, safely preserving payment history, line items, and audit integrity while completely removing the bill from lists, KPI metrics, and Excel exports.
             - **UI Integration**: Red trash action button rendered exclusively for `isSuperAdmin` in the desktop bills table, mobile touch cards, and the Bill Dossier Drawer.
             - **Confirmation Modal (`DeleteBillConfirmationModal`)**: Double-confirmation dialog displaying bill number, installer details, site address, and amount before executing deletion.
+          - **Dynamic Multi-Category Model Master (Cubicles, UMP, Lockers)**:
+            - **Super Admin Dynamic Rate & Model Configuration**: In Tab 3 ("Model Master"), Super Admin can register, edit, and deactivate models across three product categories:
+              - `CUBICLE`: Restroom Cubicle Models (e.g. Delight, Sky Light, Horizon).
+              - `UMP`: Urinal Modesty Panels (e.g. Standard UMP, Full Height UMP).
+              - `LOCKER`: Locker Systems (e.g. 1-Tier Locker, 2-Tier Locker, 3-Tier Locker, Z-Locker).
+            - **Category Filtering & Badges**: Filter tabs for "All Models", "Restroom Cubicles", "Urinal Modesty Panels (UMP)", and "Lockers" with color-coded badges (Violet for Cubicles, Emerald for UMP, Blue for Lockers).
+          - **Default Zero (0) Values & Mandatory Active Selection**:
+            - **Zero Pre-Selection Policy**: In `CreateInstallerBillPage.tsx` and fallback creation modal, no model is pre-selected on mount. All initial quantities default to `0` with unit prices at `₹0.00`.
+            - Admins must actively select the model from the master dropdown and enter quantities greater than 0 before submission.
+            - Validates that at least one valid item is selected and non-zero across the job scopes.
+          - **Dedicated Scope Columns in Bills Table**:
+            - Desktop table displays 3 dedicated scope breakdown columns:
+              - **Cubicles**: Lists installed cubicle models, unit counts, and cubicle subtotal units.
+              - **UMP**: Lists installed UMP models and counts with emerald badge indicator.
+              - **Lockers**: Lists installed locker models and counts with blue badge indicator.
+            - Mobile touch cards provide itemized color-coded scope breakdown cards for Cubicles, UMP, and Lockers.
+          - **Itemized Scopes in Dossier Drawer & PDF Payment Vouchers**:
+            - **Bill Details Drawer (`BillDetailsDrawer`)**: Renders distinct itemized sections for Cubicle Models, Urinal Modesty Panels (UMP), and Locker Units, with line totals and a detailed financial breakdown.
+            - **PDF Payment Voucher (`installer-bill-pdf.service.ts`)**: Category badges (`[CUBICLE]`, `[UMP]`, `[LOCKER]`) and scope subtotals itemized in the voucher table.
+            - **Excel History Export (`installer-export.service.ts`)**: 24-column executive `.xlsx` workbook export with frozen header pane, dark navy styling (`#1E293B`), Indian Rupee formatting (`₹#,##0.00`), and dedicated breakdown columns:
+              - **Cubicle Breakdown**: `Cubicle Units`, `Cubicle Subtotal (₹)`
+              - **UMP Breakdown**: `UMP Units`, `UMP Rate (₹)`, `UMP Total (₹)`
+              - **Locker Breakdown**: `Locker Units`, `Locker Subtotal (₹)`
+              - **Overall Financials & Audit**: `Total Units`, `Subtotal (₹)`, `Travel Expenses (₹)`, `Total Due (₹)`, `Amount Paid (₹)`, `Balance Due (₹)`, `Payment Status`, `Payment Date`, `Clearance Email Status`, and bottom-line summary totals row.
+          - **Complete Removal of Hardcoded Models & Prices (100% Dynamic Catalog)**:
+            - **No Seeded / Hardcoded Rates**: All static seed insertions (`Delight`, `Sky Light`, `Standard UMP`, `1-Tier Locker`, etc.) and hardcoded fallbacks (such as fixed ₹150 for UMP or ₹900 defaults) have been completely removed from `fix-db.js`, `schema.prisma`, backend schemas/services, and Admin UI.
+            - **Super Admin Dynamic Control**: All models and rates must be registered and managed dynamically by Super Admin via Tab 3 ("Installation Models Master") with custom naming, pricing, and active status across `CUBICLE`, `UMP`, and `LOCKER`.
+            - **Clean Database Catalog**: Removed all inactive hardcoded seed models from the live database, ensuring only genuine administrator-configured models appear in bill creation dropdowns.
+            - **Category Synchronization & State Reset**: `CubicleModelModal` accepts `initialCategory` dynamically matching the active tab pill filter (`CUBICLE`, `UMP`, `LOCKER`), includes reactive `useEffect` form reset, and database self-healing in `fix-db.js` ensures model categories match their installation scope.
           - **Admin Console Operational Hub & Dedicated New Bill Page**:
-            - **Dedicated "New Installer Bill" Page (`CreateInstallerBillPage.tsx`, route `'create-installer-bill'`)**: Full-page view featuring breadcrumbs, "Back to Bills" navigation, installer auto-fetch selector, dynamic model rows, automated NCR postal PIN detection, explicit **Payment Date** picker, **Mandatory Internal Notes** textarea, and auto-dispatch email toggle.
+            - **Dedicated "New Installer Bill" Page (`CreateInstallerBillPage.tsx`, route `'create-installer-bill'`)**: Full-page view featuring breadcrumbs, "Back to Bills" navigation, installer auto-fetch selector, dynamic model rows across Cubicle, UMP, and Locker sections, automated NCR postal PIN detection, explicit **Payment Date** picker, **Mandatory Internal Notes** textarea, and auto-dispatch email toggle.
             - **Super Admin Installers Directory (`cubicle_installers` & Admin Tab 2)**: Super Admin can register, edit, and deactivate installers (`name`, `email`, `phone`). Gated on API (`requireSuperAdmin`) and Admin UI.
             - **Admin Auto-Fetch**: When generating a new bill, Admins can choose from registered installers in a dropdown, automatically pre-filling the installer's legal name, registered email, and contact phone.
             - **Mandatory Internal Notes**: Required internal audit and verification notes field enforced with strict validation at both backend Zod schema and UI form levels.
             - **Tab 1 ("Payment Records & Bills")**: 4 KPI metric cards, multi-field search and filters, desktop table with Super Admin Delete and Email Dispatch actions, and touch-optimized mobile cards. Includes modal for Recording Installments and a slide-over Job Dossier Drawer with timeline history.
-            - **Tab 3 ("Cubicle Models Master - Super Admin")**: Model CRUD with name, rate, active status toggle, and soft deletion. Hardened with defensive array checks, fallback seeds, and safe date/number formatters to prevent runtime view errors.
-            - **Tab 4 ("Full Payment Export - Super Admin")**: Date range filtering, status filtering, and one-click binary `.xlsx` workbook generation with styled navy headers, Indian currency formatting, and totals row.
+            - **Tab 3 ("Installation Models Master - Super Admin")**: Model CRUD with category selector (`CUBICLE`, `UMP`, `LOCKER`), rate, active status toggle, and soft deletion. Hardened with defensive array checks, category tab filtering, and modal pre-selection.
+            - **Tab 4 ("Full Payment Export - Super Admin")**: Date range filtering, status filtering, and one-click binary `.xlsx` workbook generation featuring 24 columns with dedicated Cubicle, UMP, and Locker breakdowns, styled navy headers, Indian currency formatting, and totals row.
 
 ---
 
-*Last Updated: 2026-09-12 (Implemented Super Admin-only Bill Deletion with soft-delete safety and confirmation modal; implemented Dedicated Installer Email Dispatch with recipient verification modal, dynamic Cleared vs Partial email templates, and auto-dispatch upon bill generation)*
+*Last Updated: 2026-09-12 (Added dedicated Cubicle, UMP, and Locker breakdown columns to Excel export report; fixed Installation Model Master category selection, tab filtering, and form synchronization; updated live database categories; validated 0 TypeScript errors across stack)*
 
 
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 // ─── Cubicle Model Schemas ───────────────────────────────────────────────────
 
 export const CreateCubicleModelSchema = z.object({
+  category: z.enum(['CUBICLE', 'UMP', 'LOCKER']).default('CUBICLE').optional(),
   modelName: z.string().min(1, 'Model name is required').trim(),
   installationPrice: z.coerce.number().positive('Installation price must be greater than 0'),
   isActive: z.boolean().optional().default(true),
@@ -11,6 +12,7 @@ export const CreateCubicleModelSchema = z.object({
 export type CreateCubicleModelInput = z.infer<typeof CreateCubicleModelSchema>;
 
 export const UpdateCubicleModelSchema = z.object({
+  category: z.enum(['CUBICLE', 'UMP', 'LOCKER']).optional(),
   modelName: z.string().min(1, 'Model name cannot be empty').trim().optional(),
   installationPrice: z.coerce.number().positive('Installation price must be greater than 0').optional(),
   isActive: z.boolean().optional(),
@@ -41,7 +43,8 @@ export type UpdateCubicleInstallerInput = z.infer<typeof UpdateCubicleInstallerS
 // ─── Bill Line Item Schema ───────────────────────────────────────────────────
 
 export const BillItemInputSchema = z.object({
-  modelId: z.string().min(1, 'Cubicle model ID is required'),
+  modelId: z.string().min(1, 'Model ID is required'),
+  category: z.enum(['CUBICLE', 'UMP', 'LOCKER']).optional(),
   quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
 });
 
@@ -63,6 +66,8 @@ export const CreateInstallerBillSchema = z
       .regex(/^\d{6}$/, 'Site PIN must be a valid 6-digit Indian postal code')
       .trim(),
     items: z.array(BillItemInputSchema).min(1, 'At least one cubicle model is required'),
+    umpQuantity: z.coerce.number().int().min(0).default(0).optional(),
+    umpRate: z.coerce.number().min(0).default(0).optional(),
     initialAmountPaid: z.coerce.number().min(0).default(0).optional(),
     paymentDate: z.string().optional(),
     paymentMode: z.string().optional(),
@@ -84,6 +89,8 @@ export const UpdateInstallerBillSchema = z.object({
   installDate: z.string().optional(),
   isNcr: z.boolean().optional(),
   travelExpenses: z.coerce.number().min(0).optional(),
+  umpQuantity: z.coerce.number().int().min(0).optional(),
+  umpRate: z.coerce.number().min(0).optional(),
   siteAddress: z.string().min(3).trim().optional(),
   sitePin: z
     .string()

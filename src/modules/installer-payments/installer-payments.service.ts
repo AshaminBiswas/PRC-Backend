@@ -49,14 +49,17 @@ export async function generateBillNumber(): Promise<string> {
 
 // ─── Cubicle Model Master Services (Super Admin Only) ────────────────────────
 
-export async function listCubicleModels(activeOnly = false) {
+export async function listCubicleModels(activeOnly = false, category?: string) {
   const where: Prisma.CubicleModelWhereInput = {};
   if (activeOnly) {
     where.isActive = true;
   }
+  if (category && category !== 'ALL') {
+    where.category = category;
+  }
   return await prisma.cubicleModel.findMany({
     where,
-    orderBy: [{ isActive: 'desc' }, { modelName: 'asc' }],
+    orderBy: [{ category: 'asc' }, { isActive: 'desc' }, { modelName: 'asc' }],
     include: {
       _count: {
         select: { billItems: true },
@@ -70,13 +73,14 @@ export async function createCubicleModel(data: CreateCubicleModelInput) {
     where: { modelName: data.modelName },
   });
   if (existing) {
-    const error: any = new Error(`Cubicle model "${data.modelName}" already exists`);
+    const error: any = new Error(`Model "${data.modelName}" already exists`);
     error.statusCode = 409;
     throw error;
   }
 
   return await prisma.cubicleModel.create({
     data: {
+      category: data.category || 'CUBICLE',
       modelName: data.modelName,
       installationPrice: new Prisma.Decimal(data.installationPrice),
       isActive: data.isActive ?? true,
@@ -97,7 +101,7 @@ export async function updateCubicleModel(id: string, data: UpdateCubicleModelInp
       where: { modelName: data.modelName },
     });
     if (duplicate && duplicate.id !== id) {
-      const error: any = new Error(`Cubicle model name "${data.modelName}" is already taken`);
+      const error: any = new Error(`Model name "${data.modelName}" is already taken`);
       error.statusCode = 409;
       throw error;
     }
@@ -106,6 +110,7 @@ export async function updateCubicleModel(id: string, data: UpdateCubicleModelInp
   return await prisma.cubicleModel.update({
     where: { id },
     data: {
+      ...(data.category && { category: data.category }),
       ...(data.modelName && { modelName: data.modelName }),
       ...(data.installationPrice !== undefined && {
         installationPrice: new Prisma.Decimal(data.installationPrice),
@@ -353,7 +358,7 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
   });
 
   if (models.length !== modelIds.length) {
-    const error: any = new Error('One or more selected cubicle models were not found');
+    const error: any = new Error('One or more selected installation models were not found');
     error.statusCode = 400;
     throw error;
   }
@@ -373,21 +378,50 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
     }
   }
 
-  // 3. Compute itemized line totals & subtotal
-  let subtotal = 0;
+  // 3. Compute itemized line totals and category breakdown
+  let cubicleQuantity = 0;
+  let cubicleTotal = 0;
+  let umpQuantity = 0;
+  let umpTotal = 0;
+  let lockerQuantity = 0;
+  let lockerTotal = 0;
+
   const itemsToCreate = input.items.map((item) => {
     const model = modelMap.get(item.modelId)!;
+    const category = model.category || item.category || 'CUBICLE';
     const unitPrice = Number(model.installationPrice);
     const lineTotal = unitPrice * item.quantity;
-    subtotal += lineTotal;
+
+    if (category === 'CUBICLE') {
+      cubicleQuantity += item.quantity;
+      cubicleTotal += lineTotal;
+    } else if (category === 'UMP') {
+      umpQuantity += item.quantity;
+      umpTotal += lineTotal;
+    } else if (category === 'LOCKER') {
+      lockerQuantity += item.quantity;
+      lockerTotal += lineTotal;
+    }
+
     return {
       modelId: item.modelId,
+      category,
       modelName: model.modelName,
       quantity: item.quantity,
       installationPrice: new Prisma.Decimal(unitPrice),
       lineTotal: new Prisma.Decimal(lineTotal),
     };
   });
+
+  // Support legacy manual umpQuantity if no dynamic UMP items provided
+  if (input.umpQuantity && Number(input.umpQuantity) > 0 && umpQuantity === 0) {
+    const legacyUmpQty = Math.max(0, Number(input.umpQuantity));
+    const legacyUmpRate = input.umpRate !== undefined ? Number(input.umpRate) : 0;
+    umpQuantity = legacyUmpQty;
+    umpTotal = legacyUmpQty * legacyUmpRate;
+  }
+
+  const subtotal = cubicleTotal + umpTotal + lockerTotal;
 
   // 4. NCR dynamic travel expense logic
   const travelExpenses = input.isNcr ? 0 : Number(input.travelExpenses || 0);
@@ -413,6 +447,13 @@ export async function createInstallerBill(input: CreateInstallerBillInput, creat
         travelExpenses: new Prisma.Decimal(travelExpenses),
         siteAddress: input.siteAddress,
         sitePin: input.sitePin,
+        cubicleQuantity,
+        cubicleTotal: new Prisma.Decimal(cubicleTotal),
+        umpQuantity,
+        umpRate: new Prisma.Decimal(umpQuantity > 0 ? umpTotal / umpQuantity : 0),
+        umpTotal: new Prisma.Decimal(umpTotal),
+        lockerQuantity,
+        lockerTotal: new Prisma.Decimal(lockerTotal),
         subtotal: new Prisma.Decimal(subtotal),
         total: new Prisma.Decimal(total),
         amountPaid: new Prisma.Decimal(initialAmountPaid),
@@ -533,18 +574,41 @@ export async function updateInstallerBill(id: string, input: UpdateInstallerBill
   if (input.sitePin !== undefined) updateData.sitePin = input.sitePin;
   if (input.notes !== undefined) updateData.notes = input.notes;
 
-  // If NCR or Travel Expenses changed, recalculate total and balance
-  if (input.isNcr !== undefined || input.travelExpenses !== undefined) {
+  // If NCR, Travel Expenses, UMP Quantity, or UMP Rate changed, recalculate total and balance
+  if (
+    input.isNcr !== undefined ||
+    input.travelExpenses !== undefined ||
+    input.umpQuantity !== undefined ||
+    input.umpRate !== undefined
+  ) {
     const isNcr = input.isNcr !== undefined ? input.isNcr : existing.isNcr;
-    const travelExpenses = isNcr ? 0 : (input.travelExpenses !== undefined ? input.travelExpenses : Number(existing.travelExpenses));
-    const subtotal = Number(existing.subtotal);
-    const newTotal = subtotal + travelExpenses;
+    const travelExpenses = isNcr
+      ? 0
+      : input.travelExpenses !== undefined
+      ? input.travelExpenses
+      : Number(existing.travelExpenses);
+
+    const oldUmpTotal = Number(existing.umpTotal || 0);
+    const modelsSubtotal = Number(existing.subtotal) - oldUmpTotal;
+
+    const newUmpQuantity =
+      input.umpQuantity !== undefined ? Number(input.umpQuantity) : Number(existing.umpQuantity || 0);
+    const newUmpRate =
+      input.umpRate !== undefined ? Number(input.umpRate) : Number(existing.umpRate || 0);
+    const newUmpTotal = newUmpQuantity * newUmpRate;
+
+    const newSubtotal = modelsSubtotal + newUmpTotal;
+    const newTotal = newSubtotal + travelExpenses;
     const amountPaid = Number(existing.amountPaid);
     const newBalanceDue = Math.max(0, newTotal - amountPaid);
     const newStatus = amountPaid >= newTotal ? 'CLEARED' : 'PARTIAL';
 
     updateData.isNcr = isNcr;
     updateData.travelExpenses = new Prisma.Decimal(travelExpenses);
+    updateData.umpQuantity = newUmpQuantity;
+    updateData.umpRate = new Prisma.Decimal(newUmpRate);
+    updateData.umpTotal = new Prisma.Decimal(newUmpTotal);
+    updateData.subtotal = new Prisma.Decimal(newSubtotal);
     updateData.total = new Prisma.Decimal(newTotal);
     updateData.balanceDue = new Prisma.Decimal(newBalanceDue);
     updateData.paymentStatus = newStatus as any;
@@ -570,6 +634,9 @@ export async function getBillPdfBuffer(billId: string): Promise<{ buffer: Buffer
     installDate: bill.installDate,
     isNcr: bill.isNcr,
     travelExpenses: Number(bill.travelExpenses),
+    umpQuantity: Number(bill.umpQuantity || 0),
+    umpRate: Number(bill.umpRate || 0),
+    umpTotal: Number(bill.umpTotal || 0),
     siteAddress: bill.siteAddress,
     sitePin: bill.sitePin,
     subtotal: Number(bill.subtotal),
@@ -580,6 +647,7 @@ export async function getBillPdfBuffer(billId: string): Promise<{ buffer: Buffer
     paymentDate: bill.paymentDate,
     notes: bill.notes,
     items: bill.items.map((i) => ({
+      category: i.category,
       modelName: i.modelName,
       quantity: i.quantity,
       installationPrice: Number(i.installationPrice),
@@ -792,8 +860,35 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
   });
 
   const exportItems: ExportBillItem[] = bills.map((b) => {
-    const modelsSummary = b.items.map((i) => `${i.modelName} (×${i.quantity})`).join(', ');
-    const totalQuantity = b.items.reduce((acc, i) => acc + i.quantity, 0);
+    const modelParts = b.items.map((i) => `[${i.category || 'CUBICLE'}] ${i.modelName} (×${i.quantity})`);
+    const hasUmpInItems = b.items.some((i) => i.category === 'UMP');
+    if (b.umpQuantity && Number(b.umpQuantity) > 0 && !hasUmpInItems) {
+      modelParts.push(`[UMP] Urinal Modesty Panel (×${b.umpQuantity})`);
+    }
+    const hasLockerInItems = b.items.some((i) => i.category === 'LOCKER');
+    if (b.lockerQuantity && Number(b.lockerQuantity) > 0 && !hasLockerInItems) {
+      modelParts.push(`[LOCKER] Locker Unit (×${b.lockerQuantity})`);
+    }
+    const modelsSummary = modelParts.join(', ');
+
+    // Cubicle breakdown
+    const cubicleItems = b.items.filter((i) => (i.category || 'CUBICLE') === 'CUBICLE');
+    const cubicleQuantity = b.cubicleQuantity || cubicleItems.reduce((acc, i) => acc + i.quantity, 0);
+    const cubicleTotal = Number(b.cubicleTotal) || cubicleItems.reduce((acc, i) => acc + Number(i.lineTotal), 0);
+
+    // UMP breakdown
+    const umpItems = b.items.filter((i) => i.category === 'UMP');
+    const umpItemsQty = umpItems.reduce((acc, i) => acc + i.quantity, 0);
+    const umpQuantity = b.umpQuantity || umpItemsQty;
+    const umpRate = Number(b.umpRate) || (umpItemsQty > 0 ? umpItems.reduce((acc, i) => acc + Number(i.lineTotal), 0) / umpItemsQty : 0);
+    const umpTotal = Number(b.umpTotal) || (umpItemsQty > 0 ? umpItems.reduce((acc, i) => acc + Number(i.lineTotal), 0) : (umpQuantity * umpRate));
+
+    // Locker breakdown
+    const lockerItems = b.items.filter((i) => i.category === 'LOCKER');
+    const lockerQuantity = b.lockerQuantity || lockerItems.reduce((acc, i) => acc + i.quantity, 0);
+    const lockerTotal = Number(b.lockerTotal) || lockerItems.reduce((acc, i) => acc + Number(i.lineTotal), 0);
+
+    const totalQuantity = cubicleQuantity + umpQuantity + lockerQuantity;
 
     return {
       billNo: b.billNo,
@@ -805,6 +900,13 @@ export async function getExportExcelBuffer(query: ExportBillsQuery): Promise<Buf
       siteAddress: b.siteAddress,
       sitePin: b.sitePin,
       modelsSummary,
+      cubicleQuantity,
+      cubicleTotal,
+      umpQuantity,
+      umpRate,
+      umpTotal,
+      lockerQuantity,
+      lockerTotal,
       totalQuantity,
       subtotal: Number(b.subtotal),
       total: Number(b.total),
