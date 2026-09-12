@@ -707,7 +707,7 @@ export async function updateInstallerBill(
           changes: {
             billNo: existing.billNo,
             fields: changedFields,
-          },
+          } as any,
         },
       }).catch((err: any) => {
         // Non-fatal: log but don't fail the update if audit write fails

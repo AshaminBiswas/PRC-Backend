@@ -610,6 +610,15 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - **Automatic Auto-Dispatch on Creation**: Configurable checkbox on `CreateInstallerBillPage.tsx` (`sendEmailToInstaller: true` by default) dispatches official payment voucher immediately upon generation.
             - **Interactive Email Dispatch Modal (`SendBillEmailModal`)**: Admins can click "Send Email", "Resend", or "Retry" to open an interactive modal displaying Installer Name, editable destination email address, bill financial summary, and attached PDF voucher filename before dispatching.
             - **Table Email Clearance Action**: Removed previous disabled "On Clearance" gating; now permits dispatching advice for any bill with an installer email, displaying a live green "Sent" badge alongside a "Resend" button.
+          - **Super Admin-Only Bill Editing & Field Adjustments (`PATCH /api/v1/installer-payments/:id`)**:
+            - **Strict Security & RBAC**: Endpoint strictly restricted to Super Admin via `requireSuperAdmin` middleware. Non-super-admins receive HTTP 403 Forbidden.
+            - **Editable Scopes & Recalculation**: Super Admin can adjust technician info (name, email, install date), site logistics (address, PIN, NCR toggle), travel expenses, UMP overrides, deduction amount & reason, and internal admin notes. Financial totals (`subtotal`, `total`, `balanceDue`, and `paymentStatus`) are automatically recomputed server-side.
+            - **Audit Trail Logging (`audit_logs`)**: Every edit automatically writes an entry to `audit_logs` capturing `userId`, `ipAddress`, `action: 'UPDATE'`, `entity: 'InstallerBill'`, and a granular `changes.fields` mapping containing `{ before, after }` values for all modified properties.
+            - **Audit Log Retrieval API (`GET /api/v1/installer-payments/:id/audit-logs`)**: Available to all authorized admins to inspect the chronological edit trail of any bill.
+            - **UI Integration (`EditInstallerBillModal`, `BillDetailsDrawer`)**:
+              - Edit button (pencil icon) rendered exclusively for `isSuperAdmin` in Desktop table, Mobile cards, Ledger job items, and Bill Dossier Drawer.
+              - `EditInstallerBillModal`: interactive modal with auto-NCR PIN detection, live financial recalculation preview, and deduction reason enforcement.
+              - `BillDetailsDrawer`: dedicated "Issue & Edit History" section displaying issuing user (`bill.createdBy`), issue date, and live timeline of past edits with before → after values.
           - **Super Admin-Only Bill Deletion (`DELETE /api/v1/installer-payments/:id`)**:
             - **Strict Security & RBAC**: Endpoint strictly protected by `authenticate` and `requireSuperAdmin` middleware. Rejects non-super-admins with HTTP 403 Forbidden.
             - **Soft-Delete Safety**: Updates `deletedAt: new Date()`, safely preserving payment history, line items, and audit integrity while completely removing the bill from lists, KPI metrics, and Excel exports.
