@@ -2,7 +2,7 @@ import path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfmake = require('pdfmake');
 import type { TDocumentDefinitions, Content, TableCell, Alignment } from 'pdfmake/interfaces';
-import { PRC_LOGO_DATA_URL } from '../../assets/logo.base64';
+import { PACIFIC_RESTROOM_LOGO_DATA_URL } from '../../assets/logo.base64';
 
 // ── Configure Roboto Fonts from pdfmake package ──────────────────────────────
 try {
@@ -203,14 +203,15 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
       {
         columns: [
           {
-            image: PRC_LOGO_DATA_URL,
+            image: PACIFIC_RESTROOM_LOGO_DATA_URL,
             width: 140,
           },
           {
             alignment: 'right',
+            margin: [0, 4, 0, 0],
             stack: [
-              { text: 'PACIFIC PRODUCTS & SOLUTIONS', bold: true, fontSize: 13, color: NAVY },
-              { text: 'Modular Restroom Restroom Hardware & Cubicle Solutions', fontSize: 8, color: GRAY },
+              { text: 'PACIFIC RESTROOM', bold: true, fontSize: 13, color: NAVY },
+              { text: 'Cubicle & Locker Solutions', bold: true, fontSize: 8.5, color: AMBER },
               { text: 'GSTIN: 07AAACP0123A1Z5 | Support: support@prchardware.com', fontSize: 7.5, color: GRAY, margin: [0, 2, 0, 0] },
               { text: 'New Delhi HQ | Kolkata Hub | Pan-India Installations', fontSize: 7.5, color: GRAY },
             ],
@@ -525,7 +526,7 @@ export async function generateInstallerBillPdf(data: InstallerBillPdfData): Prom
             width: '50%',
             alignment: 'right',
             stack: [
-              { text: 'For PACIFIC PRODUCTS & SOLUTIONS', bold: true, fontSize: 8.5, color: NAVY },
+              { text: 'For PACIFIC RESTROOM CUBICLE & LOCKER SOLUTIONS', bold: true, fontSize: 8.5, color: NAVY },
               { text: '[Authorized Signatory / Accounts Desk]', fontSize: 7.5, color: GRAY, margin: [0, 28, 0, 0] },
               { text: `Generated On: ${formatDate(new Date())}`, fontSize: 7, color: GRAY },
             ],

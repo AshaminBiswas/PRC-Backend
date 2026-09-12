@@ -2,7 +2,7 @@ import path from 'path';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfmake = require('pdfmake');
 import type { TDocumentDefinitions, Content, TableCell, Alignment } from 'pdfmake/interfaces';
-import { PRC_LOGO_DATA_URL } from '../../assets/logo.base64';
+import { PACIFIC_RESTROOM_LOGO_DATA_URL } from '../../assets/logo.base64';
 import { numberToWordsIndianRupees } from '../invoices/services/gst.service';
 
 // ─── Font Configuration ───────────────────────────────────────────────────────
@@ -158,15 +158,15 @@ export async function generateEmployeePayslipPdf(data: EmployeePayslipPdfData): 
       // Header Banner
       {
         table: {
-          widths: ['20%', '55%', '25%'],
+          widths: ['22%', '53%', '25%'],
           body: [
             [
-              PRC_LOGO_DATA_URL
+              PACIFIC_RESTROOM_LOGO_DATA_URL
                 ? {
-                    image: PRC_LOGO_DATA_URL,
-                    width: 65,
+                    image: PACIFIC_RESTROOM_LOGO_DATA_URL,
+                    width: 80,
                     alignment: 'left',
-                    margin: [0, 4, 0, 4],
+                    margin: [0, 2, 0, 2],
                   }
                 : { text: 'PRC', bold: true, fontSize: 20, color: NAVY },
               {
@@ -375,7 +375,7 @@ export async function generateEmployeePayslipPdf(data: EmployeePayslipPdfData): 
               makeCell('TOTAL PAID DAYS', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
             ],
             [
-              makeCell(`${payrollRun.totalCalendarDays}`, { align: 'center', bold: true, fontSize: 9 }),
+              makeCell(`${payrollRun.totalCalendarDays ?? (payrollRun as any).daysInMonth ?? 30}`, { align: 'center', bold: true, fontSize: 9 }),
               makeCell(`${payrollRun.payableDays}`, { align: 'center', bold: true, fontSize: 9 }),
               makeCell(`${payrollRun.presentDays}`, { align: 'center', bold: true, fontSize: 9 }),
               makeCell(`${Number(payrollRun.clDays || 0) + Number(payrollRun.elDays || 0)}`, { align: 'center', bold: true, fontSize: 9 }),

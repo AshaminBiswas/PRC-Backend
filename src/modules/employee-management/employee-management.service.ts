@@ -1028,6 +1028,72 @@ export async function finalizePayroll(payrollRunId: string, finalizedById?: stri
   });
 }
 
+export async function revertPayrollToDraft(payrollRunId: string, superAdminId?: string) {
+  const run = await prisma.employeePayrollRun.findUnique({
+    where: { id: payrollRunId },
+    include: { employee: true },
+  });
+  if (!run) throw new Error('Payroll run not found');
+
+  if (run.status === 'DRAFT') {
+    throw new Error('Payroll run is already in DRAFT status');
+  }
+
+  // 1. Reopen any advances that were marked recovered by this payroll run
+  await prisma.employeeAdvance.updateMany({
+    where: {
+      OR: [
+        { payrollRunId: run.id },
+        {
+          employeeId: run.employeeId,
+          recoveryMonth: run.month,
+          recoveryYear: run.year,
+          isRecovered: true,
+        },
+      ],
+    },
+    data: {
+      isRecovered: false,
+      recoveredAt: null,
+      payrollRunId: null,
+    },
+  });
+
+  // 2. Reopen any deductions that were marked applied by this payroll run
+  await prisma.employeeDeduction.updateMany({
+    where: {
+      OR: [
+        { payrollRunId: run.id },
+        {
+          employeeId: run.employeeId,
+          applyMonth: run.month,
+          applyYear: run.year,
+          isApplied: true,
+        },
+      ],
+    },
+    data: {
+      isApplied: false,
+      appliedAt: null,
+      payrollRunId: null,
+    },
+  });
+
+  // 3. Reset payroll run status to DRAFT
+  return await prisma.employeePayrollRun.update({
+    where: { id: payrollRunId },
+    data: {
+      status: 'DRAFT',
+      finalizedById: null,
+      paidAt: null,
+      paymentMode: null,
+      paymentReference: null,
+      paymentNotes: null,
+    },
+    include: { employee: true },
+  });
+}
+
 export async function markPayrollPaid(payrollRunId: string, input: MarkPayrollPaidInput, superAdminId?: string) {
   const run = await prisma.employeePayrollRun.findUnique({
     where: { id: payrollRunId },

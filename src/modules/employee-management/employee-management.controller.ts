@@ -265,6 +265,17 @@ export const finalizePayrollHandler = async (req: Request, res: Response, next: 
   }
 };
 
+export const revertPayrollToDraftHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const superAdminId = req.user?.id;
+    const result = await employeeService.revertPayrollToDraft(id, superAdminId);
+    sendSuccess(res, result, 'Payroll run reverted to DRAFT successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const markPayrollPaidHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;

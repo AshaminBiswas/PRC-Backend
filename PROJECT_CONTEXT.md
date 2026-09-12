@@ -652,7 +652,7 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - Mobile touch cards provide itemized color-coded scope breakdown cards for Cubicles, UMP, and Lockers.
           - **Itemized Scopes in Dossier Drawer & PDF Payment Vouchers**:
             - **Bill Details Drawer (`BillDetailsDrawer`)**: Renders distinct itemized sections for Cubicle Models, Urinal Modesty Panels (UMP), and Locker Units, with line totals and a detailed financial breakdown.
-            - **PDF Payment Voucher (`installer-bill-pdf.service.ts`)**: Category badges (`[CUBICLE]`, `[UMP]`, `[LOCKER]`) and scope subtotals itemized in the voucher table.
+            - **PDF Payment Voucher (`installer-bill-pdf.service.ts`)**: Integrated the new official **Pacific Restroom Cubicle & Locker Solutions** brand logo (`PACIFIC_RESTROOM_LOGO_DATA_URL`) with 3D isometric architectural cubicle emblem, replacing the legacy monogram. Category badges (`[CUBICLE]`, `[UMP]`, `[LOCKER]`) and scope subtotals itemized in the voucher table.
             - **Excel History Export (`installer-export.service.ts`)**: 24-column executive `.xlsx` workbook export with frozen header pane, dark navy styling (`#1E293B`), Indian Rupee formatting (`₹#,##0.00`), and dedicated breakdown columns:
               - **Cubicle Breakdown**: `Cubicle Units`, `Cubicle Subtotal (₹)`
               - **UMP Breakdown**: `UMP Units`, `UMP Rate (₹)`, `UMP Total (₹)`
@@ -691,10 +691,46 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - **15-Second Pre-Start Guard**: Strict safety timeout in `fix-db.js` guarantees that database verification will never exceed 15 seconds, preventing Render's 60-second port scan timeout from ever killing the container with SIGTERM.
             - **Port Binding Priority**: `server.ts` binds `app.listen(port, '0.0.0.0')` immediately on boot so Render detects an active listening port in <100ms.
 
+    29. **Employee & Payroll Management System (`employee-management`, `EmployeeManagementPage.tsx`, `employeeService.ts`, `payslip-pdf.service.ts`)**:
+          - **Master Employee Directory**:
+            - Auto-generated alphanumeric ID (`EMP-0001` upwards, strictly formatted and system-generated).
+            - Complete employee profile: Full Name, unique Email, Phone, Address, Government ID (Aadhaar / PAN / Voter / Passport / Driving License), Bank Account details (Account Number, IFSC, Bank Name, Account Holder Name), Department, Designation, Joining Date, and Active/Inactive status.
+            - Compensation profile: Monthly CTC, Basic Salary (50% of CTC), HRA (40% of Basic), Special Allowance (remainder), and dynamic Leave Balances (CL, EL).
+          - **Daily Attendance Matrix & Instant Operations**:
+            - 0ms optimistic UI updates with silent background API persistence for zero perceived latency.
+            - Status toggle chips: `PRESENT`, `CL` (Casual Leave), `EL` (Earned Leave), `HALF_DAY`, `UL` (Unpaid Leave), `LEAVE`.
+            - Overtime tracker with stepper (+0.5h increments) and immediate recalculation.
+            - Sunday shift approval toggle (`isSundayOverride`) allowing Sunday work to count as an additional paid day.
+            - Single-click "Mark All Active Staff Present" batch endpoint (`POST /api/v1/employees/attendance/batch`) with parallel processing.
+            - Dedicated Edit Attendance modal allowing detailed remarks, overtime hour adjustments, and Sunday override flags.
+          - **Leave Ledger & Automated Accrual Engine**:
+            - Monthly accrual job (`POST /api/v1/employees/leaves/accrue-monthly`) awarding +1.00 CL and +0.25 EL to all active staff.
+            - Leave Adjustment & Debit Protocol: Debit adjustments deduct directly from the respective balance (CL Debit reduces CL balance, EL Debit reduces EL balance) with live remaining balance calculation and reason logging.
+            - Chronological leave transaction ledger with before/after audit tracking.
+          - **Salary Advances & Deductions Tracking**:
+            - Advance tracking: Amount, Advance Taken Date (`advanceDate`), Recovery Month/Year schedule, and repayment tracking.
+            - One-time Deductions: Deduction Amount, Reason, and Apply Month/Year schedule.
+            - Full Edit & Delete capabilities with modals for both Advances and Deductions.
+          - **Monthly Payroll Engine & Super Admin Revert-to-Draft Workflow**:
+            - Prorated salary calculation: `payableDays = presentDays + clDays + elDays + (halfDays * 0.5) + (totalSundays + sundayOverrideCount)`.
+            - Overtime rate: `((basicSalary / daysInMonth) / 8) * 1.5 * overtimeHours`.
+            - Auto-recovery of scheduled advances and deductions for the active pay period.
+            - Net Salary = `(Gross Earned Salary + Overtime Pay) - (Advance Deducted + General Deductions)`.
+            - **Finalize Run**: Locks deductions and advances (`isRecovered: true`, `isApplied: true`), assigns `finalizedById`, marks run `FINALIZED`.
+            - **Super Admin Revert to Draft (`POST /api/v1/employees/payroll/:id/revert-draft`)**:
+              - Strictly guarded by `requireSuperAdmin` middleware on backend and `isSuperAdmin` in Admin UI.
+              - Atomically reopens linked advances (`isRecovered: false`, `recoveredAt: null`, `payrollRunId: null`).
+              - Atomically reopens linked deductions (`isApplied: false`, `appliedAt: null`, `payrollRunId: null`).
+              - Clears `finalizedById`, `paidAt`, `paymentMode`, `paymentReference`, and resets status to `DRAFT`.
+            - **Disbursement & Payslip Dispatch**:
+              - Super Admin records payment mode (`CASH`, `BANK_TRANSFER`, `UPI`, `CHEQUE`), reference number, and payment notes.
+              - Automated dispatch of official payslip PDF advice via email (`sendMail`).
+              - 1-click Download Official Payslip PDF (`GET /api/v1/employees/payroll/:id/pdf`) built with `pdfmake` featuring the official **Pacific Restroom Cubicle & Locker Solutions** logo (`PACIFIC_RESTROOM_LOGO_DATA_URL`).
+              - 1-click Resend Payslip Email (`POST /api/v1/employees/payroll/:id/send-email`).
 
 ---
 
-*Last Updated: 2026-09-12 (Added Deductions & Penalties engine, updated PDF payment vouchers with red deduction itemization, expanded Excel export to 26 columns with deductions, implemented Tab 5 Installer Ledgers & Payment History with lifetime KPI cards and statement downloads, and verified 0 TypeScript errors across stack)*
+*Last Updated: 2026-09-12 (Updated Payment Slips and Installer Bills with the new official Pacific Restroom Cubicle & Locker Solutions brand logo, replacing the legacy monogram, verified both PDF generation pipelines, and validated 0 TypeScript errors across stack)*
 
 
 

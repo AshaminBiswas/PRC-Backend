@@ -835,8 +835,8 @@ export async function dispatchClearanceEmailWithPdf(
     });
 
     const subject = isCleared
-      ? `Payment Cleared — Bill #${bill.billNo} — Pacific Products & Solutions`
-      : `Payment Advice & Installation Bill #${bill.billNo} — Pacific Products & Solutions`;
+      ? `Payment Cleared — Bill #${bill.billNo} — Pacific Restroom Cubicle & Locker Solutions`
+      : `Payment Advice & Installation Bill #${bill.billNo} — Pacific Restroom Cubicle & Locker Solutions`;
 
     const statusBannerHtml = isCleared
       ? `
@@ -859,8 +859,8 @@ export async function dispatchClearanceEmailWithPdf(
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <h2 style="color: #0f172a; margin: 0 0 4px 0;">PACIFIC PRODUCTS & SOLUTIONS</h2>
-          <p style="color: #64748b; font-size: 13px; margin: 0;">Installation Disbursement Advice & Voucher</p>
+          <h2 style="color: #0f172a; margin: 0 0 4px 0;">PACIFIC RESTROOM</h2>
+          <p style="color: #64748b; font-size: 13px; margin: 0;">Cubicle & Locker Solutions • Installation Disbursement Advice & Voucher</p>
         </div>
 
         ${statusBannerHtml}
@@ -898,11 +898,11 @@ export async function dispatchClearanceEmailWithPdf(
         </table>
 
         <p style="font-size: 12.5px; color: #475569; line-height: 1.5; margin-bottom: 24px;">
-          Please find attached your official payment voucher PDF (<strong>${bill.billNo}-Payment-Advice.pdf</strong>) for your records. Thank you for your continued partnership with Pacific Products & Solutions.
+          Please find attached your official payment voucher PDF (<strong>${bill.billNo}-Payment-Advice.pdf</strong>) for your records. Thank you for your continued partnership with Pacific Restroom.
         </p>
 
         <div style="border-top: 1px solid #e2e8f0; padding-top: 14px; font-size: 11.5px; color: #94a3b8; text-align: center;">
-          Pacific Products & Solutions • Restroom Cubicles & Commercial Architectural Hardware<br/>
+          Pacific Restroom • Cubicle & Locker Solutions<br/>
           New Delhi HQ • support@prchardware.com
         </div>
       </div>

@@ -24,6 +24,7 @@ import {
   calculatePayrollHandler,
   listPayrollRunsHandler,
   finalizePayrollHandler,
+  revertPayrollToDraftHandler,
   markPayrollPaidHandler,
   downloadPayslipPdfHandler,
   resendPayslipEmailHandler,
@@ -119,6 +120,7 @@ router.delete('/deductions/:id', deleteDeductionHandler);
 router.get('/payroll', listPayrollRunsHandler);
 router.post('/payroll/calculate', calculatePayrollHandler);
 router.post('/payroll/:id/finalize', finalizePayrollHandler);
+router.post('/payroll/:id/revert-draft', requireSuperAdmin, revertPayrollToDraftHandler);
 router.post('/payroll/:id/mark-paid', requireSuperAdmin, markPayrollPaidHandler);
 router.get('/payroll/:id/pdf', downloadPayslipPdfHandler);
 router.post('/payroll/:id/resend-email', resendPayslipEmailHandler);
