@@ -713,6 +713,251 @@ export class ExpensesService {
     return voided;
   }
 
+  // ─── 8b. Update Expense Entry ────────────────────────────────────────────────
+  static async updateExpense(id: string, input: UpdateExpenseInput, userId: string) {
+    const expense = await prisma.expenseEntry.findUnique({
+      where: { id },
+      include: { category: true, branch: true },
+    });
+    if (!expense) throw new AppError('NOT_FOUND', 'Expense entry not found', 404);
+    if (expense.isVoid) throw new AppError('BAD_REQUEST', 'Cannot edit a voided entry', 400);
+
+    const oldAmount = expense.amount;
+    const newAmount =
+      input.amount !== undefined ? amountToPaise(input.amount, input.amountInPaise) : oldAmount;
+    const amountDiff = newAmount - oldAmount;
+    const wasApproved = expense.status === 'APPROVED';
+    const date = expense.date;
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // 1. If amount changed and entry was approved, adjust live balance & rollups
+      if (wasApproved && amountDiff !== 0) {
+        await tx.branchCashBalance.update({
+          where: { branchId: expense.branchId },
+          data: {
+            currentBalance: { decrement: amountDiff },
+          },
+        });
+
+        await tx.expenseDailyLedger.updateMany({
+          where: { branchId: expense.branchId, date },
+          data: {
+            totalExpenses: { increment: amountDiff },
+            closingBalance: { decrement: amountDiff },
+          },
+        });
+
+        await tx.expenseDailyRollup.updateMany({
+          where: {
+            branchId: expense.branchId,
+            date,
+            categoryId: expense.categoryId,
+          },
+          data: { totalAmount: { increment: amountDiff } },
+        });
+
+        await tx.expenseMonthlyRollup.updateMany({
+          where: {
+            branchId: expense.branchId,
+            year,
+            month,
+            categoryId: expense.categoryId,
+          },
+          data: { totalAmount: { increment: amountDiff } },
+        });
+      }
+
+      // 2. If category changed and was approved, migrate rollup figures
+      if (wasApproved && input.categoryId && input.categoryId !== expense.categoryId) {
+        // Decrement old category
+        await tx.expenseDailyRollup.updateMany({
+          where: { branchId: expense.branchId, date, categoryId: expense.categoryId },
+          data: { totalAmount: { decrement: newAmount }, entryCount: { decrement: 1 } },
+        });
+        await tx.expenseMonthlyRollup.updateMany({
+          where: { branchId: expense.branchId, year, month, categoryId: expense.categoryId },
+          data: { totalAmount: { decrement: newAmount }, entryCount: { decrement: 1 } },
+        });
+
+        // Increment new category
+        await tx.expenseDailyRollup.upsert({
+          where: {
+            branchId_date_categoryId: {
+              branchId: expense.branchId,
+              date,
+              categoryId: input.categoryId,
+            },
+          },
+          update: { totalAmount: { increment: newAmount }, entryCount: { increment: 1 } },
+          create: {
+            branchId: expense.branchId,
+            date,
+            categoryId: input.categoryId,
+            totalAmount: newAmount,
+            entryCount: 1,
+          },
+        });
+
+        await tx.expenseMonthlyRollup.upsert({
+          where: {
+            branchId_year_month_categoryId: {
+              branchId: expense.branchId,
+              year,
+              month,
+              categoryId: input.categoryId,
+            },
+          },
+          update: { totalAmount: { increment: newAmount }, entryCount: { increment: 1 } },
+          create: {
+            branchId: expense.branchId,
+            year,
+            month,
+            categoryId: input.categoryId,
+            totalAmount: newAmount,
+            entryCount: 1,
+          },
+        });
+      }
+
+      const rec = await tx.expenseEntry.update({
+        where: { id },
+        data: {
+          ...(input.amount !== undefined ? { amount: newAmount } : {}),
+          ...(input.categoryId ? { categoryId: input.categoryId } : {}),
+          ...(input.subCategory !== undefined ? { subCategory: input.subCategory } : {}),
+          ...(input.paymentMode ? { paymentMode: input.paymentMode } : {}),
+          ...(input.description ? { description: input.description.trim() } : {}),
+          ...(input.paidTo ? { paidTo: input.paidTo.trim() } : {}),
+          ...(input.receiptAttachment !== undefined ? { receiptAttachment: input.receiptAttachment } : {}),
+          ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
+        },
+        include: {
+          category: true,
+          branch: true,
+          addedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+          approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+      });
+
+      await tx.expenseAuditLog.create({
+        data: {
+          expenseId: id,
+          action: 'UPDATE',
+          performedById: userId,
+          reason: input.changeReason || 'Expense details updated',
+          changes: {
+            old: {
+              amount: oldAmount,
+              categoryId: expense.categoryId,
+              description: expense.description,
+              paidTo: expense.paidTo,
+              paymentMode: expense.paymentMode,
+            },
+            new: {
+              amount: newAmount,
+              categoryId: input.categoryId || expense.categoryId,
+              description: input.description || expense.description,
+              paidTo: input.paidTo || expense.paidTo,
+              paymentMode: input.paymentMode || expense.paymentMode,
+            },
+          },
+        },
+      });
+
+      return rec;
+    });
+
+    return updated;
+  }
+
+  // ─── 8c. Delete Expense (Super Admin Only) ───────────────────────────────────
+  static async deleteExpense(id: string, reason: string, userId: string) {
+    const expense = await prisma.expenseEntry.findUnique({
+      where: { id },
+    });
+    if (!expense) throw new AppError('NOT_FOUND', 'Expense entry not found', 404);
+
+    const wasApproved = expense.status === 'APPROVED' && !expense.isVoid;
+    const amount = expense.amount;
+    const date = expense.date;
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+
+    await prisma.$transaction(async (tx) => {
+      // 1. If it was approved and not voided, reverse the financial movement
+      if (wasApproved) {
+        await tx.branchCashBalance.update({
+          where: { branchId: expense.branchId },
+          data: {
+            currentBalance: { increment: amount },
+          },
+        });
+
+        await tx.expenseDailyLedger.updateMany({
+          where: { branchId: expense.branchId, date },
+          data: {
+            totalExpenses: { decrement: amount },
+            closingBalance: { increment: amount },
+          },
+        });
+
+        await tx.expenseDailyRollup.updateMany({
+          where: {
+            branchId: expense.branchId,
+            date,
+            categoryId: expense.categoryId,
+          },
+          data: {
+            totalAmount: { decrement: amount },
+            entryCount: { decrement: 1 },
+          },
+        });
+
+        await tx.expenseMonthlyRollup.updateMany({
+          where: {
+            branchId: expense.branchId,
+            year,
+            month,
+            categoryId: expense.categoryId,
+          },
+          data: {
+            totalAmount: { decrement: amount },
+            entryCount: { decrement: 1 },
+          },
+        });
+      }
+
+      // 2. Write an audit log recording deletion
+      await tx.expenseAuditLog.create({
+        data: {
+          expenseId: null,
+          action: 'DELETE',
+          performedById: userId,
+          reason: reason || 'Super Admin deleted expense entry',
+          changes: {
+            deletedEntryNumber: expense.entryNumber,
+            deletedAmount: expense.amount,
+            wasApproved,
+            branchId: expense.branchId,
+            date: expense.date,
+          },
+        },
+      });
+
+      // 3. Delete the expense entry record
+      await tx.expenseEntry.delete({
+        where: { id },
+      });
+    });
+
+    return {
+      success: true,
+      message: `Expense voucher ${expense.entryNumber} deleted successfully`,
+    };
+  }
+
   // ─── 9. Daily Closing & Reconciliation ───────────────────────────────────────
   static async reconcileDaily(input: DailyReconciliationInput, userId: string) {
     const date = parseDateOnly(input.date);

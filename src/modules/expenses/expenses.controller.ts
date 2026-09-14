@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { ExpensesService } from './expenses.service';
 import {
   CreateExpenseSchema,
+  UpdateExpenseSchema,
+  DeleteExpenseSchema,
   BatchSyncExpensesSchema,
   ExpenseFilterQuerySchema,
   ApproveExpenseSchema,
@@ -15,6 +17,7 @@ import {
   ExportReportQuerySchema,
 } from './expenses.schema';
 import { streamWorkbookToResponse } from './expenses-export.service';
+import { uploadAttachmentFile } from '../upload/upload.service';
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 
@@ -150,6 +153,46 @@ export class ExpensesController {
       success: true,
       message: 'Expense voided and balance reversal applied',
       data: voided,
+    });
+  }
+
+  // ─── 9b. Update Expense ──────────────────────────────────────────────────────
+  static async updateExpense(req: Request, res: Response) {
+    const { id } = req.params;
+    const input = UpdateExpenseSchema.parse(req.body);
+    const userId = (req.user as any).id;
+
+    const updated = await ExpensesService.updateExpense(id, input, userId);
+    return res.status(200).json({
+      success: true,
+      message: 'Expense entry updated successfully',
+      data: updated,
+    });
+  }
+
+  // ─── 9c. Delete Expense (Super Admin Only) ───────────────────────────────────
+  static async deleteExpense(req: Request, res: Response) {
+    const { id } = req.params;
+    const { reason } = DeleteExpenseSchema.parse(req.body || {});
+    const userId = (req.user as any).id;
+
+    const result = await ExpensesService.deleteExpense(id, reason, userId);
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+    });
+  }
+
+  // ─── 9d. Upload Expense Receipt / Voucher Slip ───────────────────────────────
+  static async uploadReceipt(req: Request, res: Response) {
+    if (!req.file) {
+      throw new AppError('NO_FILE', 'No receipt image or PDF file provided', 400);
+    }
+    const url = await uploadAttachmentFile(req.file, 'expense-receipts');
+    return res.status(201).json({
+      success: true,
+      message: 'Receipt slip uploaded successfully',
+      data: { url, fileName: req.file.originalname, size: req.file.size },
     });
   }
 

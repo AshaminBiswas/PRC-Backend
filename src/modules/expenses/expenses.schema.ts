@@ -56,10 +56,16 @@ export const UpdateExpenseSchema = z.object({
   paidTo: z.string().min(2).optional(),
   receiptAttachment: z.string().optional().nullable(),
   employeeId: z.string().optional().nullable(),
-  changeReason: z.string().min(2, 'Reason for change is mandatory for audit'),
+  changeReason: z.string().optional().default('Expense details updated'),
 });
 
 export type UpdateExpenseInput = z.infer<typeof UpdateExpenseSchema>;
+
+export const DeleteExpenseSchema = z.object({
+  reason: z.string().optional().default('Super Admin deleted expense entry'),
+});
+
+export type DeleteExpenseInput = z.infer<typeof DeleteExpenseSchema>;
 
 // ─── Approval / Rejection Schema ─────────────────────────────────────────────
 export const ApproveExpenseSchema = z.object({

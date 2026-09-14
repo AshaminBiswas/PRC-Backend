@@ -1,6 +1,28 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { authenticate, authorize } from '../../middleware/auth.middleware';
 import { ExpensesController } from './expenses.controller';
+
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+      'image/heic',
+      'application/pdf',
+    ];
+    if (allowed.includes(file.mimetype) || file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files (JPG, PNG, WEBP, HEIC) and PDF files are allowed as receipts'));
+    }
+  },
+});
 
 const router = Router();
 
@@ -103,10 +125,30 @@ router.get(
   ExpensesController.getExpenses
 );
 
+// ─── Receipt / Voucher Slip Upload ──────────────────────────────────────────
+router.post(
+  '/upload-receipt',
+  authorize('expenses.create', 'super_admin', 'admin', 'manager', 'cashier', 'staff'),
+  upload.single('file'),
+  ExpensesController.uploadReceipt
+);
+
 router.get(
   '/:id',
   authorize('expenses.read', 'super_admin', 'admin', 'manager', 'cashier', 'staff'),
   ExpensesController.getExpenseById
+);
+
+router.patch(
+  '/:id',
+  authorize('expenses.create', 'super_admin', 'admin', 'manager', 'cashier'),
+  ExpensesController.updateExpense
+);
+
+router.delete(
+  '/:id',
+  authorize('super_admin'),
+  ExpensesController.deleteExpense
 );
 
 router.post(
