@@ -60,15 +60,19 @@ export const updateInvoiceSchema = createInvoiceSchema.partial();
 
 export const listInvoicesQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(500).default(20),
   search: z.string().optional(),
   invoiceType: invoiceTypeEnum.optional(),
-  status: invoiceStatusEnum.optional(),
+  status: z.string().optional(),
   customerId: z.string().optional(),
   financialYear: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-});
+  date_from: z.string().optional(),
+  date_to: z.string().optional(),
+  supply_type: z.string().optional(),
+  branchId: z.string().optional(),
+}).passthrough();
 
 export const cancelInvoiceSchema = z.object({
   reason: z.string().min(3, 'Cancellation reason is required'),

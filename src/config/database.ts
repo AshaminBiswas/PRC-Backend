@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { env } from './env';
 
@@ -1042,14 +1043,23 @@ const PO_AUTO_HEAL_STATEMENTS = [
 
 export const autoHealDatabaseSchema = async () => {
   try {
-    // 1. Ensure mustChangePassword column exists on users table
+    // 1. Ensure patch tracking table exists
     await writePrisma.$executeRawUnsafe(`
-      ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "mustChangePassword" BOOLEAN NOT NULL DEFAULT false;
+      CREATE TABLE IF NOT EXISTS "_applied_schema_patches" (
+        "patch_hash" TEXT PRIMARY KEY,
+        "applied_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
-    // 2. Ensure b2b_customer_prices table exists
-    await writePrisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "b2b_customer_prices" (
+    // 2. Fetch already-applied patch hashes in a single fast query
+    const existingRows = (await writePrisma.$queryRawUnsafe(
+      `SELECT patch_hash FROM "_applied_schema_patches";`
+    )) as Array<{ patch_hash: string }>;
+    const appliedSet = new Set(existingRows.map((r) => r.patch_hash));
+
+    const coreStatements = [
+      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "mustChangePassword" BOOLEAN NOT NULL DEFAULT false;`,
+      `CREATE TABLE IF NOT EXISTS "b2b_customer_prices" (
         "id" TEXT NOT NULL,
         "userId" TEXT NOT NULL,
         "productId" TEXT NOT NULL,
@@ -1059,30 +1069,34 @@ export const autoHealDatabaseSchema = async () => {
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "b2b_customer_prices_pkey" PRIMARY KEY ("id")
-      );
-    `);
+      );`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "b2b_customer_prices_userId_productId_key" ON "b2b_customer_prices"("userId", "productId");`,
+      `CREATE INDEX IF NOT EXISTS "b2b_customer_prices_userId_idx" ON "b2b_customer_prices"("userId");`,
+      `CREATE INDEX IF NOT EXISTS "b2b_customer_prices_productId_idx" ON "b2b_customer_prices"("productId");`,
+    ];
 
-    // 3. Create missing indexes
-    await writePrisma.$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "b2b_customer_prices_userId_productId_key" ON "b2b_customer_prices"("userId", "productId");
-    `);
-    await writePrisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "b2b_customer_prices_userId_idx" ON "b2b_customer_prices"("userId");
-    `);
-    await writePrisma.$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "b2b_customer_prices_productId_idx" ON "b2b_customer_prices"("productId");
-    `);
+    const allStatements = [...coreStatements, ...PO_AUTO_HEAL_STATEMENTS];
+    let appliedCount = 0;
 
-    // 4. Run PO module schema auto-healing statements
-    for (const sql of PO_AUTO_HEAL_STATEMENTS) {
+    for (const sql of allStatements) {
+      const trimmed = sql.trim();
+      const hash = crypto.createHash('sha256').update(trimmed).digest('hex');
+      if (appliedSet.has(hash)) continue;
+
       try {
-        await writePrisma.$executeRawUnsafe(sql);
+        await writePrisma.$executeRawUnsafe(trimmed);
+        await writePrisma.$executeRawUnsafe(
+          `INSERT INTO "_applied_schema_patches" ("patch_hash") VALUES ($1) ON CONFLICT DO NOTHING;`,
+          hash
+        );
+        appliedSet.add(hash);
+        appliedCount++;
       } catch (e: any) {
         // Non-fatal warning
       }
     }
 
-    console.log('[Database] Schema auto-heal completed successfully.');
+    console.log(`[Database] Schema verification completed (${appliedCount} applied, ${appliedSet.size} cached).`);
   } catch (err: any) {
     console.warn('[Database] Schema auto-heal notice:', err?.message || err);
   }

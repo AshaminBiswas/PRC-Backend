@@ -582,7 +582,7 @@ export const createUser = async (input: CreateUserInput) => {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
     if (existing.deletedAt === null) {
-      throw new AppError('EMAIL_TAKEN', 'Email already in use', 409);
+      throw new AppError('EMAIL_TAKEN', `An account with email "${input.email}" already exists. Please use a different email or update the existing user.`, 409);
     }
     // User was soft-deleted: purge or anonymize old soft-deleted user to free the unique email constraint
     try {

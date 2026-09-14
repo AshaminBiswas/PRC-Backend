@@ -163,7 +163,78 @@ export const getInvoiceById = async (id: string, user?: UserContext) => {
     throw new AppError('FORBIDDEN', 'Access denied to this invoice', 403);
   }
 
-  return invoice;
+  return formatInvoiceDto(invoice);
+};
+
+export const formatInvoiceDto = (inv: any) => {
+  if (!inv) return inv;
+  const customerLegalName =
+    inv.customer?.companyName ||
+    [inv.customer?.firstName, inv.customer?.lastName].filter(Boolean).join(' ') ||
+    'Walk-in Customer';
+
+  const customerGstin = inv.customer?.b2bGstin || inv.customer?.gstin || '';
+
+  return {
+    ...inv,
+    invoice_number: inv.invoiceNumber,
+    invoice_date: inv.createdAt ? new Date(inv.createdAt).toISOString() : new Date().toISOString(),
+    financial_year: inv.financialYear,
+    sequence_no: 1,
+    customer_id: inv.customerId,
+    customer_legal_name: customerLegalName,
+    customer_gstin: customerGstin,
+    customer_pan: customerGstin && customerGstin.length >= 12 ? customerGstin.substring(2, 12) : undefined,
+    place_of_supply: inv.placeOfSupply || 'Karnataka',
+    place_of_supply_state_code: '29',
+    supply_type: customerGstin ? 'B2B' : 'B2C',
+    transaction_type: 'REGULAR',
+    taxable_amount: Number(inv.taxableAmount || 0),
+    cgst_amount: Number(inv.cgst || 0),
+    sgst_amount: Number(inv.sgst || 0),
+    igst_amount: Number(inv.igst || 0),
+    cess_amount: Number(inv.cess || 0),
+    discount_amount: Number(inv.discount || 0),
+    round_off: Number(inv.roundOff || 0),
+    grand_total: Number(inv.grandTotal || 0),
+    status: inv.status,
+    billing_address: {
+      legal_name: customerLegalName,
+      address_line1: 'PRC Hardware Terminal',
+      city: 'Bangalore',
+      state: 'Karnataka',
+      state_code: '29',
+      pincode: '560001',
+    },
+    shipping_address: {
+      legal_name: customerLegalName,
+      address_line1: 'PRC Hardware Terminal',
+      city: 'Bangalore',
+      state: 'Karnataka',
+      state_code: '29',
+      pincode: '560001',
+    },
+    items: (inv.items || []).map((item: any, idx: number) => ({
+      ...item,
+      sl_no: idx + 1,
+      product_id: item.productId,
+      description: item.productName || item.description || 'Hardware Item',
+      hsn_sac: item.hsnCode || '8467',
+      is_service: false,
+      quantity: Number(item.quantity || 1),
+      unit: item.unit || 'PCS',
+      unit_price: Number(item.unitPrice || 0),
+      discount: Number(item.discount || 0),
+      taxable_value: Number(item.taxableValue || 0),
+      gst_rate: Number(item.taxRate || 18),
+      cess_rate: Number(item.cessRate || 0),
+    })),
+    einvoice: inv.einvoice || {
+      status: inv.status === 'APPROVED' ? 'READY_FOR_IRN' : inv.status,
+    },
+    created_at: inv.createdAt ? new Date(inv.createdAt).toISOString() : new Date().toISOString(),
+    updated_at: inv.updatedAt ? new Date(inv.updatedAt).toISOString() : new Date().toISOString(),
+  };
 };
 
 export const listInvoices = async (query: ListInvoicesQueryInput, user?: UserContext) => {
@@ -178,13 +249,32 @@ export const listInvoices = async (query: ListInvoicesQueryInput, user?: UserCon
   }
 
   if (query.invoiceType) where.invoiceType = query.invoiceType;
-  if (query.status) where.status = query.status;
+  if (query.status) {
+    if (Object.values(InvoiceStatus).includes(query.status as any)) {
+      where.status = query.status as any;
+    }
+  }
   if (query.financialYear) where.financialYear = query.financialYear;
+
+  const from = (query as any).date_from || query.startDate;
+  const to = (query as any).date_to || query.endDate;
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = new Date(from);
+    if (to) {
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      where.createdAt.lte = toDate;
+    }
+  }
 
   if (query.search) {
     where.OR = [
       { invoiceNumber: { contains: query.search, mode: 'insensitive' } },
       { verificationId: { contains: query.search, mode: 'insensitive' } },
+      { customer: { firstName: { contains: query.search, mode: 'insensitive' } } },
+      { customer: { lastName: { contains: query.search, mode: 'insensitive' } } },
+      { customer: { companyName: { contains: query.search, mode: 'insensitive' } } },
     ];
   }
 
@@ -193,7 +283,8 @@ export const listInvoices = async (query: ListInvoicesQueryInput, user?: UserCon
     prisma.invoice.findMany({
       where,
       include: {
-        customer: { select: { id: true, firstName: true, lastName: true, email: true, companyName: true } },
+        items: true,
+        customer: { select: { id: true, firstName: true, lastName: true, email: true, companyName: true, gstin: true } },
         warehouse: { select: { id: true, name: true, code: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -202,9 +293,85 @@ export const listInvoices = async (query: ListInvoicesQueryInput, user?: UserCon
     }),
   ]);
 
+  const formattedInvoices = invoices.map(formatInvoiceDto);
   const pagination = buildPagination(page, limit, totalItems);
 
-  return { data: invoices, pagination };
+  return { data: formattedInvoices, pagination, stats: { total: totalItems } };
+};
+
+export const updateDraftInvoice = async (id: string, input: any, user?: UserContext) => {
+  const invoice = await getInvoiceById(id, user);
+
+  if (invoice.status !== InvoiceStatus.DRAFT) {
+    throw new AppError('BAD_REQUEST', `Only DRAFT invoices can be updated (current status: ${invoice.status})`, 400);
+  }
+
+  const updateData: any = {};
+  if (input.notes !== undefined) updateData.notes = input.notes;
+  if (input.place_of_supply || input.placeOfSupply) updateData.placeOfSupply = input.place_of_supply || input.placeOfSupply;
+  if (input.paymentTerms) updateData.paymentTerms = input.paymentTerms;
+  if (input.dueDate) updateData.dueDate = new Date(input.dueDate);
+
+  const updated = await prisma.invoice.update({
+    where: { id: invoice.id },
+    data: updateData,
+    include: {
+      items: true,
+      customer: true,
+      warehouse: true,
+      history: true,
+    },
+  });
+
+  return formatInvoiceDto(updated);
+};
+
+export const validateInvoice = async (id: string, user?: UserContext) => {
+  const invoice = await getInvoiceById(id, user);
+
+  const validationResults: Array<{ field: string; label: string; passed: boolean; message?: string }> = [];
+
+  validationResults.push({
+    field: 'invoice_number',
+    label: 'Invoice Number Format',
+    passed: Boolean(invoice.invoiceNumber && invoice.invoiceNumber.length >= 3),
+    message: invoice.invoiceNumber ? undefined : 'Missing invoice number',
+  });
+
+  validationResults.push({
+    field: 'customer',
+    label: 'Customer Registration & Legal Name',
+    passed: Boolean(invoice.customer || invoice.customer_legal_name),
+    message: invoice.customer || invoice.customer_legal_name ? undefined : 'Customer name is required',
+  });
+
+  validationResults.push({
+    field: 'place_of_supply',
+    label: 'Place of Supply (POS)',
+    passed: Boolean(invoice.placeOfSupply || invoice.place_of_supply),
+    message: invoice.placeOfSupply || invoice.place_of_supply ? undefined : 'Place of supply is missing',
+  });
+
+  const itemsCount = (invoice.items || []).length;
+  validationResults.push({
+    field: 'items',
+    label: 'Line Items Validation',
+    passed: itemsCount > 0,
+    message: itemsCount > 0 ? undefined : 'At least one line item is required',
+  });
+
+  const grandTotal = Number(invoice.grand_total || invoice.grandTotal || 0);
+  validationResults.push({
+    field: 'grand_total',
+    label: 'Total Valuation & Tax Integrity',
+    passed: grandTotal > 0,
+    message: grandTotal > 0 ? undefined : 'Grand total must be greater than zero',
+  });
+
+  return {
+    invoice,
+    validationResults,
+  };
 };
 
 export const approveInvoice = async (id: string, user?: UserContext) => {

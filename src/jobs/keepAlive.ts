@@ -37,12 +37,9 @@ export const startKeepAlive = (): void => {
   // Only run in production (Render deployment)
   if (process.env.NODE_ENV !== 'production') return;
 
-  // Determine the self URL — use RENDER_EXTERNAL_URL if available, fallback to localhost
-  const renderUrl = process.env.RENDER_EXTERNAL_URL;
-  const port = process.env.PORT || 3000;
-  const selfUrl = renderUrl
-    ? `${renderUrl}/health`
-    : `http://localhost:${port}/health`;
+  // Determine the self URL — use RENDER_EXTERNAL_URL if available, fallback to production Render URL
+  const renderUrl = process.env.RENDER_EXTERNAL_URL || 'https://prc-backend-6sw7.onrender.com';
+  const selfUrl = `${renderUrl.replace(/\/$/, '')}/health`;
 
   logger.info(`[KeepAlive] 🚀 Server self-ping every ${PING_INTERVAL_MS / 60000} min → ${selfUrl}`);
   logger.info(`[KeepAlive]    Render sleep threshold: 15 min | Our interval: ${PING_INTERVAL_MS / 60000} min — server will NEVER sleep.`);

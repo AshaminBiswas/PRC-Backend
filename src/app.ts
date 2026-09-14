@@ -42,6 +42,7 @@ import appointmentsRoutes from './modules/appointments/appointments.routes';
 import allocationRoutes from './modules/allocation/allocation.routes';
 import logisticsRoutes from './modules/logistics/logistics.routes';
 import invoiceRoutes from './modules/invoices/invoices.routes';
+import einvoiceRoutes from './modules/invoices/einvoice.routes';
 import webhookRoutes from './modules/payments/webhook.routes';
 import b2bPricingRoutes from './modules/b2b-pricing/b2b-pricing.routes';
 import auditRoutes from './modules/audit/audit.routes';
@@ -284,8 +285,13 @@ const handleReady = (_req: express.Request, res: express.Response) => {
   });
 };
 
+const handlePing = (_req: express.Request, res: express.Response) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: Date.now() });
+};
+
 app.get(['/health', `${prefix}/health`], handleHealth);
 app.get(['/ready', `${prefix}/ready`], handleReady);
+app.get(['/ping', `${prefix}/ping`], handlePing);
 
 // ─── Prometheus Metrics Endpoint ─────────────────────────────────────────────
 import { register, httpRequestDurationMicroseconds, httpRequestsTotal } from './config/metrics';
@@ -360,6 +366,9 @@ app.use(`${prefix}/allocation`, allocationRoutes);
 app.use('/api/warehouse', allocationRoutes);
 app.use(`${prefix}/logistics`, logisticsRoutes);
 app.use(`${prefix}/invoices`, invoiceRoutes);
+app.use(`${prefix}/gst/invoices`, invoiceRoutes);
+app.use(`${prefix}/gst/einvoice`, einvoiceRoutes);
+app.use(`${prefix}/gst`, invoiceRoutes);
 app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
 app.use(`${prefix}/audit`, auditRoutes);
 app.use(`${prefix}/po-management`, poManagementRoutes);

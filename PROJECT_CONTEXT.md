@@ -28,13 +28,14 @@ D:\
 - **Database Connection Architecture**:
   - `DATABASE_URL`: Supabase Transaction Pooler via PgBouncer on port `6543` (`?pgbouncer=true`). Used for application queries.
   - `DIRECT_URL`: Supabase Direct Session Pooler on port `5432`. Required for DDL migrations and schema changes.
-- **Database Self-Healing**: `src/scripts/fix-db.js` runs automatically on `npm start` to idempotently patch missing columns and indexes before Express boots.
+- **Database Self-Healing & Instant Boot**: `src/scripts/fix-db.js` and `src/config/database.ts` use SHA256 hash tracking against `_applied_schema_patches` to complete schema verification in <20ms on boot (skipping redundant DDL statements). `seed-all-permissions.js` performs single-query diffing and bulk inserts, dropping startup overhead from 50s down to <1s.
+- **Sleep Prevention & Keep-Alive**: `src/jobs/keepAlive.ts` pings `https://prc-backend-6sw7.onrender.com/health` every 4 minutes externally, preventing Render free-tier inactivity timeouts. Zero-overhead `/ping` and `/api/v1/ping` endpoints allow instant health monitoring.
 - **Caching & KV**: Upstash Redis (REST HTTP client) and `ioredis`.
 - **Background Jobs & Queues**: BullMQ worker queues for async jobs, emails, and batch processing (`src/queues/bullmq.worker.ts`).
 - **Real-Time Communication**: Server-Sent Events (SSE) at `/api/v1/notifications/stream` and internal `eventBus` (`src/events/eventBus.ts`).
 - **Authentication**: JWT (Access + Refresh tokens), 2FA TOTP (Speakeasy + QR codes), Email OTP, RBAC with granular permissions.
 - **Payments**: Razorpay SDK and PhonePe Gateway integration with webhook signature verification.
-- **Invoicing & GST**: Indian GST tax engine (Intrastate CGST+SGST, Interstate IGST), HSN/SAC code mapping, IRN / E-Invoice readiness.
+- **Invoicing & GST**: Indian GST tax engine (Intrastate CGST+SGST, Interstate IGST), HSN/SAC code mapping, IRN / E-Invoice suite with endpoints at `/api/v1/invoices`, `/api/v1/gst/invoices`, and `/api/v1/gst/einvoice`.
 
 ### 2.2 Admin Console (`D:\admin`)
 - **Framework**: React 18, Vite 6, TypeScript.
@@ -205,7 +206,7 @@ All modules follow a uniform, production-grade layered architecture:
 | `transfers` | `/api/v1/transfers` | Inter-branch transfers with reservation, dispatch, and receiving stages |
 | `stock-adjustments` | `/api/v1/stock-adjustments` | Cycle count adjustments, damages, returns with mandatory reason audit |
 | `stock-movements` | `/api/v1/stock-movements` | Immutable audit ledger of every inventory mutation across facilities |
-| `invoices` | `/api/v1/invoices` | GST tax invoices, IRN generation, E-Invoicing, PDF export |
+| `invoices` | `/api/v1/invoices`, `/api/v1/gst/invoices`, `/api/v1/gst/einvoice` | GST tax invoices, IRN generation (`POST /gst/einvoice/:id/generate`), IRN cancellation, signed QR codes, IRN JSON exports, HTML/PDF rendering, and DRAFT validations |
 | `logistics` | `/api/v1/logistics` | Courier integration, waybill generation, SLA tracking |
 | `notifications` | `/api/v1/notifications` | Real-time SSE event stream, user inbox, admin alerts |
 | `orders` | `/api/v1/orders` | Full order lifecycle, status transitions, cancellation restock |

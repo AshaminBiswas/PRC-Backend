@@ -97,6 +97,10 @@ router.get(
 
 router.get('/:id', controller.getInvoiceById);
 
+router.patch('/:id', authorize('invoices.create', 'orders.create'), controller.updateInvoice);
+router.put('/:id', authorize('invoices.create', 'orders.create'), controller.updateInvoice);
+router.post('/:id/validate', controller.validateInvoice);
+
 router.post(
   '/:id/approve',
   authorize('invoices.approve', 'finance.manage'),
@@ -120,6 +124,7 @@ router.post(
 router.post('/:id/email', controller.emailInvoice);
 router.post('/:id/print', controller.getInvoiceHtmlPrint);
 router.post('/:id/pdf', controller.downloadInvoicePdf);
+router.get('/:id/pdf', controller.downloadInvoicePdf);
 router.get('/:id/download', controller.downloadInvoicePdf);
 router.get('/:id/history', controller.getInvoiceHistory);
 router.get('/:id/audit', controller.getInvoiceHistory);

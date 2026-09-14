@@ -329,35 +329,52 @@ async function seedAllPermissions() {
   let createdCount = 0;
   let updatedCount = 0;
 
-  for (const perm of ALL_SYSTEM_PERMISSIONS) {
-    const existing = await prisma.permission.findUnique({
-      where: { slug: perm.slug },
-    });
+  // Single fast query to fetch all existing permissions
+  const existingPerms = await prisma.permission.findMany();
+  const existingMap = new Map(existingPerms.map((p) => [p.slug, p]));
 
-    if (existing) {
-      await prisma.permission.update({
-        where: { slug: perm.slug },
-        data: {
-          name: perm.name,
-          module: perm.module,
-          description: perm.description,
-        },
+  const missingToCreate = [];
+  const toUpdate = [];
+
+  for (const perm of ALL_SYSTEM_PERMISSIONS) {
+    const existing = existingMap.get(perm.slug);
+    if (!existing) {
+      missingToCreate.push({
+        name: perm.name,
+        slug: perm.slug,
+        module: perm.module,
+        description: perm.description,
       });
-      updatedCount++;
-    } else {
-      await prisma.permission.create({
-        data: {
-          name: perm.name,
-          slug: perm.slug,
-          module: perm.module,
-          description: perm.description,
-        },
-      });
-      createdCount++;
+    } else if (
+      existing.name !== perm.name ||
+      existing.module !== perm.module ||
+      existing.description !== perm.description
+    ) {
+      toUpdate.push(perm);
     }
   }
 
-  console.log(`[seed-permissions] Permissions upserted: ${createdCount} created, ${updatedCount} updated.`);
+  if (missingToCreate.length > 0) {
+    await prisma.permission.createMany({
+      data: missingToCreate,
+      skipDuplicates: true,
+    });
+    createdCount = missingToCreate.length;
+  }
+
+  for (const perm of toUpdate) {
+    await prisma.permission.update({
+      where: { slug: perm.slug },
+      data: {
+        name: perm.name,
+        module: perm.module,
+        description: perm.description,
+      },
+    });
+    updatedCount++;
+  }
+
+  console.log(`[seed-permissions] Permissions verified: ${createdCount} created, ${updatedCount} updated (${existingPerms.length} already current).`);
 
   // Find Super Admin role (by slug or name)
   const superAdminRole = await prisma.role.findFirst({

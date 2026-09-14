@@ -241,3 +241,21 @@ export const createQuotation = async (req: Request, res: Response, next: NextFun
     next(error);
   }
 };
+
+export const updateInvoice = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await invoicesService.updateDraftInvoice(req.params.id, req.body, req.user);
+    sendSuccess(res, data, 'Invoice updated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const validateInvoice = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await invoicesService.validateInvoice(req.params.id, req.user);
+    sendSuccess(res, data, 'Invoice validation completed');
+  } catch (error) {
+    next(error);
+  }
+};
