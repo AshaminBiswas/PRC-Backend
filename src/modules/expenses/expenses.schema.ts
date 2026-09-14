@@ -87,7 +87,7 @@ export const ExpenseFilterQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   branchId: z.string().optional(),
   categoryId: z.string().optional(),
-  status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'ALL']).optional(),
+  status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'VOIDED', 'ALL']).optional(),
   paymentMode: z.enum(['CASH', 'UPI', 'BANK_TRANSFER', 'ALL']).optional(),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid startDate format').optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid endDate format').optional(),

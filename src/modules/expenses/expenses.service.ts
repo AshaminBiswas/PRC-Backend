@@ -323,23 +323,31 @@ export class ExpensesService {
       addedById,
       employeeId,
       search,
-      isVoid = false,
+      isVoid,
       sortBy = 'date',
       sortOrder = 'desc',
     } = query;
 
-    const where: Prisma.ExpenseEntryWhereInput = {
-      isVoid,
-    };
+    const where: Prisma.ExpenseEntryWhereInput = {};
+
+    if (status === 'VOIDED') {
+      where.isVoid = true;
+    } else {
+      if (typeof isVoid === 'boolean') {
+        where.isVoid = isVoid;
+      } else if (status && status !== 'ALL') {
+        where.isVoid = false;
+      }
+      if (status && status !== 'ALL') {
+        where.status = status as ExpenseStatus;
+      }
+    }
 
     if (branchId) where.branchId = branchId;
     if (categoryId) where.categoryId = categoryId;
     if (addedById) where.addedById = addedById;
     if (employeeId) where.employeeId = employeeId;
 
-    if (status && status !== 'ALL') {
-      where.status = status as ExpenseStatus;
-    }
     if (paymentMode && paymentMode !== 'ALL') {
       where.paymentMode = paymentMode as ExpensePaymentMode;
     }

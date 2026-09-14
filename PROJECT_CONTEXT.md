@@ -771,9 +771,31 @@ The Storefront was architected and optimized for native app-like responsiveness 
               - 1-click Download Official Payslip PDF (`GET /api/v1/employees/payroll/:id/pdf`) built with `pdfmake` featuring the official **Pacific Restroom Cubicle & Locker Solutions** logo (`PACIFIC_RESTROOM_LOGO_DATA_URL`).
               - 1-click Resend Payslip Email (`POST /api/v1/employees/payroll/:id/send-email`).
 
+    30. **Daily Cash Expense Tracker & Multi-Branch Ledger Suite (`ExpensesPage.tsx`, `expensesApi.ts`, `expenses.service.ts`, `expenses.schema.ts`)**:
+          - **Multi-Branch Consolidated Ledger & Filter Architecture**:
+            - Super Admins and Admins can view expenses across all branches (`Delhi HQ`, `Kolkata Branch`) in a single consolidated ledger view (`branchId: 'ALL'`) or filter down to a specific branch via the dedicated branch selector.
+            - Tab 1 Fast Cashier Entry Form features an explicit **Branch Location** dropdown picker (`entryBranchId`), ensuring that expenses logged for either Delhi or Kolkata are correctly tagged at entry time.
+            - Tab 2 Organization Expense Ledger table dynamically displays the **Branch** column whenever the consolidated view is selected or multiple branches exist, with branch badge pills (`Delhi HQ (DEL)`, `Kolkata Branch (KOL)`).
+            - Backend Zod validation (`ExpenseFilterQuerySchema`) expanded to accept `status: 'VOIDED'` and `status: 'ALL'`. The `getExpenses` query engine handles voided filter states gracefully, ensuring active and voided records display transparently in the ledger without throwing 400 Bad Request errors.
+          - **Resilient Offline Browser Queue & Auto-Sync Engine**:
+            - Captures failed or slow submissions into browser `localStorage` (`prc_offline_expense_queue`) with exact date, time, and branch stamps when the backend is asleep or network drops.
+            - Proactively auto-syncs queued vouchers to PostgreSQL on application mount (`loadInit`) and network reconnect (`window.online`).
+            - Amber **Offline Queue Alert Banner** displayed in both Tab 1 (Fast Entry) and Tab 2 (Ledger) notifying the administrator of pending offline vouchers with a 1-click **Sync Queued Entries Now** button.
+          - **Receipt Slip / Voucher Interactive Preview Modal (Images & PDFs)**:
+            - Rich modal viewer (`previewReceipt`) supporting high-resolution receipt images (JPEG, PNG, WEBP) and multi-page PDF documents via an embedded `<iframe />` viewport.
+            - Includes voucher metadata header (Voucher No, Amount, Category, Paid To, Date & Time, Status badge, Branch code).
+            - Fast action buttons: **Open in New Tab** (`ExternalLink`) and **Download Slip** (`Download`).
+            - View Slip buttons (`Camera` icon) mounted across:
+              - Tab 1 Today's cash entries desktop table (`Receipt` column).
+              - Tab 1 Today's cash entries mobile cards.
+              - Tab 1 "Recently Logged Voucher" success card preview.
+              - Tab 2 Organization Expense Ledger desktop table (`Receipt` column).
+              - Tab 3 Pending Approvals queue cards.
+
 ---
 
-*Last Updated: 2026-09-12 (Configured optional Bank Disbursement Account section with resilient sanitization in Employee Management, added default 'Workers' designation with quick-pick suggestion pills and Directory toolbar filtering, verified builds, and validated 0 TypeScript errors across stack)*
+*Last Updated: 2026-09-14 (Enhanced Expense Tracker with Multi-Branch consolidated ledger, branch switcher in entry form, resilient offline queue auto-sync with amber banner, and rich Receipt Slip / Voucher interactive viewer modal for Images & PDFs; verified 0 TypeScript compiler errors across stack)*
+
 
 
 
