@@ -11,8 +11,8 @@ import { logger } from '../config/logger';
 
 let keepAliveInterval: NodeJS.Timeout | null = null;
 
-const PING_INTERVAL_MS = 4 * 60 * 1000;  // 4 minutes — well below Render's 15min sleep threshold
-const STARTUP_DELAY_MS = 30 * 1000;       // 30 seconds after boot
+const PING_INTERVAL_MS = 3 * 60 * 1000;  // 3 minutes — well below Render's 15min sleep threshold
+const STARTUP_DELAY_MS = 20 * 1000;       // 20 seconds after boot
 const FETCH_TIMEOUT_MS = 10_000;          // 10 second timeout per ping
 
 const ping = async (url: string): Promise<void> => {
@@ -34,20 +34,34 @@ const ping = async (url: string): Promise<void> => {
 };
 
 export const startKeepAlive = (): void => {
-  // Only run in production (Render deployment)
-  if (process.env.NODE_ENV !== 'production') return;
+  // Run if deployed on Render or explicitly production
+  const isRender = !!(
+    process.env.RENDER ||
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.RENDER_SERVICE_ID ||
+    process.env.RENDER_INSTANCE_ID
+  );
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (!isRender && !isProd) return;
 
   // Determine the self URL — use RENDER_EXTERNAL_URL if available, fallback to production Render URL
   const renderUrl = process.env.RENDER_EXTERNAL_URL || 'https://prc-backend-6sw7.onrender.com';
-  const selfUrl = `${renderUrl.replace(/\/$/, '')}/health`;
+  const pingUrl = `${renderUrl.replace(/\/$/, '')}/api/v1/ping`;
+  const healthUrl = `${renderUrl.replace(/\/$/, '')}/health`;
 
-  logger.info(`[KeepAlive] 🚀 Server self-ping every ${PING_INTERVAL_MS / 60000} min → ${selfUrl}`);
+  logger.info(`[KeepAlive] 🚀 Server self-ping every ${PING_INTERVAL_MS / 60000} min → ${pingUrl}`);
   logger.info(`[KeepAlive]    Render sleep threshold: 15 min | Our interval: ${PING_INTERVAL_MS / 60000} min — server will NEVER sleep.`);
+
+  const runPings = () => {
+    ping(pingUrl);
+    ping(healthUrl);
+  };
 
   // Delay first ping to let the server fully boot
   setTimeout(() => {
-    ping(selfUrl);
-    keepAliveInterval = setInterval(() => ping(selfUrl), PING_INTERVAL_MS);
+    runPings();
+    keepAliveInterval = setInterval(runPings, PING_INTERVAL_MS);
   }, STARTUP_DELAY_MS);
 };
 

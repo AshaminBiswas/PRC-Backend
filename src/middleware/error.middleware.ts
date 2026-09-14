@@ -31,6 +31,11 @@ export const errorHandler = (
   if (origin && !res.getHeader('Access-Control-Allow-Origin')) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, X-Client-Version, X-Instance-ID'
+    );
   }
 
   // Known application errors
@@ -91,6 +96,11 @@ export const notFoundHandler = (req: Request, res: Response): void => {
   if (origin && !res.getHeader('Access-Control-Allow-Origin')) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, X-Client-Version, X-Instance-ID'
+    );
   }
   res.status(404).json({
     success: false,

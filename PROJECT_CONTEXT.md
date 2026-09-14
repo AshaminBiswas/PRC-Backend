@@ -858,9 +858,24 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - Sanitized `currentView` initialization so route segments `/login` cleanly default to `"dashboard"` instead of retaining an invalid non-view string.
             - In `AdminMandatory2FAPage.tsx`, `handleVerifyAndEnable` immediately calls `complete2FAVerification(res.user)` upon successful code entry, seamlessly transitioning the administrator directly into the Admin Console dashboard without requiring manual navigation or re-login.
 
+    36. **CORS Hardening, Render Cold-Start Resilience & Keep-Alive Sleep Prevention (2026-09-14)**:
+          - **First-in-Chain CORS Middleware & Fallback Injection**:
+            - In `app.ts`, relocated `cors(corsOptions)` and `app.options('*', cors(corsOptions))` to the very top of the Express middleware stack immediately after `trust proxy`, prior to `compression`, `helmet`, or request logging.
+            - Broadened regex matching to allow all Vercel domains (`/^https:\/\/[a-zA-Z0-9_.-]+\.vercel\.app$/`), localhost on any port, and LAN IPs.
+            - Added an explicit fallback CORS header injector middleware (`app.use((req, res, next) => ...)`) ensuring `Access-Control-Allow-Origin` and credentials are attached to all downstream requests.
+            - Updated `error.middleware.ts` (`errorHandler` and `notFoundHandler`) to inject full `Access-Control-Allow-*` headers (origin, credentials, methods, headers) before dispatching any 4xx/5xx JSON responses, preventing error masking as CORS violations in browsers.
+          - **Render Free-Tier Sleep Prevention**:
+            - In `keepAlive.ts`, updated execution conditions to detect Render environments (`RENDER`, `RENDER_EXTERNAL_URL`, `RENDER_SERVICE_ID`, `NODE_ENV === 'production'`).
+            - Shortened ping interval to 3 minutes (well under Render's 15-minute inactivity limit) and dual-pings both `/api/v1/ping` and `/health`.
+          - **Client-Side Silent Pings & Cold-Start Auto-Retry**:
+            - In `adminApi.ts`, configured `keepAliveServerPing` to use `mode: 'no-cors'`, preventing browser console CORS error noise while sleeping containers boot.
+            - In `executeFetchAdminApi`, added auto-retry support for HTTP 503 (`Service Unavailable`), in addition to 502/504, waiting 2.5s for Render containers to wake up.
+            - Added cold-start network drop detection in `catch (error)` to automatically retry failed fetches once before reporting an error to the UI.
+
 ---
 
-*Last Updated: 2026-09-14 (Resolved first-time 2FA setup automatic login; backend /auth/2fa/enable now mints fresh session tokens and returns authenticated user; Admin Console immediately transitions to dashboard; verified 0 TypeScript compiler errors across full stack)*
+*Last Updated: 2026-09-14 (CORS hardening and Render sleep prevention complete; first-in-chain CORS middleware, dual keep-alive pinger, and cold-start 503 auto-retry implemented; verified 0 TypeScript compiler errors across full stack)*
+
 
 
 
