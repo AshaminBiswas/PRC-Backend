@@ -308,6 +308,19 @@ const ALL_SYSTEM_PERMISSIONS = [
 
   // ─── 38. AI Agent (Copilot & Pilot AI) ─────────────────────────────────────
   { name: 'Use AI Copilot', slug: 'ai.use', module: 'ai_agent', description: 'Access AI Copilot chat, automated drafting, and AI report generation' },
+
+  // ─── 39. Daily Cash Expense Tracker ─────────────────────────────────────────
+  { name: 'Read Expenses', slug: 'expenses.read', module: 'expenses', description: 'View cash expense entries, running balance, and today ledger' },
+  { name: 'Create Expenses', slug: 'expenses.create', module: 'expenses', description: 'Log cash expense entries and sync offline queues' },
+  { name: 'Update Expenses', slug: 'expenses.update', module: 'expenses', description: 'Edit pending cash expense details' },
+  { name: 'Approve Expenses', slug: 'expenses.approve', module: 'expenses', description: 'Approve or reject threshold-flagged expense entries' },
+  { name: 'Void Expenses', slug: 'expenses.void', module: 'expenses', description: 'Void expense entries with audit reason and balance reversal' },
+  { name: 'Reconcile Daily Cash', slug: 'expenses.reconcile', module: 'expenses', description: 'Perform daily closing reconciliation and record physical cash count' },
+  { name: 'Manage Float Top-Up', slug: 'expenses.float', module: 'expenses', description: 'Record cash float injections and mid-day top-ups' },
+  { name: 'Manage Expense Categories', slug: 'expenses.categories', module: 'expenses', description: 'Create and configure expense categories and monthly budget limits' },
+  { name: 'View Expense Reports', slug: 'expenses.reports', module: 'expenses', description: 'Access category rollups, spend trends, and BI analytics' },
+  { name: 'Export Expense Reports', slug: 'expenses.export', module: 'expenses', description: 'Generate and stream multi-sheet day/week/month/year Excel workbooks' },
+  { name: 'Manage Expense Settings', slug: 'expenses.settings', module: 'expenses', description: 'Configure auto-approval thresholds and receipt requirements' },
 ];
 
 async function seedAllPermissions() {

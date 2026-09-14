@@ -158,6 +158,19 @@ enum PoSubmissionStatus {
   FULFILLMENT
 }
 
+enum ExpensePaymentMode {
+  CASH
+  UPI
+  BANK_TRANSFER
+}
+
+enum ExpenseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+
 enum LineItemSource {
   CUSTOMER_ENTERED
   ADMIN_MAPPED
@@ -276,6 +289,14 @@ model User {
   poActivityLogs        PoActivityLog[]  @relation("PoActivityLogPerformer")
   proformaInvoices      ProformaInvoice[]
   installerBillsCreated InstallerBill[]  @relation("InstallerBillsCreated")
+
+  // Daily Cash Expense Tracker Relations
+  expensesAdded        ExpenseEntry[]       @relation("ExpenseAddedBy")
+  expensesApproved     ExpenseEntry[]       @relation("ExpenseApprovedBy")
+  expensesVoided       ExpenseEntry[]       @relation("ExpenseVoidedBy")
+  ledgersReconciled    ExpenseDailyLedger[] @relation("LedgerReconciledBy")
+  floatTopUpsAdded     ExpenseFloatTopUp[]  @relation("FloatAddedBy")
+  expenseAuditLogs     ExpenseAuditLog[]    @relation("ExpenseAuditPerformer")
 
   @@index([email])
   @@index([status])
@@ -1971,6 +1992,15 @@ model Branch {
   transfersTo    StockTransfer[] @relation("TransferTo")
   stockMovements StockMovement[]
 
+  // Daily Cash Expense Tracker Relations
+  expenses        ExpenseEntry[]
+  dailyLedgers    ExpenseDailyLedger[]
+  floatTopUps     ExpenseFloatTopUp[]
+  cashBalance     BranchCashBalance?
+  dailyRollups    ExpenseDailyRollup[]
+  monthlyRollups  ExpenseMonthlyRollup[]
+  expenseSettings ExpenseSettings?
+
   @@index([code])
   @@index([isActive])
   @@index([deletedAt])
@@ -2503,6 +2533,7 @@ model Employee {
   advances           EmployeeAdvance[]
   deductions         EmployeeDeduction[]
   payrollRuns        EmployeePayrollRun[]
+  expenses           ExpenseEntry[]
 
   @@index([employeeId])
   @@index([email])
@@ -2663,6 +2694,211 @@ model EmployeeIdSequence {
 
   @@map("employee_id_sequences")
 }
+
+// ─── Daily Cash Expense Tracker Suite ─────────────────────────────────────────
+
+model ExpenseCategory {
+  id                 String    @id @default(uuid())
+  name               String    @unique
+  description        String?
+  monthlyBudgetLimit Int?      @map("monthly_budget_limit") // In paise
+  isActive           Boolean   @default(true) @map("is_active")
+  isDeleted          Boolean   @default(false) @map("is_deleted")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  entries            ExpenseEntry[]
+  dailyRollups       ExpenseDailyRollup[]
+  monthlyRollups     ExpenseMonthlyRollup[]
+
+  @@index([isActive, isDeleted])
+  @@map("expense_categories")
+}
+
+model ExpenseEntry {
+  id                 String             @id @default(uuid())
+  entryNumber        String             @unique @map("entry_number")
+  date               DateTime           @db.Date
+  time               String             @db.VarChar(10)
+  amount             Int                // Stored in paise, integer (never float)
+  categoryId         String             @map("category_id")
+  subCategory        String?            @map("sub_category")
+  paymentMode        ExpensePaymentMode @default(CASH) @map("payment_mode")
+  description        String             @db.Text
+  paidTo             String             @map("paid_to")
+  receiptAttachment  String?            @map("receipt_attachment")
+  branchId           String             @map("branch_id")
+  departmentId       String?            @map("department_id")
+  employeeId         String?            @map("employee_id")
+  addedById          String             @map("added_by_id")
+  status             ExpenseStatus      @default(PENDING)
+  approvedById       String?            @map("approved_by_id")
+  approvedAt         DateTime?          @map("approved_at")
+  rejectionReason    String?            @map("rejection_reason") @db.Text
+  isVoid             Boolean            @default(false) @map("is_void")
+  voidReason         String?            @map("void_reason") @db.Text
+  voidedById         String?            @map("voided_by_id")
+  voidedAt           DateTime?          @map("voided_at")
+  clientTempId       String?            @unique @map("client_temp_id") // for idempotent offline syncing
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  // Relations
+  category           ExpenseCategory    @relation(fields: [categoryId], references: [id])
+  branch             Branch             @relation(fields: [branchId], references: [id])
+  addedBy            User               @relation("ExpenseAddedBy", fields: [addedById], references: [id])
+  approvedBy         User?              @relation("ExpenseApprovedBy", fields: [approvedById], references: [id])
+  voidedBy           User?              @relation("ExpenseVoidedBy", fields: [voidedById], references: [id])
+  employee           Employee?          @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  auditLogs          ExpenseAuditLog[]
+
+  @@index([branchId, date])
+  @@index([branchId, status])
+  @@index([categoryId])
+  @@index([addedById])
+  @@index([date])
+  @@index([isVoid])
+  @@index([clientTempId])
+  @@map("expense_entries")
+}
+
+model ExpenseDailyLedger {
+  id                   String    @id @default(uuid())
+  branchId             String    @map("branch_id")
+  date                 DateTime  @db.Date
+  openingBalance       Int       @default(0) @map("opening_balance") // In paise
+  cashReceived         Int       @default(0) @map("cash_received") // Top-ups / float added today
+  totalExpenses        Int       @default(0) @map("total_expenses") // Snapshot of approved cash expenses
+  closingBalance       Int       @default(0) @map("closing_balance") // Calculated: opening + received - expenses
+  physicalCashCounted  Int?      @map("physical_cash_counted") // Entered at day-end
+  variance             Int?      @map("variance") // closingBalance - physicalCashCounted
+  isReconciled         Boolean   @default(false) @map("is_reconciled")
+  reconciledById       String?   @map("reconciled_by_id")
+  reconciledAt         DateTime? @map("reconciled_at")
+  reconciliationNotes  String?   @map("reconciliation_notes") @db.Text
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  branch               Branch    @relation(fields: [branchId], references: [id])
+  reconciledBy         User?     @relation("LedgerReconciledBy", fields: [reconciledById], references: [id])
+
+  @@unique([branchId, date])
+  @@index([date])
+  @@index([branchId, isReconciled])
+  @@map("expense_daily_ledgers")
+}
+
+model ExpenseFloatTopUp {
+  id          String    @id @default(uuid())
+  branchId    String    @map("branch_id")
+  date        DateTime  @db.Date
+  amount      Int       // In paise
+  source      String    // e.g. "Cash from Bank", "HQ Float", "Petty Cash Reimbursement"
+  referenceNo String?   @map("reference_no")
+  notes       String?   @db.Text
+  addedById   String    @map("added_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  branch      Branch    @relation(fields: [branchId], references: [id])
+  addedBy     User      @relation("FloatAddedBy", fields: [addedById], references: [id])
+
+  @@index([branchId, date])
+  @@map("expense_float_top_ups")
+}
+
+model BranchCashBalance {
+  branchId         String    @id @map("branch_id")
+  currentBalance   Int       @default(0) @map("current_balance") // In paise
+  lastEntryAt      DateTime? @map("last_entry_at")
+  lastReconciledAt DateTime? @map("last_reconciled_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  branch           Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@map("branch_cash_balances")
+}
+
+model ExpenseDailyRollup {
+  id                   String          @id @default(uuid())
+  branchId             String          @map("branch_id")
+  date                 DateTime        @db.Date
+  categoryId           String          @map("category_id")
+  totalAmount          Int             @default(0) @map("total_amount") // In paise
+  entryCount           Int             @default(0) @map("entry_count")
+  paymentModeBreakdown Json?           @map("payment_mode_breakdown")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+
+  branch               Branch          @relation(fields: [branchId], references: [id])
+  category             ExpenseCategory @relation(fields: [categoryId], references: [id])
+
+  @@unique([branchId, date, categoryId])
+  @@index([date])
+  @@index([branchId, date])
+  @@map("expense_daily_rollups")
+}
+
+model ExpenseMonthlyRollup {
+  id             String          @id @default(uuid())
+  branchId       String          @map("branch_id")
+  year           Int
+  month          Int
+  categoryId     String          @map("category_id")
+  totalAmount    Int             @default(0) @map("total_amount") // In paise
+  entryCount     Int             @default(0) @map("entry_count")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  branch         Branch          @relation(fields: [branchId], references: [id])
+  category       ExpenseCategory @relation(fields: [categoryId], references: [id])
+
+  @@unique([branchId, year, month, categoryId])
+  @@index([year, month])
+  @@index([branchId, year, month])
+  @@map("expense_monthly_rollups")
+}
+
+model ExpenseAuditLog {
+  id            String        @id @default(uuid())
+  expenseId     String?       @map("expense_id")
+  action        String        // "CREATE", "UPDATE", "APPROVE", "REJECT", "VOID", "FLOAT_TOPUP", "RECONCILE"
+  performedById String        @map("performed_by_id")
+  changes       Json?
+  reason        String?       @db.Text
+  ipAddress     String?       @map("ip_address")
+  userAgent     String?       @map("user_agent")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  expense       ExpenseEntry? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  performedBy   User          @relation("ExpenseAuditPerformer", fields: [performedById], references: [id])
+
+  @@index([expenseId])
+  @@index([performedById])
+  @@index([action])
+  @@map("expense_audit_logs")
+}
+
+model ExpenseSequence {
+  id         String   @id @default(uuid())
+  prefix     String   @unique // e.g. "EXP-2026-09"
+  lastNumber Int      @default(0) @map("last_number")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("expense_sequences")
+}
+
+model ExpenseSettings {
+  id                     String    @id @default(uuid())
+  branchId               String?   @unique @map("branch_id")
+  autoApprovalThreshold  Int       @default(200000) @map("auto_approval_threshold") // 200,000 paise = ₹2,000
+  requireReceiptAbove    Int?      @map("require_receipt_above") // in paise
+  alertNegativeBalance   Boolean   @default(true) @map("alert_negative_balance")
+  fiscalYearStartMonth   Int       @default(4) @map("fiscal_year_start_month")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  branch                 Branch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@map("expense_settings")
+}
+
 
 
 

@@ -30,6 +30,169 @@ if (!process.env.DATABASE_URL) {
 const prisma = new PrismaClient();
 
 const STATEMENTS = [
+  // ─── DAILY CASH EXPENSE TRACKER MODULE TABLES & TYPES ───
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExpensePaymentMode') THEN
+      CREATE TYPE "ExpensePaymentMode" AS ENUM ('CASH', 'UPI', 'BANK_TRANSFER');
+    END IF;
+  END $$`,
+
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExpenseStatus') THEN
+      CREATE TYPE "ExpenseStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+    END IF;
+  END $$`,
+
+  `CREATE TABLE IF NOT EXISTS "expense_categories" (
+    "id"                   TEXT NOT NULL PRIMARY KEY,
+    "name"                 TEXT NOT NULL UNIQUE,
+    "description"          TEXT,
+    "monthly_budget_limit" INTEGER,
+    "is_active"            BOOLEAN NOT NULL DEFAULT true,
+    "is_deleted"           BOOLEAN NOT NULL DEFAULT false,
+    "created_at"           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "expense_categories_active_deleted_idx" ON "expense_categories"("is_active", "is_deleted")`,
+
+  `CREATE TABLE IF NOT EXISTS "expense_entries" (
+    "id"                 TEXT NOT NULL PRIMARY KEY,
+    "entry_number"       TEXT NOT NULL UNIQUE,
+    "date"               DATE NOT NULL,
+    "time"               VARCHAR(10) NOT NULL,
+    "amount"             INTEGER NOT NULL,
+    "category_id"        TEXT NOT NULL,
+    "sub_category"       TEXT,
+    "payment_mode"       "ExpensePaymentMode" NOT NULL DEFAULT 'CASH',
+    "description"        TEXT NOT NULL,
+    "paid_to"            TEXT NOT NULL,
+    "receipt_attachment" TEXT,
+    "branch_id"          TEXT NOT NULL,
+    "department_id"      TEXT,
+    "employee_id"        TEXT,
+    "added_by_id"        TEXT NOT NULL,
+    "status"             "ExpenseStatus" NOT NULL DEFAULT 'PENDING',
+    "approved_by_id"     TEXT,
+    "approved_at"        TIMESTAMP(3),
+    "rejection_reason"   TEXT,
+    "is_void"            BOOLEAN NOT NULL DEFAULT false,
+    "void_reason"        TEXT,
+    "voided_by_id"       TEXT,
+    "voided_at"          TIMESTAMP(3),
+    "client_temp_id"     TEXT UNIQUE,
+    "created_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "expense_entries_branch_date_idx" ON "expense_entries"("branch_id", "date")`,
+  `CREATE INDEX IF NOT EXISTS "expense_entries_branch_status_idx" ON "expense_entries"("branch_id", "status")`,
+  `CREATE INDEX IF NOT EXISTS "expense_entries_category_idx" ON "expense_entries"("category_id")`,
+  `CREATE INDEX IF NOT EXISTS "expense_entries_added_by_idx" ON "expense_entries"("added_by_id")`,
+  `CREATE INDEX IF NOT EXISTS "expense_entries_date_idx" ON "expense_entries"("date")`,
+  `CREATE INDEX IF NOT EXISTS "expense_entries_is_void_idx" ON "expense_entries"("is_void")`,
+  `CREATE INDEX IF NOT EXISTS "expense_entries_client_temp_id_idx" ON "expense_entries"("client_temp_id")`,
+
+  `CREATE TABLE IF NOT EXISTS "expense_daily_ledgers" (
+    "id"                    TEXT NOT NULL PRIMARY KEY,
+    "branch_id"             TEXT NOT NULL,
+    "date"                  DATE NOT NULL,
+    "opening_balance"       INTEGER NOT NULL DEFAULT 0,
+    "cash_received"         INTEGER NOT NULL DEFAULT 0,
+    "total_expenses"        INTEGER NOT NULL DEFAULT 0,
+    "closing_balance"       INTEGER NOT NULL DEFAULT 0,
+    "physical_cash_counted" INTEGER,
+    "variance"              INTEGER,
+    "is_reconciled"         BOOLEAN NOT NULL DEFAULT false,
+    "reconciled_by_id"      TEXT,
+    "reconciled_at"         TIMESTAMP(3),
+    "reconciliation_notes"  TEXT,
+    "created_at"            TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"            TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "expense_daily_ledgers_branch_date_key" UNIQUE ("branch_id", "date")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "expense_daily_ledgers_date_idx" ON "expense_daily_ledgers"("date")`,
+  `CREATE INDEX IF NOT EXISTS "expense_daily_ledgers_branch_reconciled_idx" ON "expense_daily_ledgers"("branch_id", "is_reconciled")`,
+
+  `CREATE TABLE IF NOT EXISTS "expense_float_top_ups" (
+    "id"           TEXT NOT NULL PRIMARY KEY,
+    "branch_id"    TEXT NOT NULL,
+    "date"         DATE NOT NULL,
+    "amount"       INTEGER NOT NULL,
+    "source"       TEXT NOT NULL,
+    "reference_no" TEXT,
+    "notes"        TEXT,
+    "added_by_id"  TEXT NOT NULL,
+    "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "expense_float_top_ups_branch_date_idx" ON "expense_float_top_ups"("branch_id", "date")`,
+
+  `CREATE TABLE IF NOT EXISTS "branch_cash_balances" (
+    "branch_id"          TEXT NOT NULL PRIMARY KEY,
+    "current_balance"    INTEGER NOT NULL DEFAULT 0,
+    "last_entry_at"      TIMESTAMP(3),
+    "last_reconciled_at" TIMESTAMP(3),
+    "updated_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "expense_daily_rollups" (
+    "id"                     TEXT NOT NULL PRIMARY KEY,
+    "branch_id"              TEXT NOT NULL,
+    "date"                   DATE NOT NULL,
+    "category_id"            TEXT NOT NULL,
+    "total_amount"           INTEGER NOT NULL DEFAULT 0,
+    "entry_count"            INTEGER NOT NULL DEFAULT 0,
+    "payment_mode_breakdown" JSONB,
+    "updated_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "expense_daily_rollups_branch_date_category_key" UNIQUE ("branch_id", "date", "category_id")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "expense_daily_rollups_date_idx" ON "expense_daily_rollups"("date")`,
+  `CREATE INDEX IF NOT EXISTS "expense_daily_rollups_branch_date_idx" ON "expense_daily_rollups"("branch_id", "date")`,
+
+  `CREATE TABLE IF NOT EXISTS "expense_monthly_rollups" (
+    "id"           TEXT NOT NULL PRIMARY KEY,
+    "branch_id"    TEXT NOT NULL,
+    "year"         INTEGER NOT NULL,
+    "month"        INTEGER NOT NULL,
+    "category_id"  TEXT NOT NULL,
+    "total_amount" INTEGER NOT NULL DEFAULT 0,
+    "entry_count"  INTEGER NOT NULL DEFAULT 0,
+    "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "expense_monthly_rollups_branch_ym_category_key" UNIQUE ("branch_id", "year", "month", "category_id")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "expense_monthly_rollups_ym_idx" ON "expense_monthly_rollups"("year", "month")`,
+  `CREATE INDEX IF NOT EXISTS "expense_monthly_rollups_branch_ym_idx" ON "expense_monthly_rollups"("branch_id", "year", "month")`,
+
+  `CREATE TABLE IF NOT EXISTS "expense_audit_logs" (
+    "id"              TEXT NOT NULL PRIMARY KEY,
+    "expense_id"      TEXT,
+    "action"          TEXT NOT NULL,
+    "performed_by_id" TEXT NOT NULL,
+    "changes"         JSONB,
+    "reason"          TEXT,
+    "ip_address"      TEXT,
+    "user_agent"      TEXT,
+    "created_at"      TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+  `CREATE INDEX IF NOT EXISTS "expense_audit_logs_expense_idx" ON "expense_audit_logs"("expense_id")`,
+  `CREATE INDEX IF NOT EXISTS "expense_audit_logs_performer_idx" ON "expense_audit_logs"("performed_by_id")`,
+  `CREATE INDEX IF NOT EXISTS "expense_audit_logs_action_idx" ON "expense_audit_logs"("action")`,
+
+  `CREATE TABLE IF NOT EXISTS "expense_sequences" (
+    "id"          TEXT NOT NULL PRIMARY KEY,
+    "prefix"      TEXT NOT NULL UNIQUE,
+    "last_number" INTEGER NOT NULL DEFAULT 0,
+    "updated_at"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "expense_settings" (
+    "id"                      TEXT NOT NULL PRIMARY KEY,
+    "branch_id"               TEXT UNIQUE,
+    "auto_approval_threshold" INTEGER NOT NULL DEFAULT 200000,
+    "require_receipt_above"   INTEGER,
+    "alert_negative_balance"  BOOLEAN NOT NULL DEFAULT true,
+    "fiscal_year_start_month" INTEGER NOT NULL DEFAULT 4,
+    "updated_at"              TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+
   // ─── DEDICATED PROFORMA INVOICES MODULE TABLES & TYPES (TOP PRIORITY) ───
   `DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ProformaInvoiceStatus') THEN

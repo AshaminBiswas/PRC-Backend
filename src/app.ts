@@ -51,6 +51,7 @@ import proformaInvoicesRoutes from './modules/proforma-invoices/proforma-invoice
 import installerPaymentsRoutes from './modules/installer-payments/installer-payments.routes';
 import employeeManagementRoutes from './modules/employee-management/employee-management.routes';
 import aiAgentRoutes from './modules/ai-agent/ai-agent.routes';
+import expensesRoutes from './modules/expenses/expenses.routes';
 import {
   branchesRouter,
   suppliersRouter,
@@ -365,6 +366,7 @@ app.use(`${prefix}/po-management`, poManagementRoutes);
 app.use(`${prefix}/proforma-invoices`, proformaInvoicesRoutes);
 app.use(`${prefix}/installer-payments`, installerPaymentsRoutes);
 app.use(`${prefix}/employees`, employeeManagementRoutes);
+app.use(`${prefix}/expenses`, expensesRoutes);
 app.use(`${prefix}/ai-agent`, aiAgentRoutes);
 app.use(`${prefix}/events`, sseRoutes);
 
