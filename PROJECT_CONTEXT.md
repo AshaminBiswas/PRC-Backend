@@ -858,23 +858,34 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - Sanitized `currentView` initialization so route segments `/login` cleanly default to `"dashboard"` instead of retaining an invalid non-view string.
             - In `AdminMandatory2FAPage.tsx`, `handleVerifyAndEnable` immediately calls `complete2FAVerification(res.user)` upon successful code entry, seamlessly transitioning the administrator directly into the Admin Console dashboard without requiring manual navigation or re-login.
 
-    36. **CORS Hardening, Render Cold-Start Resilience & Keep-Alive Sleep Prevention (2026-09-14)**:
-          - **First-in-Chain CORS Middleware & Fallback Injection**:
-            - In `app.ts`, relocated `cors(corsOptions)` and `app.options('*', cors(corsOptions))` to the very top of the Express middleware stack immediately after `trust proxy`, prior to `compression`, `helmet`, or request logging.
-            - Broadened regex matching to allow all Vercel domains (`/^https:\/\/[a-zA-Z0-9_.-]+\.vercel\.app$/`), localhost on any port, and LAN IPs.
-            - Added an explicit fallback CORS header injector middleware (`app.use((req, res, next) => ...)`) ensuring `Access-Control-Allow-Origin` and credentials are attached to all downstream requests.
-            - Updated `error.middleware.ts` (`errorHandler` and `notFoundHandler`) to inject full `Access-Control-Allow-*` headers (origin, credentials, methods, headers) before dispatching any 4xx/5xx JSON responses, preventing error masking as CORS violations in browsers.
-          - **Render Free-Tier Sleep Prevention**:
-            - In `keepAlive.ts`, updated execution conditions to detect Render environments (`RENDER`, `RENDER_EXTERNAL_URL`, `RENDER_SERVICE_ID`, `NODE_ENV === 'production'`).
-            - Shortened ping interval to 3 minutes (well under Render's 15-minute inactivity limit) and dual-pings both `/api/v1/ping` and `/health`.
-          - **Client-Side Silent Pings & Cold-Start Auto-Retry**:
-            - In `adminApi.ts`, configured `keepAliveServerPing` to use `mode: 'no-cors'`, preventing browser console CORS error noise while sleeping containers boot.
-            - In `executeFetchAdminApi`, added auto-retry support for HTTP 503 (`Service Unavailable`), in addition to 502/504, waiting 2.5s for Render containers to wake up.
-            - Added cold-start network drop detection in `catch (error)` to automatically retry failed fetches once before reporting an error to the UI.
+    37. **Cross-Branch Pending Expense Approvals Queue & Custom Role In-Modal Permissions Governance (2026-09-14)**:
+          - **Cross-Branch Expense Approvals Queue Visibility**:
+            - In `ExpensesPage.tsx`, `fetchApprovals` previously defaulted to `branchId: selectedBranchId` (Delhi HQ), which suppressed pending approval vouchers logged from other branches (e.g. Kolkata Branch).
+            - Introduced `approvalsBranchFilter` state initialized to `'ALL'`, allowing management to view pending approvals across the entire organization by default.
+            - Added initial `fetchApprovals()` invocation upon component mount to populate the top navigation badge count immediately.
+            - Rendered interactive facility filter pills (`All Branches (${pendingEntries.length})`, `Delhi HQ`, `Kolkata Branch`) in the Approvals Tab toolbar for instant facility switching.
+            - Attached facility badges (`<Building2 /> ${e.branch?.name || 'Facility'}`) to every pending expense voucher card.
+            - Triggered `fetchApprovals()` on both `handleApproveEntry` and `handleConfirmReject` for instant live list refetching and badge count synchronization.
+          - **Custom Role Permissions Management & Super Admin In-Modal Authorization**:
+            - In `RolesPage.tsx`, enhanced Super Admin detection logic (`isSuperAdminUser`) across role slugs, boolean flags, and nested objects.
+            - Transformed Modal 2 (`editingRole`) from a metadata-only edit into a comprehensive Role & Permissions Management modal.
+            - Added `editPerms`, `editExpandedGroups`, `editPermSearch`, and `loadingEditPerms` states.
+            - Implemented `handleOpenEditRole(r: Role)` to dynamically query `rolesApi.getById(r.id)` and seed active role permissions into `editPerms`.
+            - Built in-modal search filtering, "Grant All", "Deselect All", "Expand All", and "Collapse All" controls.
+            - Grouped capabilities into module accordions with category headers, granted counter badges (`{checkedCount}/{groupSlugs.length}`), and quick "Select" / "Deselect" module buttons.
+            - Provided individual permission checkboxes with display name, code slug, and color-coded CRUD badges.
+            - Implemented `handleSaveEditRole` to atomically update role metadata (`rolesApi.update`) AND role permissions (`rolesApi.updatePermissions`).
+            - Added direct "Edit Role" button in the right-column header for custom roles alongside list action icons.
+          - **Staff Admin Provisioning Shortcuts**:
+            - Connected `onNavigateRoles` prop in `AdminLayout.tsx` and `AdminManagementPage.tsx` for 1-click navigation to `roles` view (`setCurrentView("roles")`).
+            - Added "Roles & Permissions" shortcut button in the staff directory header toolbar next to "+ Provision Admin / Manager".
+            - Embedded "+ Customize Roles & Perms" shortcut link in the Create Admin modal role selector header and active role preview card.
+            - Embedded "Customize Roles & Perms" shortcut link in the Edit Admin modal role selector.
 
 ---
 
-*Last Updated: 2026-09-14 (CORS hardening and Render sleep prevention complete; first-in-chain CORS middleware, dual keep-alive pinger, and cold-start 503 auto-retry implemented; verified 0 TypeScript compiler errors across full stack)*
+*Last Updated: 2026-09-14 (Custom role in-modal permissions governance and cross-branch pending expense approvals queue complete; verified 0 TypeScript compiler errors across full stack)*
+
 
 
 
