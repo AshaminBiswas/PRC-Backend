@@ -279,6 +279,9 @@ export const enable2Fa = async (req: Request, res: Response, next: NextFunction)
   try {
     const twoFactorService = await import('./twoFactor.service');
     const data = await twoFactorService.enable2Fa(req.user!.id, req.body.code);
+    if (data.refreshToken) {
+      setRefreshCookie(res, data.refreshToken);
+    }
     sendSuccess(res, data, '2FA enabled successfully');
   } catch (error) { next(error); }
 };

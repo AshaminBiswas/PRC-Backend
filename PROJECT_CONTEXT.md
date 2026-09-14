@@ -847,9 +847,20 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - In `ExpensesPage.tsx`, `loadInit()` decouples branch and category fetching, and a reactive `useEffect` automatically selects the first active branch (`Delhi HQ`) if unselected.
             - In `expenses.routes.ts`, added `expenses.update` permission to `PATCH /api/v1/expenses/:id`, enabling custom expense roles with update permissions to edit expense entries.
 
+    35. **First-Time 2FA Setup Automatic Login & Instant Dashboard Transition (2026-09-14)**:
+          - **Backend Token Issuance on 2FA Confirmation**:
+            - In `twoFactor.service.ts`, `enable2Fa` now issues a fresh authentication token pair (`accessToken` and `refreshToken`) and returns the complete authenticated `user` payload with `twoFactorEnabled: true` and `isTwoFactorEnabled: true`.
+            - In `auth.controller.ts`, `enable2Fa` automatically attaches the HTTP-only refresh token cookie (`setRefreshCookie`).
+            - Added resilient database fallback in `enable2Fa` and `setup2Fa` (`user.twoFactorSecret`), ensuring TOTP setup never fails even if the Redis cache session is evicted or temporarily unavailable.
+          - **Client-Side Instant Auto-Login & Navigation**:
+            - In `adminAuthService.ts`, `confirmEnable2FA` captures the freshly issued tokens, invokes `setAdminTokens`, and marks `setLocal2FAEnabled(true)`.
+            - In `AdminAuthContext.tsx`, implemented `complete2FAVerification(verifiedUser?)`, which updates the authenticated user in React state, synchronizes `localStorage`, sets `currentView("dashboard")`, and pushes `/dashboard` to the browser history.
+            - Sanitized `currentView` initialization so route segments `/login` cleanly default to `"dashboard"` instead of retaining an invalid non-view string.
+            - In `AdminMandatory2FAPage.tsx`, `handleVerifyAndEnable` immediately calls `complete2FAVerification(res.user)` upon successful code entry, seamlessly transitioning the administrator directly into the Admin Console dashboard without requiring manual navigation or re-login.
+
 ---
 
-*Last Updated: 2026-09-14 (Resolved Branch Location dropdown empty state for custom expense roles by permitting authenticated staff to list company branches; aligned expenses.update route authorization; verified 0 TypeScript compiler errors across full stack)*
+*Last Updated: 2026-09-14 (Resolved first-time 2FA setup automatic login; backend /auth/2fa/enable now mints fresh session tokens and returns authenticated user; Admin Console immediately transitions to dashboard; verified 0 TypeScript compiler errors across full stack)*
 
 
 

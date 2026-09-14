@@ -100,18 +100,43 @@ export const setup2Fa = async (userId: string, userEmail: string) => {
   const qrCodeUrl = await QRCode.toDataURL(otpauthUrl);
   const backupCodes = generateBackupCodes(8);
 
-  // Cache pending setup in Redis for 10 minutes (not written to DB yet)
+  // Cache pending setup in Redis for 10 minutes
   await cacheSet(`2fa:setup:${userId}`, { secret, backupCodes }, 600);
+
+  // Safe database backup so setup doesn't fail even if Redis restarts or is unreachable
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      twoFactorSecret: secret,
+      twoFactorBackupCodes: backupCodes,
+      twoFactorEnabled: false,
+    },
+  }).catch(() => {});
 
   return { secret, qrCodeUrl, otpauthUrl, backupCodes };
 };
 
 /**
  * Step 2: Confirm 2FA enable — verifies user's first TOTP code,
- * then persists 2FA secret + backup codes to the database.
+ * persists 2FA secret + backup codes to DB, and returns fresh auth tokens
+ * for immediate automatic login without friction.
  */
 export const enable2Fa = async (userId: string, userCode: string) => {
-  const setupData = await cacheGet<{ secret: string; backupCodes: string[] }>(`2fa:setup:${userId}`);
+  let setupData = await cacheGet<{ secret: string; backupCodes: string[] }>(`2fa:setup:${userId}`);
+
+  // Fallback to database if Redis session expired or was evicted
+  if (!setupData || !setupData.secret) {
+    const userFallback = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { twoFactorSecret: true, twoFactorBackupCodes: true },
+    });
+    if (userFallback?.twoFactorSecret) {
+      setupData = {
+        secret: userFallback.twoFactorSecret,
+        backupCodes: userFallback.twoFactorBackupCodes || [],
+      };
+    }
+  }
 
   if (!setupData || !setupData.secret) {
     throw new AppError('BAD_REQUEST', '2FA setup session expired or not initialized. Please initiate 2FA setup again.', 400);
@@ -122,13 +147,28 @@ export const enable2Fa = async (userId: string, userCode: string) => {
     throw new AppError('BAD_REQUEST', 'Invalid 2FA code. Please check your authenticator app and try again.', 400);
   }
 
-  // ✅ Persist to database (primary source of truth)
-  await prisma.user.update({
+  // ✅ Persist to database (primary source of truth) and load user with roles & permissions
+  const updatedUser = await prisma.user.update({
     where: { id: userId },
     data: {
       twoFactorEnabled: true,
       twoFactorSecret: setupData.secret,
       twoFactorBackupCodes: setupData.backupCodes,
+    },
+    include: {
+      userRoles: {
+        include: {
+          role: {
+            include: {
+              rolePermissions: {
+                include: {
+                  permission: true,
+                },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -138,10 +178,34 @@ export const enable2Fa = async (userId: string, userCode: string) => {
   // Clear pending setup cache
   await cacheDel(`2fa:setup:${userId}`);
 
+  // Generate tokens for automatic instant login
+  const { buildTokenPair, getPrimaryRoleSlug } = await import('./auth.service');
+  const roleSlug = getPrimaryRoleSlug(updatedUser.userRoles);
+  const { accessToken, refreshToken } = await buildTokenPair(updatedUser.id, updatedUser.email, roleSlug);
+  const permissions = updatedUser.userRoles.flatMap((ur) => ur.role.rolePermissions.map((rp) => rp.permission.slug));
+
   return {
     success: true,
     message: '2FA enabled successfully',
     backupCodes: setupData.backupCodes,
+    accessToken,
+    refreshToken,
+    expiresIn: 3600,
+    user: {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      firstName: updatedUser.firstName,
+      lastName: updatedUser.lastName,
+      phone: updatedUser.phone,
+      companyName: updatedUser.companyName,
+      gstin: updatedUser.gstin,
+      role: roleSlug,
+      permissions,
+      avatar: updatedUser.avatar,
+      mustChangePassword: updatedUser.mustChangePassword ?? false,
+      twoFactorEnabled: true,
+      isTwoFactorEnabled: true,
+    },
   };
 };
 
