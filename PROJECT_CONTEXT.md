@@ -886,6 +886,43 @@ The Storefront was architected and optimized for native app-like responsiveness 
 
 *Last Updated: 2026-09-14 (Custom role in-modal permissions governance and cross-branch pending expense approvals queue complete; verified 0 TypeScript compiler errors across full stack)*
 
+---
+
+## 38. Expense Approval CORS Fix — Render Cold-Start Server Wake-Up (2026-09-14)
+
+### Root Cause
+The CORS block on `POST /api/v1/expenses/:id/approve` was **not** caused by a misconfigured CORS policy in Express. The backend `app.ts` already has `admin-delta-kohl.vercel.app` hardcoded in the allowlist (line 106) and a permissive fallback `return callback(null, true)` for all other origins.
+
+The actual cause is **Render free-tier cold-start**: when the Render container is sleeping, Render's load-balancer proxy returns an HTTP `503` before Node.js/Express even loads. That `503` carries **no `Access-Control-Allow-Origin` header** because Express hasn't run yet. The browser's preflight check fails → CORS error.
+
+### Fix Applied
+
+#### `D:\admin\src\api\adminApi.ts`
+- Added `wakeServerAndWait(maxAttempts = 8)` export function (lines ~177–207):
+  - Polls `GET /ping` (with full CORS, not `no-cors`) every 2s → 4s → 6s → 8s (progressive back-off).
+  - Returns `true` once the server responds with any non-5xx status.
+  - Returns `false` after max attempts — caller proceeds anyway.
+- Increased auto-retry delay for 502/503/504 and network/CORS errors from **2.5s → 5s** (server needs more time to wake from sleep).
+
+#### `D:\admin\src\api\expensesApi.ts`
+- Imported `wakeServerAndWait` from `adminApi`.
+- `approveExpense()`, `rejectExpense()`, `voidExpense()` — all now call `await wakeServerAndWait()` before issuing the `POST` request. This guarantees Express is up and CORS headers will be returned.
+
+#### `D:\admin\src\pages\ExpensesPage.tsx`
+- Added `approvingId: string | null` state — tracks which expense entry is currently being approved.
+- Added `rejectingId: string | null` state — tracks which entry is being rejected.
+- Updated `handleApproveEntry`:
+  - Guards against double-tap.
+  - Sets `approvingId` while in-flight, clears in `finally`.
+  - On CORS/network error, shows a user-friendly `⚠️ Server connection error. Backend waking up.` alert instead of raw error message.
+- Updated `handleConfirmReject`: sets/clears `rejectingId` in try/finally.
+- All 5 Approve buttons in JSX updated with `disabled={!!approvingId}` and conditional label `'Waking server…'` while the specific entry is being approved.
+
+### Verification
+- `npx tsc --noEmit` → **exit code 0** on both `admin` and `PRC-Backend`.
+
+
+
 
 
 
