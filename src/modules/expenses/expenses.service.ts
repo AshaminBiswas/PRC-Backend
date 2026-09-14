@@ -855,10 +855,41 @@ export class ExpensesService {
 
   // ─── 11. Category Master CRUD & Budget Tracking ──────────────────────────────
   static async getCategories(includeSpendForMonth?: { year: number; month: number; branchId?: string }) {
-    const categories = await prisma.expenseCategory.findMany({
+    let categories = await prisma.expenseCategory.findMany({
       where: { isDeleted: false },
       orderBy: { name: 'asc' },
     });
+
+    if (categories.length === 0) {
+      const defaultCategories = [
+        { name: 'Logistics & Cartage', description: 'Tempo, courier, transport, and freight charges', monthlyBudgetLimit: 5000000 },
+        { name: 'Packaging Materials', description: 'Bubble wrap, boxes, strapping, corrugated sheets', monthlyBudgetLimit: 3000000 },
+        { name: 'Tea & Refreshments', description: 'Daily staff tea, snacks, coffee, water cans', monthlyBudgetLimit: 1500000 },
+        { name: 'Site Hardware & Supplies', description: 'Screws, drill bits, tape, touchup paint, fasteners', monthlyBudgetLimit: 4000000 },
+        { name: 'Tool & Machine Maintenance', description: 'Tool servicing, cutter blades, compressor repairs', monthlyBudgetLimit: 2500000 },
+        { name: 'Electricity & Utilities', description: 'Monthly electricity bills, generator diesel, municipal charges', monthlyBudgetLimit: 3500000 },
+        { name: 'Office Supplies & Stationery', description: 'Printing paper, invoice books, pens, staplers', monthlyBudgetLimit: 1000000 },
+        { name: 'Staff Local Travel', description: 'Local conveyance, fuel allowance, bus/metro tickets', monthlyBudgetLimit: 2000000 },
+        { name: 'Casual Daily Labor', description: 'Daily wage loading/unloading and site helper payments', monthlyBudgetLimit: 6000000 },
+        { name: 'Miscellaneous Petty Cash', description: 'Emergency petty cash expenses and sundry costs', monthlyBudgetLimit: 1500000 },
+      ];
+
+      for (const cat of defaultCategories) {
+        await prisma.expenseCategory.create({
+          data: {
+            name: cat.name,
+            description: cat.description,
+            monthlyBudgetLimit: cat.monthlyBudgetLimit,
+            isActive: true,
+          },
+        }).catch(() => null);
+      }
+
+      categories = await prisma.expenseCategory.findMany({
+        where: { isDeleted: false },
+        orderBy: { name: 'asc' },
+      });
+    }
 
     if (!includeSpendForMonth) {
       return categories.map((c) => ({
