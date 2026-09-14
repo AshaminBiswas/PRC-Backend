@@ -837,11 +837,20 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - **Backend `deleteInventoryItem`**: Upgraded to handle direct UUIDs as well as synthetic `inv-${productId}` or `productId`. Writes off remaining units in `StockMovement` ledger as `FACILITY_DEALLOCATION`, deletes `inventory` rows, and syncs `product.stock = 0`.
             - **Soft-Deleted Product Isolation**: `listInventory` in `inventory.service.ts` filters out soft-deleted products (`product: { deletedAt: null }`), preventing phantom stock records from surfacing. `deleteProduct` in `products.service.ts` cleans up associated `inventory` rows and clears inventory cache.
             - **Admin API Inventory Merging**: `inventoryApi.getInventory` in `adminApi.ts` updated to only merge catalog products that have positive stock (`(Number(p.stock) || 0) > 0`), active status, and not deleted, preventing deleted/zero-stock items from resurrecting in the UI table.
-            - **Admin Console UI Optimistic Pruning**: `handleConfirmDelete` in `InventoryPage.tsx` immediately removes deleted items from state and closes all active detail/dossier/edit modals (`selectedPurchase`, `selectedTransfer`, `selectedDossierProductId`, `editingStockItem`, `quickActionProduct`).
+            - **Admin Console UI Optimistic Pruning**: `handleConfirmDelete` in `InventoryPage.tsx` immediately removes deleted items from state and closes all active detail/dossier/edit modals (`selectedPurchase`, `selectedTransfer`, `selectedDossierProductId`, `editingStockItem`, `quickActionProduct`).    34. **Custom Role Branch Location Resolution & Expense Update Authorization (2026-09-14)**:
+          - **Branch Facility Listing Permission Accessibility**:
+            - In `inventory.routes.ts`, `branchesRouter.get('/')` and `branchesRouter.get('/:id')` were previously restricted to `authorize('inventory.stock.read', 'inventory.view', 'branches.read')`.
+            - As a result, administrators or staff created with custom expense roles (e.g. `expenses.create`, `expenses.read`, `expenses.update`) received `403 Forbidden` on `/branches`, resulting in an empty Branch Location selection dropdown and blocking expense logging with "Please select a branch location".
+            - Read access on `GET /branches` and `GET /branches/:id` is now accessible to all authenticated administrative staff (`authenticate`), while facility mutations (create, update, delete) remain strictly guarded by `inventory.warehouses.create` / `branches.create`.
+          - **Resilient Fallback & Expense Update Route Alignment**:
+            - In `expensesApi.ts`, `getBranches()` now gracefully parses responses and provides default fallback locations matching active database facilities (`Delhi HQ` and `Kolkata Branch`).
+            - In `ExpensesPage.tsx`, `loadInit()` decouples branch and category fetching, and a reactive `useEffect` automatically selects the first active branch (`Delhi HQ`) if unselected.
+            - In `expenses.routes.ts`, added `expenses.update` permission to `PATCH /api/v1/expenses/:id`, enabling custom expense roles with update permissions to edit expense entries.
 
 ---
 
-*Last Updated: 2026-09-14 (Resolved 2FA re-prompting on page reload by hydrating twoFactorEnabled via getMe and AdminAuthContext; resolved stock data deletion by stopping ghost catalog re-injection, handling synthetic IDs, cleaning up soft-deleted inventory, and closing all detail modals on delete; verified 0 TypeScript compiler errors across full stack)*
+*Last Updated: 2026-09-14 (Resolved Branch Location dropdown empty state for custom expense roles by permitting authenticated staff to list company branches; aligned expenses.update route authorization; verified 0 TypeScript compiler errors across full stack)*
+
 
 
 

@@ -29,7 +29,6 @@ export const branchesRouter = Router();
 branchesRouter.get(
   '/',
   authenticate,
-  authorize('inventory.stock.read', 'inventory.view', 'branches.read'),
   cacheResponse(60),
   validate(ListBranchesQuerySchema, 'query'),
   controller.listBranches
@@ -38,7 +37,6 @@ branchesRouter.get(
 branchesRouter.get(
   '/:id',
   authenticate,
-  authorize('inventory.stock.read', 'inventory.view', 'branches.read'),
   controller.getBranchById
 );
 

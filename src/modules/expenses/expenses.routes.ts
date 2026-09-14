@@ -153,7 +153,7 @@ router.get(
 
 router.patch(
   '/:id',
-  authorize('expenses.create', 'super_admin', 'admin', 'manager', 'cashier'),
+  authorize('expenses.update', 'expenses.create', 'super_admin', 'admin', 'manager', 'cashier'),
   ExpensesController.updateExpense
 );
 
