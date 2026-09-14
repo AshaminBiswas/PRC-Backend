@@ -106,11 +106,8 @@ export class ExpensesService {
       throw new AppError('NOT_FOUND', 'Branch not found', 404);
     }
 
-    const settings = await getEffectiveSettings(input.branchId);
-
-    // Auto-approval decision: amount <= threshold auto-approves
-    const isAutoApproved = amount <= settings.autoApprovalThreshold;
-    const status: ExpenseStatus = isAutoApproved ? 'APPROVED' : 'PENDING';
+    // All new expenses always start as PENDING — require explicit admin approval
+    const status: ExpenseStatus = 'PENDING';
 
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
@@ -135,8 +132,8 @@ export class ExpensesService {
           employeeId: input.employeeId || null,
           addedById: userId,
           status,
-          approvedById: isAutoApproved ? userId : null,
-          approvedAt: isAutoApproved ? new Date() : null,
+          approvedById: null,
+          approvedAt: null,
           clientTempId: input.clientTempId || null,
         },
         include: {
@@ -148,92 +145,10 @@ export class ExpensesService {
         },
       });
 
-      // If approved, mutate live running balance, daily ledger, and rollups atomically
-      if (isAutoApproved) {
-        // 1. Live balance decrement
-        await tx.branchCashBalance.upsert({
-          where: { branchId: input.branchId },
-          update: {
-            currentBalance: { decrement: amount },
-            lastEntryAt: new Date(),
-          },
-          create: {
-            branchId: input.branchId,
-            currentBalance: -amount,
-            lastEntryAt: new Date(),
-          },
-        });
+      // Balance, ledger, and rollup mutations only happen on explicit approval.
+      // No balance update on create — all entries require manual approval.
 
-        // 2. Daily Ledger update
-        await tx.expenseDailyLedger.upsert({
-          where: {
-            branchId_date: {
-              branchId: input.branchId,
-              date,
-            },
-          },
-          update: {
-            totalExpenses: { increment: amount },
-            closingBalance: { decrement: amount },
-          },
-          create: {
-            branchId: input.branchId,
-            date,
-            openingBalance: 0,
-            cashReceived: 0,
-            totalExpenses: amount,
-            closingBalance: -amount,
-          },
-        });
-
-        // 3. Pre-aggregated Daily Rollup
-        await tx.expenseDailyRollup.upsert({
-          where: {
-            branchId_date_categoryId: {
-              branchId: input.branchId,
-              date,
-              categoryId: input.categoryId,
-            },
-          },
-          update: {
-            totalAmount: { increment: amount },
-            entryCount: { increment: 1 },
-          },
-          create: {
-            branchId: input.branchId,
-            date,
-            categoryId: input.categoryId,
-            totalAmount: amount,
-            entryCount: 1,
-          },
-        });
-
-        // 4. Pre-aggregated Monthly Rollup
-        await tx.expenseMonthlyRollup.upsert({
-          where: {
-            branchId_year_month_categoryId: {
-              branchId: input.branchId,
-              year,
-              month,
-              categoryId: input.categoryId,
-            },
-          },
-          update: {
-            totalAmount: { increment: amount },
-            entryCount: { increment: 1 },
-          },
-          create: {
-            branchId: input.branchId,
-            year,
-            month,
-            categoryId: input.categoryId,
-            totalAmount: amount,
-            entryCount: 1,
-          },
-        });
-      }
-
-      // 5. Immutable Audit Log
+      // Immutable Audit Log
       await tx.expenseAuditLog.create({
         data: {
           expenseId: expense.id,
@@ -243,7 +158,6 @@ export class ExpensesService {
             entryNumber,
             amount,
             status,
-            isAutoApproved,
             paymentMode: input.paymentMode,
             category: category.name,
           },
@@ -1104,6 +1018,110 @@ export class ExpensesService {
     });
 
     return topUp;
+  }
+
+  // ─── 10b. List Float Top-Up History ─────────────────────────────────────────
+  static async getFloatTopUps(query: {
+    branchId?: string;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+    cursor?: string;
+  }) {
+    const { branchId, startDate, endDate, limit = 50, cursor } = query;
+
+    const where: Prisma.ExpenseFloatTopUpWhereInput = {};
+    if (branchId) where.branchId = branchId;
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) where.date.gte = parseDateOnly(startDate);
+      if (endDate) where.date.lte = parseDateOnly(endDate);
+    }
+
+    const take = limit + 1;
+    const findArgs: Prisma.ExpenseFloatTopUpFindManyArgs = {
+      where,
+      take,
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        branch: { select: { id: true, name: true, code: true } },
+        addedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+      },
+    };
+
+    if (cursor) {
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1;
+    }
+
+    const [records, totalCount] = await Promise.all([
+      prisma.expenseFloatTopUp.findMany(findArgs),
+      prisma.expenseFloatTopUp.count({ where }),
+    ]);
+
+    let nextCursor: string | null = null;
+    let hasMore = false;
+    if (records.length > limit) {
+      hasMore = true;
+      records.pop();
+      nextCursor = records[records.length - 1].id;
+    }
+
+    return { records, nextCursor, hasMore, totalCount };
+  }
+
+  // ─── 10c. Delete Float Top-Up (Super Admin Only — reverses balance) ──────────
+  static async deleteFloatTopUp(id: string, userId: string) {
+    const topUp = await prisma.expenseFloatTopUp.findUnique({
+      where: { id },
+      include: { branch: { select: { id: true, name: true, code: true } } },
+    });
+    if (!topUp) throw new AppError('NOT_FOUND', 'Float top-up record not found', 404);
+
+    const amount = topUp.amount;
+    const date = topUp.date;
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Reverse the live cash balance
+      await tx.branchCashBalance.update({
+        where: { branchId: topUp.branchId },
+        data: { currentBalance: { decrement: amount } },
+      });
+
+      // 2. Reverse daily ledger cashReceived and closingBalance
+      await tx.expenseDailyLedger.updateMany({
+        where: { branchId: topUp.branchId, date },
+        data: {
+          cashReceived: { decrement: amount },
+          closingBalance: { decrement: amount },
+        },
+      });
+
+      // 3. Audit log
+      await tx.expenseAuditLog.create({
+        data: {
+          action: 'FLOAT_TOPUP_DELETE',
+          performedById: userId,
+          reason: 'Super Admin deleted float top-up',
+          changes: {
+            deletedTopUpId: id,
+            branchId: topUp.branchId,
+            amount,
+            source: topUp.source,
+            date: topUp.date,
+          },
+        },
+      });
+
+      // 4. Delete the record
+      await tx.expenseFloatTopUp.delete({ where: { id } });
+    });
+
+    return {
+      success: true,
+      message: `Cash float top-up of ₹${(amount / 100).toLocaleString('en-IN')} deleted and balance reversed`,
+      reversedAmount: amount,
+    };
   }
 
   // ─── 11. Category Master CRUD & Budget Tracking ──────────────────────────────

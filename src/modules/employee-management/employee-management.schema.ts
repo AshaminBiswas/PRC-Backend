@@ -65,7 +65,7 @@ export const CreateEmployeeSchema = z
     designation: z.string().min(2, 'Designation is required'),
     department: z.string().min(2, 'Department is required'),
     responsibilities: z.string().optional().nullable(),
-    monthlyCtc: z.coerce.number().positive('Monthly CTC must be greater than 0'),
+    monthlyCtc: z.coerce.number().min(0, 'Monthly CTC cannot be negative').optional().default(0),
     joiningDate: z.coerce.date({ invalid_type_error: 'Valid joining date is required' }),
     status: EmployeeStatusEnum.default('ACTIVE'),
   })

@@ -792,9 +792,24 @@ The Storefront was architected and optimized for native app-like responsiveness 
               - Tab 2 Organization Expense Ledger desktop table (`Receipt` column).
               - Tab 3 Pending Approvals queue cards.
 
+          - **Auto-Approval System Removed (2026-09-14)**:
+            - All new expense entries now always start as `PENDING` regardless of amount.
+            - The `getEffectiveSettings()` call and `autoApprovalThreshold` conditional block have been removed from `createExpense()`.
+            - Balance, ledger, and rollup mutations only occur on explicit approval via `approveExpense()`.
+          - **Cash Float History Table (2026-09-14)**:
+            - New endpoints: `GET /api/v1/expenses/ledger/float-topup` (list with branchId + date range filters) and `DELETE /api/v1/expenses/ledger/float-topup/:id` (Super Admin only, atomic balance reversal).
+            - New service methods: `getFloatTopUps()` and `deleteFloatTopUp()` in `ExpensesService`.
+            - Admin UI: **Cash Float History** table rendered inline below Tab 1 (Fast Cashier Entry), showing: Date, Amount, Source / Vendor, Notes, Added By, and a 🗑 Delete button (Super Admin only).
+            - Delete triggers a confirmation modal warning about live balance reversal, then atomically decrements `BranchCashBalance`, `ExpenseDailyLedger.cashReceived`, and removes the `ExpenseFloatTopUp` record.
+
+    31. **Employee Management — Monthly CTC Optional (2026-09-14)**:
+          - `monthlyCtc` field in `CreateEmployeeSchema` changed from `positive()` (required) to `min(0).optional().default(0)`.
+          - Admin UI Add Employee form: `required` removed, label updated to show **Optional** badge (emerald), placeholder updated to "Leave blank for daily-wage workers".
+          - Form submission defaults `monthlyCtc` to `0` when left blank.
+
 ---
 
-*Last Updated: 2026-09-14 (Enhanced Expense Tracker with Multi-Branch consolidated ledger, branch switcher in entry form, resilient offline queue auto-sync with amber banner, and rich Receipt Slip / Voucher interactive viewer modal for Images & PDFs; verified 0 TypeScript compiler errors across stack)*
+*Last Updated: 2026-09-14 (Removed auto-approval ≤₹2,000 system; added Cash Float History table with Super Admin delete+balance reversal; made Monthly CTC optional in employee creation; 0 TypeScript errors across full stack)*
 
 
 

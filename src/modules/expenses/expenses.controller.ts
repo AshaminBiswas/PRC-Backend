@@ -222,6 +222,37 @@ export class ExpensesController {
     });
   }
 
+  // ─── 11b. List Float Top-Up History ──────────────────────────────────────────
+  static async getFloatTopUps(req: Request, res: Response) {
+    const branchId = req.query.branchId ? String(req.query.branchId) : undefined;
+    const startDate = req.query.startDate ? String(req.query.startDate) : undefined;
+    const endDate = req.query.endDate ? String(req.query.endDate) : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const cursor = req.query.cursor ? String(req.query.cursor) : undefined;
+
+    const result = await ExpensesService.getFloatTopUps({ branchId, startDate, endDate, limit, cursor });
+    return res.status(200).json({
+      success: true,
+      data: result.records,
+      nextCursor: result.nextCursor,
+      hasMore: result.hasMore,
+      totalCount: result.totalCount,
+    });
+  }
+
+  // ─── 11c. Delete Float Top-Up (Super Admin Only) ──────────────────────────────
+  static async deleteFloatTopUp(req: Request, res: Response) {
+    const { id } = req.params;
+    const userId = (req.user as any).id;
+
+    const result = await ExpensesService.deleteFloatTopUp(id, userId);
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      reversedAmount: result.reversedAmount,
+    });
+  }
+
   // ─── 12. Category Master ─────────────────────────────────────────────────────
   static async getCategories(req: Request, res: Response) {
     const year = req.query.year ? Number(req.query.year) : undefined;

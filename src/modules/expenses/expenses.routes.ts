@@ -80,6 +80,18 @@ router.post(
   ExpensesController.addFloatTopUp
 );
 
+router.get(
+  '/ledger/float-topup',
+  authorize('expenses.read', 'super_admin', 'admin', 'manager', 'cashier', 'staff'),
+  ExpensesController.getFloatTopUps
+);
+
+router.delete(
+  '/ledger/float-topup/:id',
+  authorize('super_admin'),
+  ExpensesController.deleteFloatTopUp
+);
+
 // ─── Reporting & BI Exports ─────────────────────────────────────────────────
 router.get(
   '/reports/analytics',
