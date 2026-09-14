@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as controller from './users.controller';
 import { validate } from '../../middleware/validate.middleware';
-import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { authenticate, authorize, requireSuperAdmin } from '../../middleware/auth.middleware';
 import { adminLimiter } from '../../middleware/rateLimit.middleware';
 import {
   ListUsersQuerySchema,
@@ -15,6 +15,7 @@ import {
   CreateAddressSchema,
   UpdateAddressSchema,
   AddressIdParamSchema,
+  AdminChangeUserPasswordSchema,
 } from './users.schema';
 
 const router = Router();
@@ -45,6 +46,7 @@ router.get('/:id', authorize('users.read'), validate(UuidParamSchema, 'params'),
 router.get('/:id/360', authorize('users.read'), validate(UuidParamSchema, 'params'), controller.getCustomer360);
 router.get('/:id/customer-360', authorize('users.read'), validate(UuidParamSchema, 'params'), controller.getCustomer360);
 router.patch('/:id', authorize('users.update'), validate(UuidParamSchema, 'params'), validate(UpdateUserSchema), controller.updateUser);
+router.post('/:id/change-password', authorize('users.update'), requireSuperAdmin, validate(UuidParamSchema, 'params'), validate(AdminChangeUserPasswordSchema), controller.changeUserPassword);
 router.delete('/:id', authorize('users.delete'), validate(UuidParamSchema, 'params'), controller.deleteUser);
 router.get('/:id/roles', authorize('users.read'), validate(UuidParamSchema, 'params'), controller.getUserRoles);
 router.patch('/:id/roles', authorize('users.update'), validate(UuidParamSchema, 'params'), validate(UpdateUserRolesSchema), controller.updateUserRoles);

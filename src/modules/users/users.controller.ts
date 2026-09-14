@@ -177,3 +177,36 @@ export const deleteAddress = async (req: Request, res: Response, next: NextFunct
   } catch (error) { next(error); }
 };
 
+export const changeUserPassword = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await usersService.adminChangeUserPassword(
+      req.params.id,
+      req.body,
+      {
+        id: req.user!.id,
+        email: req.user!.email,
+        roleSlug: req.user!.roleSlug,
+        roles: req.user!.roles,
+      }
+    );
+
+    logAdminAction({
+      userId: req.user?.id || 'system',
+      action: 'ADMIN_PASSWORD_RESET',
+      entity: 'ADMIN',
+      entityId: req.params.id,
+      entityName: `${data.user.firstName} ${data.user.lastName} (${data.user.email})`,
+      details: `Super Admin '${req.user?.email}' updated the password for account '${data.user.email}'. Force change: ${Boolean(req.body.mustChangePassword)}.`,
+      severity: 'CRITICAL',
+      metadata: {
+        targetUserId: req.params.id,
+        targetEmail: data.user.email,
+        mustChangePassword: req.body.mustChangePassword,
+      },
+      req,
+    });
+
+    sendSuccess(res, data, 'User password updated successfully');
+  } catch (error) { next(error); }
+};
+

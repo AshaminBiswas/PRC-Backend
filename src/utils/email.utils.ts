@@ -547,6 +547,49 @@ export const sendPasswordChangedEmail = async (to: string, firstName: string): P
   });
 };
 
+// ─── Admin Password Reset by Super Admin Email ────────────────────────────────
+
+export const sendAdminPasswordResetNoticeEmail = async (params: {
+  to: string;
+  firstName: string;
+  newPassword?: string;
+  mustChangePassword?: boolean;
+}): Promise<void> => {
+  const { to, firstName, newPassword, mustChangePassword } = params;
+  const plainText = `Hello ${firstName || 'Admin'},\n\nYour PRC Hardware administrative password has been updated by an authorized Super Administrator.\n${
+    newPassword ? `\nYour temporary password is: ${newPassword}\n` : ''
+  }${
+    mustChangePassword ? '\nYou will be required to choose a new password upon your next sign in.\n' : ''
+  }\nIf you did not request or expect this change, please contact your organization Super Administrator immediately.\n\n— PRC Hardware Security Team`;
+
+  await sendMail({
+    to,
+    subject: 'PRC Hardware Security: Administrator Password Reset by Super Admin',
+    text: plainText,
+    html: baseTemplate(`
+      <div class="eyebrow">Executive Account Security</div>
+      <h2>Administrator Password Reset</h2>
+      <p>Hello ${firstName || 'Staff Member'},</p>
+      <p>Your PRC Hardware administrative credentials were reset by an authorized <strong>Super Administrator</strong>.</p>
+      ${
+        newPassword
+          ? `<div style="background:#18181B;border:1px solid #3F3F46;border-radius:12px;padding:16px;margin:20px 0;text-align:center;">
+               <div style="font-size:11px;color:#A1A1AA;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Temporary Access Password</div>
+               <div style="font-family:monospace;font-size:20px;font-weight:bold;color:#FAFAFA;letter-spacing:0.05em;">${newPassword}</div>
+             </div>`
+          : ''
+      }
+      ${
+        mustChangePassword
+          ? `<p style="color:#F59E0B;font-weight:600;">You are required to set a permanent password upon your next console sign-in.</p>`
+          : ''
+      }
+      <div class="divider"></div>
+      <p class="muted">If you believe this update was made without authorization, please contact your Super Admin immediately.</p>
+    `),
+  });
+};
+
 // ─── Welcome Email ────────────────────────────────────────────────────────────
 
 export const sendWelcomeEmail = async (to: string, firstName: string): Promise<void> => {

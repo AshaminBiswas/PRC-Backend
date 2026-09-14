@@ -156,6 +156,36 @@ export const authorize = (...requiredPermissions: string[]) => {
   };
 };
 
+// ─── Require Super Admin ──────────────────────────────────────────────────────
+
+export const requireSuperAdmin = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  if (!req.user) {
+    sendError(res, { code: 'UNAUTHORIZED', message: 'Authentication required' }, 401);
+    return;
+  }
+
+  const roleSlug = (req.user.roleSlug || '').toLowerCase();
+  const rolesList = (req.user.roles || []).map((r) => r.toLowerCase());
+  const isSuper =
+    ['super-admin', 'super_admin', 'superadmin'].includes(roleSlug) ||
+    rolesList.some((r) => ['super-admin', 'super_admin', 'superadmin'].includes(r));
+
+  if (!isSuper) {
+    sendError(
+      res,
+      { code: 'FORBIDDEN', message: 'Only Super Administrators can perform this action' },
+      403
+    );
+    return;
+  }
+
+  next();
+};
+
 // ─── Optional Auth ────────────────────────────────────────────────────────────
 
 export const optionalAuthenticate = async (

@@ -121,10 +121,17 @@ export const UuidParamSchema = z.object({
   id: z.string().uuid('Invalid user ID'),
 });
 
+export const AdminChangeUserPasswordSchema = z.object({
+  newPassword: z.string().min(8, 'Password must be at least 8 characters long'),
+  mustChangePassword: z.boolean().optional().default(false),
+  sendNotificationEmail: z.boolean().optional().default(true),
+});
+
 export type ListUsersQuery = z.infer<typeof ListUsersQuerySchema>;
 export type CreateUserInput = z.infer<typeof CreateUserSchema>;
 export type UpdateUserInput = z.infer<typeof UpdateUserSchema>;
 export type UpdateProfileInput = z.infer<typeof UpdateProfileSchema>;
 export type CreateAddressInput = z.infer<typeof CreateAddressSchema>;
 export type UpdateAddressInput = z.infer<typeof UpdateAddressSchema>;
+export type AdminChangeUserPasswordInput = z.infer<typeof AdminChangeUserPasswordSchema>;
 

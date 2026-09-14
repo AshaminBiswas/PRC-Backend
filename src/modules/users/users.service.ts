@@ -2,13 +2,14 @@ import bcrypt from 'bcryptjs';
 import prisma from '../../config/database';
 import { AppError } from '../../middleware/error.middleware';
 import { buildPagination, getPaginationParams } from '../../utils/response';
-import { sendB2BCustomerWelcomeEmail } from '../../utils/email.utils';
+import { sendB2BCustomerWelcomeEmail, sendAdminPasswordResetNoticeEmail } from '../../utils/email.utils';
 import { validateGstin, validatePhoneNumber } from '../../utils/validation.utils';
 import type {
   ListUsersQuery,
   CreateUserInput,
   UpdateUserInput,
   UpdateProfileInput,
+  AdminChangeUserPasswordInput,
 } from './users.schema';
 
 const SALT_ROUNDS = 12;
@@ -1173,5 +1174,86 @@ export const deleteAddress = async (userId: string, addressId: string) => {
 
   await prisma.address.delete({ where: { id: addressId } });
   return { success: true, message: 'Address deleted successfully' };
+};
+
+// ─── Super Admin Change User Password ─────────────────────────────────────────
+
+export const adminChangeUserPassword = async (
+  targetUserId: string,
+  input: AdminChangeUserPasswordInput,
+  actorAdmin: { id: string; email: string; roleSlug?: string; roles?: string[] }
+) => {
+  const actorRole = (actorAdmin.roleSlug || '').toLowerCase();
+  const actorRoles = (actorAdmin.roles || []).map((r) => r.toLowerCase());
+  const isActorSuper =
+    ['super-admin', 'super_admin', 'superadmin'].includes(actorRole) ||
+    actorRoles.some((r) => ['super-admin', 'super_admin', 'superadmin'].includes(r));
+
+  if (!isActorSuper) {
+    throw new AppError('FORBIDDEN', 'Only Super Administrators can change administrator passwords', 403);
+  }
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: targetUserId, deletedAt: null },
+    include: {
+      userRoles: {
+        include: { role: true },
+      },
+    },
+  });
+
+  if (!targetUser) {
+    throw new AppError('NOT_FOUND', 'User account not found or has been deleted', 404);
+  }
+
+  const passwordHash = await bcrypt.hash(input.newPassword, SALT_ROUNDS);
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: targetUserId },
+      data: {
+        passwordHash,
+        mustChangePassword: input.mustChangePassword ?? false,
+      },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { userId: targetUserId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+    prisma.passwordReset.updateMany({
+      where: { userId: targetUserId, usedAt: null },
+      data: { usedAt: new Date() },
+    }),
+    prisma.userActivityLog.create({
+      data: {
+        userId: targetUserId,
+        action: 'PASSWORD_RESET_BY_SUPER_ADMIN',
+        description: `Password was reset by Super Admin (${actorAdmin.email}). Must change password on next login: ${Boolean(input.mustChangePassword)}`,
+      },
+    }),
+  ]);
+
+  if (input.sendNotificationEmail !== false) {
+    sendAdminPasswordResetNoticeEmail({
+      to: targetUser.email,
+      firstName: targetUser.firstName,
+      newPassword: input.newPassword,
+      mustChangePassword: input.mustChangePassword,
+    }).catch((err) =>
+      console.error('[AdminChangePassword] Failed to dispatch email notification:', err?.message || err)
+    );
+  }
+
+  return {
+    success: true,
+    message: `Password updated successfully for ${targetUser.email}. All active sessions have been invalidated.`,
+    user: {
+      id: targetUser.id,
+      email: targetUser.email,
+      firstName: targetUser.firstName,
+      lastName: targetUser.lastName,
+      mustChangePassword: input.mustChangePassword ?? false,
+    },
+  };
 };
 
