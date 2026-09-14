@@ -336,21 +336,33 @@ export const login = async (input: LoginInput) => {
 };
 
 export const adminLogin = async (input: AdminLoginInput) => {
-  const user = await prisma.user.findUnique({
-    where: { email: input.email, deletedAt: null },
+  const cleanEmail = input.email.trim().toLowerCase();
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: cleanEmail, mode: 'insensitive' }, deletedAt: null },
     include: { userRoles: { include: { role: { include: { rolePermissions: { include: { permission: true } } } } } } },
   });
 
   if (!user || !(await bcrypt.compare(input.password, user.passwordHash)))
     throw new AppError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
 
+  const CUSTOMER_ROLE_SLUGS = [
+    'customer',
+    'b2b-customer',
+    'b2b_customer',
+    'b2b-buyer',
+    'b2b_buyer',
+    'retail-customer',
+    'user',
+  ];
+
   const roleSlug = getPrimaryRoleSlug(user.userRoles);
   const userRolesSlugs = user.userRoles.map((ur) => (ur.role.slug || '').toLowerCase());
-  const isAdminRole =
-    ['super-admin', 'super_admin', 'superadmin', 'admin', 'manager', 'staff'].includes(roleSlug.toLowerCase()) ||
-    userRolesSlugs.some((s) => ['super-admin', 'super_admin', 'superadmin', 'admin', 'manager', 'staff'].includes(s));
+  const hasAdminRole = user.userRoles.some((ur) => {
+    const slug = (ur.role.slug || '').toLowerCase().replace(/_/g, '-');
+    return !CUSTOMER_ROLE_SLUGS.includes(slug);
+  });
 
-  if (!isAdminRole)
+  if (!hasAdminRole)
     throw new AppError('FORBIDDEN', 'Admin access required', 403);
   if (user.status !== 'ACTIVE')
     throw new AppError('ACCOUNT_INACTIVE', 'Account is not active', 403);
@@ -385,6 +397,8 @@ export const adminLogin = async (input: AdminLoginInput) => {
       permissions,
       avatar: user.avatar,
       mustChangePassword: user.mustChangePassword ?? false,
+      twoFactorEnabled: user.twoFactorEnabled ?? false,
+      isTwoFactorEnabled: user.twoFactorEnabled ?? false,
     },
   };
 };
@@ -661,7 +675,10 @@ export const resetPassword = async (input: ResetPasswordInput) => {
 };
 
 export const changePassword = async (userId: string, input: ChangePasswordInput) => {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { userRoles: { include: { role: true } } },
+  });
   if (!user) throw new AppError('NOT_FOUND', 'User not found', 404);
 
   const isMatch = await bcrypt.compare(input.currentPassword, user.passwordHash);
@@ -678,6 +695,26 @@ export const changePassword = async (userId: string, input: ChangePasswordInput)
   ]);
 
   sendPasswordChangedEmail(user.email, user.firstName).catch(console.error);
+
+  const roleSlug = getPrimaryRoleSlug(user.userRoles || []);
+  const { accessToken, refreshToken } = await buildTokenPair(user.id, user.email, roleSlug);
+
+  return {
+    success: true,
+    message: 'Password changed successfully',
+    accessToken,
+    refreshToken,
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: roleSlug,
+      mustChangePassword: false,
+      isTwoFactorEnabled: user.twoFactorEnabled,
+      twoFactorEnabled: user.twoFactorEnabled,
+    },
+  };
 };
 
 export const verifyEmail = async (token: string) => {

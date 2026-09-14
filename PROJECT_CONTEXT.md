@@ -807,9 +807,27 @@ The Storefront was architected and optimized for native app-like responsiveness 
           - Admin UI Add Employee form: `required` removed, label updated to show **Optional** badge (emerald), placeholder updated to "Leave blank for daily-wage workers".
           - Form submission defaults `monthlyCtc` to `0` when left blank.
 
+    32. **Admin RBAC Login, Governance Matrix & Mandatory 2FA Onboarding (2026-09-14)**:
+          - **Custom Role Login Fix (Bug 1)**:
+            - `adminLogin` in `auth.service.ts` replaced static role enum whitelist (`['super-admin', 'admin', 'manager', 'staff']`) with dynamic validation verifying the account has at least one non-customer role (`!CUSTOMER_ROLE_SLUGS.includes(slug)`).
+            - Added case-insensitive email search (`mode: 'insensitive'`) and email normalization (`trim().toLowerCase()`) in both `adminLogin` and `createUser` to ensure zero credential mismatch errors.
+          - **Staff & Admin Access Governance / RBAC Matrix Fix (Bug 2)**:
+            - `listUsers` in `users.service.ts` replaced hardcoded admin role slug whitelist with dynamic `where.userRoles = { some: { role: { slug: { notIn: CUSTOMER_ROLE_SLUGS } } } }`.
+            - All administrators and staff created with custom roles now dynamically appear in the RBAC Matrix table with full role details, permissions, and status.
+            - Added dedicated **Custom Roles** tab to `AdminManagementPage.tsx` search and filter toolbar.
+          - **Forced Password Reset on First Login (Feature Request)**:
+            - Any staff or admin provisioned with a temporary password is automatically flagged with `mustChangePassword: true`.
+            - **Server-Side Enforcement**: In `auth.middleware.ts`, `authenticate` blocks all operational API routes with `403 PASSWORD_CHANGE_REQUIRED` until password change is fulfilled via `/auth/change-password`.
+            - **Client-Side Enforcement**: `App.tsx` routes accounts with `mustChangePassword: true` to `AdminForceChangePasswordPage.tsx` (Step 1 of 2). Direct URL navigation cannot bypass this step.
+          - **Mandatory Two-Factor Authentication Setup (Feature Request)**:
+            - Once password is updated, account automatically transitions to `AdminMandatory2FAPage.tsx` (Step 2 of 2).
+            - **Server-Side Enforcement**: In `auth.middleware.ts`, `authenticate` blocks all operational API routes with `403 TWO_FACTOR_REQUIRED` for administrative/staff accounts until 2FA setup is confirmed.
+            - **Client-Side Enforcement**: `App.tsx` keeps account locked on `AdminMandatory2FAPage.tsx` until TOTP 6-digit confirmation succeeds via `adminAuthService.confirmEnable2FA()`.
+            - Displays high-resolution QR code, 1-click Secret Key copy, emergency 8-digit backup codes, and 6-digit verification input. Access to `<AdminLayout />` dashboard is granted only after verification.
+
 ---
 
-*Last Updated: 2026-09-14 (Removed auto-approval ≤₹2,000 system; added Cash Float History table with Super Admin delete+balance reversal; made Monthly CTC optional in employee creation; 0 TypeScript errors across full stack)*
+*Last Updated: 2026-09-14 (Resolved custom-role admin login & RBAC matrix visibility; implemented server-side and client-side un-bypassable forced password reset + mandatory 2FA onboarding; verified 0 TypeScript compiler errors across full stack)*
 
 
 

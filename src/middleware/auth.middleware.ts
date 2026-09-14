@@ -55,6 +55,8 @@ export const authenticate = async (
         id: true,
         email: true,
         status: true,
+        mustChangePassword: true,
+        twoFactorEnabled: true,
         userRoles: {
           select: {
             role: {
@@ -107,6 +109,95 @@ export const authenticate = async (
       roles: roleSlugs.length > 0 ? roleSlugs : [primaryRoleSlug],
       permissions,
     };
+
+    // ─── Mandatory Security Workflow Guards ─────────────────────────────────────
+    const originalUrl = (req.originalUrl || req.url || '').split('?')[0];
+
+    // 1. Forced Password Change Guard:
+    // If mustChangePassword is true, user is blocked from all operational endpoints
+    // until they update their temporary password.
+    if (user.mustChangePassword) {
+      const allowedPaths = [
+        '/api/v1/auth/change-password',
+        '/auth/change-password',
+        '/api/v1/auth/me',
+        '/auth/me',
+        '/api/v1/auth/logout',
+        '/auth/logout',
+        '/api/v1/auth/refresh-token',
+        '/auth/refresh-token',
+      ];
+      const isAllowed = allowedPaths.some((p) => originalUrl.endsWith(p) || originalUrl === p);
+      if (!isAllowed) {
+        sendError(
+          res,
+          {
+            code: 'PASSWORD_CHANGE_REQUIRED',
+            message: 'You must change your temporary password before accessing any system features.',
+          },
+          403
+        );
+        return;
+      }
+    }
+
+    // 2. Mandatory 2FA Enforcement for Staff / Administrative Roles:
+    // If user has a non-customer role and twoFactorEnabled is false, block all operational endpoints
+    // until 2FA setup and verification are completed.
+    const CUSTOMER_ROLE_SLUGS = [
+      'customer',
+      'b2b-customer',
+      'b2b_customer',
+      'b2b-buyer',
+      'b2b_buyer',
+      'retail-customer',
+      'user',
+    ];
+    const isStaffOrAdmin = user.userRoles.some((ur) => {
+      const slug = (ur.role.slug || '').toLowerCase().replace(/_/g, '-');
+      return !CUSTOMER_ROLE_SLUGS.includes(slug);
+    });
+
+    if (isStaffOrAdmin && !user.twoFactorEnabled) {
+      const allowedPaths = [
+        '/api/v1/auth/2fa/setup',
+        '/auth/2fa/setup',
+        '/api/v1/auth/2fa/generate',
+        '/auth/2fa/generate',
+        '/api/v1/auth/2fa/enable',
+        '/auth/2fa/enable',
+        '/api/v1/auth/2fa/verify',
+        '/auth/2fa/verify',
+        '/api/v1/auth/2fa/validate',
+        '/auth/2fa/validate',
+        '/api/v1/auth/2fa/status',
+        '/auth/2fa/status',
+        '/api/v1/auth/2fa/me',
+        '/auth/2fa/me',
+        '/api/v1/auth/2fa',
+        '/auth/2fa',
+        '/api/v1/auth/me',
+        '/auth/me',
+        '/api/v1/auth/logout',
+        '/auth/logout',
+        '/api/v1/auth/refresh-token',
+        '/auth/refresh-token',
+        '/api/v1/auth/change-password',
+        '/auth/change-password',
+      ];
+      const isAllowed = allowedPaths.some((p) => originalUrl.endsWith(p) || originalUrl === p);
+      if (!isAllowed) {
+        sendError(
+          res,
+          {
+            code: 'TWO_FACTOR_REQUIRED',
+            message: 'Two-factor authentication is mandatory for all administrative and staff accounts. Please complete 2FA setup to proceed.',
+          },
+          403
+        );
+        return;
+      }
+    }
 
     next();
   } catch (error) {

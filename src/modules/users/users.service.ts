@@ -139,20 +139,14 @@ export const listUsers = async (query: ListUsersQuery) => {
         none: {
           role: {
             slug: {
-              in: [
-                'super_admin',
-                'super-admin',
-                'admin',
-                'staff',
-                'manager',
-                'accounts',
-                'sales',
-                'support',
-                'operations',
-                'inventory_manager',
-                'inventory-manager',
-                'vendor',
-                'supplier',
+              notIn: [
+                'customer',
+                'b2b-customer',
+                'b2b_customer',
+                'b2b-buyer',
+                'b2b_buyer',
+                'retail-customer',
+                'user',
               ],
             },
           },
@@ -168,18 +162,14 @@ export const listUsers = async (query: ListUsersQuery) => {
       some: {
         role: {
           slug: {
-            in: [
-              'super_admin',
-              'super-admin',
-              'admin',
-              'staff',
-              'manager',
-              'accounts',
-              'sales',
-              'support',
-              'operations',
-              'inventory_manager',
-              'inventory-manager',
+            notIn: [
+              'customer',
+              'b2b-customer',
+              'b2b_customer',
+              'b2b-buyer',
+              'b2b_buyer',
+              'retail-customer',
+              'user',
             ],
           },
         },
@@ -579,10 +569,13 @@ export const getCustomer360 = async (id: string) => {
 // ─── Create User ──────────────────────────────────────────────────────────────
 
 export const createUser = async (input: CreateUserInput) => {
-  const existing = await prisma.user.findUnique({ where: { email: input.email } });
+  const cleanEmail = input.email.trim().toLowerCase();
+  const existing = await prisma.user.findFirst({
+    where: { email: { equals: cleanEmail, mode: 'insensitive' } },
+  });
   if (existing) {
     if (existing.deletedAt === null) {
-      throw new AppError('EMAIL_TAKEN', `An account with email "${input.email}" already exists. Please use a different email or update the existing user.`, 409);
+      throw new AppError('EMAIL_TAKEN', `An account with email "${cleanEmail}" already exists. Please use a different email or update the existing user.`, 409);
     }
     // User was soft-deleted: purge or anonymize old soft-deleted user to free the unique email constraint
     try {
@@ -600,9 +593,13 @@ export const createUser = async (input: CreateUserInput) => {
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
 
+  const CUSTOMER_ROLE_SLUGS = ['customer', 'b2b-customer', 'b2b_customer', 'b2b-buyer', 'b2b_buyer', 'retail-customer', 'user'];
+  const isStaffOrAdmin = !CUSTOMER_ROLE_SLUGS.includes(role.slug.toLowerCase());
+  const mustChangePassword = input.mustChangePassword !== undefined ? input.mustChangePassword : isStaffOrAdmin;
+
   const user = await prisma.user.create({
     data: {
-      email: input.email,
+      email: cleanEmail,
       passwordHash,
       firstName: input.firstName,
       lastName: input.lastName,
@@ -611,7 +608,7 @@ export const createUser = async (input: CreateUserInput) => {
       gstin: input.gstin || null,
       status: input.status,
       isVerified: true,
-      mustChangePassword: input.mustChangePassword ?? false,
+      mustChangePassword,
       userRoles: { create: { roleId: input.roleId } },
     },
   });

@@ -134,9 +134,13 @@ export const resetPassword = async (req: Request, res: Response, next: NextFunct
 
 export const changePassword = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await authService.changePassword(req.user!.id, req.body);
-    // changePassword revokes all refresh tokens — force re-login
+    const result = await authService.changePassword(req.user!.id, req.body);
     clearRefreshCookie(res);
+    if (result && result.refreshToken) {
+      setRefreshCookie(res, result.refreshToken);
+      sendSuccess(res, result, 'Password changed successfully');
+      return;
+    }
     sendMessage(res, 'Password changed successfully');
   } catch (error) { next(error); }
 };
