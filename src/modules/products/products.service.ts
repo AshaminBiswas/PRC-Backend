@@ -575,9 +575,15 @@ export const deleteProduct = async (id: string) => {
   const existing = await prisma.product.findUnique({ where: { id, deletedAt: null } });
   if (!existing) throw new AppError('NOT_FOUND', 'Product not found', 404);
 
-  await prisma.product.update({
-    where: { id },
-    data: { deletedAt: new Date(), status: 'INACTIVE', isVisible: false },
+  await prisma.$transaction(async (tx) => {
+    await tx.product.update({
+      where: { id },
+      data: { deletedAt: new Date(), status: 'INACTIVE', isVisible: false, stock: 0 },
+    });
+    // Remove all warehouse inventory allocations so ghost records don't persist
+    await tx.inventory.deleteMany({
+      where: { productId: id },
+    });
   });
 
   return { message: 'Product deleted successfully' };

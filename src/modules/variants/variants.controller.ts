@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as variantsService from './variants.service';
 import { sendSuccess, sendPaginated } from '../../utils/response';
+import { clearResponseCache } from '../../middleware/cache.middleware';
 import type { ListVariantsQuery } from './variants.schema';
 
 export const listVariants = async (req: Request, res: Response, next: NextFunction) => {
@@ -42,6 +43,8 @@ export const updateVariant = async (req: Request, res: Response, next: NextFunct
 export const deleteVariant = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await variantsService.deleteVariant(req.params.productId, req.params.id);
+    clearResponseCache('cache:*variants*');
+    clearResponseCache('cache:*products*');
     sendSuccess(res, result, 'Product variant deleted successfully');
   } catch (error) {
     next(error);

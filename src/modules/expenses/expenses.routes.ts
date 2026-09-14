@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { authenticate, authorize } from '../../middleware/auth.middleware';
+import { authenticate, authorize, requireSuperAdmin } from '../../middleware/auth.middleware';
 import { ExpensesController } from './expenses.controller';
 
 const storage = multer.memoryStorage();
@@ -88,7 +88,7 @@ router.get(
 
 router.delete(
   '/ledger/float-topup/:id',
-  authorize('super_admin'),
+  requireSuperAdmin,
   ExpensesController.deleteFloatTopUp
 );
 
@@ -159,7 +159,7 @@ router.patch(
 
 router.delete(
   '/:id',
-  authorize('super_admin'),
+  requireSuperAdmin,
   ExpensesController.deleteExpense
 );
 

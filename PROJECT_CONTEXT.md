@@ -796,11 +796,16 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - All new expense entries now always start as `PENDING` regardless of amount.
             - The `getEffectiveSettings()` call and `autoApprovalThreshold` conditional block have been removed from `createExpense()`.
             - Balance, ledger, and rollup mutations only occur on explicit approval via `approveExpense()`.
-          - **Cash Float History Table (2026-09-14)**:
-            - New endpoints: `GET /api/v1/expenses/ledger/float-topup` (list with branchId + date range filters) and `DELETE /api/v1/expenses/ledger/float-topup/:id` (Super Admin only, atomic balance reversal).
-            - New service methods: `getFloatTopUps()` and `deleteFloatTopUp()` in `ExpensesService`.
-            - Admin UI: **Cash Float History** table rendered inline below Tab 1 (Fast Cashier Entry), showing: Date, Amount, Source / Vendor, Notes, Added By, and a 🗑 Delete button (Super Admin only).
-            - Delete triggers a confirmation modal warning about live balance reversal, then atomically decrements `BranchCashBalance`, `ExpenseDailyLedger.cashReceived`, and removes the `ExpenseFloatTopUp` record.
+          - **Strict Super Admin Exclusivity for Expense & Cash Float Deletions (`requireSuperAdmin`) (2026-09-14)**:
+            - Both `DELETE /api/v1/expenses/:id` and `DELETE /api/v1/expenses/ledger/float-topup/:id` are strictly guarded by `requireSuperAdmin` middleware in `expenses.routes.ts`, guaranteeing that standard `admin` roles (which bypass standard `authorize()` checks) cannot invoke deletion operations.
+            - **Expense Deletion Protocol (`deleteExpense`)**: Atomically reverses financial state if approved/not voided (`BranchCashBalance` incremented, `ExpenseDailyLedger` total expenses decremented and closing balance incremented, `ExpenseDailyRollup` and `ExpenseMonthlyRollup` amounts and counts decremented), creates an audit record in `ExpenseAuditLog`, and deletes the `ExpenseEntry`.
+            - **Float Top-Up Deletion Protocol (`deleteFloatTopUp`)**: Atomically reverses `BranchCashBalance` (-amount) and `ExpenseDailyLedger` (-cashReceived, -closingBalance), creates an audit record in `ExpenseAuditLog`, and removes the `ExpenseFloatTopUp` record.
+            - **Admin UI Guards (`ExpensesPage.tsx`)**: Robust role resolution checks `roleSlug.includes('super') || adminUser?.isSuperAdmin === true`. Delete buttons and confirmation modals across Tab 1 (Today's Outflows table & mobile cards), Tab 2 (Organization Expense Ledger), Tab 3 (Pending Approvals Queue), and Tab 4 (Float Top-Up History) are strictly rendered only when `isSuperAdmin === true`. Handlers `handleConfirmDelete` and `handleDeleteFloat` actively block non-superadmins.
+          - **Payment Receipt Attachment & Super Admin Inspection Hub (2026-09-14)**:
+            - **Cash Float Payment Receipt Support**: Added `receiptAttachment` field (`receipt_attachment` column in `expense_float_top_ups` via `fix-db.js` patch & Prisma schema). When recording a float top-up, finance/cashier staff can attach a bank transfer slip, cheque photo, or signed cash receipt (JPG, PNG, PDF) using `expensesApi.uploadReceipt`.
+            - **Float History Table Inspection**: Added a dedicated **Payment Receipt** column in the Cash Float Top-Up History table visible exclusively to Super Admins. If a receipt file is attached, 1-click **View Receipt** opens the full document preview. If paperless, Super Admin can click **Voucher** to view the generated official **PRC Cash Float Disbursal & Receipt Voucher**.
+            - **Universal Super Admin Payment Receipt / Voucher Access**: In Tab 1 (Today's Outflows), Tab 2 (Organization Expense Ledger), and Tab 3 (Pending Approvals Queue), Super Admins can inspect uploaded receipts or view the generated official **PRC Cash Outflow Payment Voucher** even if no paper slip was uploaded at entry time.
+            - **Comprehensive Preview & Print Suite**: The preview modal supports high-resolution image zoom, embedded PDF documents, 1-click download, new tab opening, and 1-click printable vouchers (`window.print()`).
 
     31. **Employee Management — Monthly CTC Optional (2026-09-14)**:
           - `monthlyCtc` field in `CreateEmployeeSchema` changed from `positive()` (required) to `min(0).optional().default(0)`.
@@ -823,11 +828,20 @@ The Storefront was architected and optimized for native app-like responsiveness 
             - Once password is updated, account automatically transitions to `AdminMandatory2FAPage.tsx` (Step 2 of 2).
             - **Server-Side Enforcement**: In `auth.middleware.ts`, `authenticate` blocks all operational API routes with `403 TWO_FACTOR_REQUIRED` for administrative/staff accounts until 2FA setup is confirmed.
             - **Client-Side Enforcement**: `App.tsx` keeps account locked on `AdminMandatory2FAPage.tsx` until TOTP 6-digit confirmation succeeds via `adminAuthService.confirmEnable2FA()`.
-            - Displays high-resolution QR code, 1-click Secret Key copy, emergency 8-digit backup codes, and 6-digit verification input. Access to `<AdminLayout />` dashboard is granted only after verification.
+    33. **Two-Factor Authentication Session Persistence & Stock Data Deletion Integrity (2026-09-14)**:
+          - **2FA State Hydration & Reload Fix**:
+            - **Backend `getMe`**: Added missing `twoFactorEnabled: user.twoFactorEnabled ?? false` and `isTwoFactorEnabled: user.twoFactorEnabled ?? false` to `getMe()` in `auth.service.ts`.
+            - **Admin Auth Context & Profile**: `adminAuthService.getProfile()` resolves `is2fa = Boolean(res.data.isTwoFactorEnabled ?? res.data.twoFactorEnabled ?? cachedUser?.isTwoFactorEnabled ?? isLocal2FAEnabled())` and persists normalized session. `AdminAuthContext.tsx` preserves 2FA across hydration.
+            - **App.tsx Guard**: 2FA setup guard checks `is2FAActive = Boolean(adminUser.isTwoFactorEnabled || adminUser.twoFactorEnabled || isLocal2FAEnabled())`, ensuring administrators with verified 2FA are never re-prompted for 2FA on page reload.
+          - **Stock Data Deletion & Detail Cleanup Integrity**:
+            - **Backend `deleteInventoryItem`**: Upgraded to handle direct UUIDs as well as synthetic `inv-${productId}` or `productId`. Writes off remaining units in `StockMovement` ledger as `FACILITY_DEALLOCATION`, deletes `inventory` rows, and syncs `product.stock = 0`.
+            - **Soft-Deleted Product Isolation**: `listInventory` in `inventory.service.ts` filters out soft-deleted products (`product: { deletedAt: null }`), preventing phantom stock records from surfacing. `deleteProduct` in `products.service.ts` cleans up associated `inventory` rows and clears inventory cache.
+            - **Admin API Inventory Merging**: `inventoryApi.getInventory` in `adminApi.ts` updated to only merge catalog products that have positive stock (`(Number(p.stock) || 0) > 0`), active status, and not deleted, preventing deleted/zero-stock items from resurrecting in the UI table.
+            - **Admin Console UI Optimistic Pruning**: `handleConfirmDelete` in `InventoryPage.tsx` immediately removes deleted items from state and closes all active detail/dossier/edit modals (`selectedPurchase`, `selectedTransfer`, `selectedDossierProductId`, `editingStockItem`, `quickActionProduct`).
 
 ---
 
-*Last Updated: 2026-09-14 (Resolved custom-role admin login & RBAC matrix visibility; implemented server-side and client-side un-bypassable forced password reset + mandatory 2FA onboarding; verified 0 TypeScript compiler errors across full stack)*
+*Last Updated: 2026-09-14 (Resolved 2FA re-prompting on page reload by hydrating twoFactorEnabled via getMe and AdminAuthContext; resolved stock data deletion by stopping ghost catalog re-injection, handling synthetic IDs, cleaning up soft-deleted inventory, and closing all detail modals on delete; verified 0 TypeScript compiler errors across full stack)*
 
 
 

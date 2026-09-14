@@ -317,21 +317,18 @@ export const listInventory = async (query: ListInventoryQuery) => {
   const where: Prisma.InventoryWhereInput = {
     ...(query.branchId && query.branchId !== 'ALL' && query.branchId !== 'PRC_STOCK' ? { branchId: query.branchId } : {}),
     ...(query.productId ? { productId: query.productId } : {}),
-    ...(query.categoryId || query.search
-      ? {
-          product: {
-            ...(query.categoryId ? { categoryId: query.categoryId } : {}),
-            ...(query.search
-              ? {
-                  OR: [
-                    { name: { contains: query.search, mode: 'insensitive' } },
-                    { sku: { contains: query.search, mode: 'insensitive' } },
-                  ],
-                }
-              : {}),
-          },
-        }
-      : {}),
+    product: {
+      deletedAt: null,
+      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { name: { contains: query.search, mode: 'insensitive' } },
+              { sku: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    },
   };
 
   let rawInventory: any[] = [];
@@ -375,6 +372,7 @@ export const listInventory = async (query: ListInventoryQuery) => {
   if (rawInventory.length === 0) {
     try {
       const prodWhere: Prisma.ProductWhereInput = {
+        deletedAt: null,
         ...(query.categoryId ? { categoryId: query.categoryId } : {}),
         ...(query.search
           ? {
@@ -594,10 +592,55 @@ export const updateInventoryItem = async (
 
 export const deleteInventoryItem = async (id: string, userId: string = 'system') => {
   return prisma.$transaction(async (tx) => {
-    const inv = await tx.inventory.findUnique({
+    let inv = await tx.inventory.findUnique({
       where: { id },
       include: { product: true, branch: true },
     });
+
+    if (!inv && (id.startsWith('inv-') || id.length > 10)) {
+      const prodId = id.startsWith('inv-') ? id.slice(4) : id;
+      inv = await tx.inventory.findFirst({
+        where: { productId: prodId },
+        include: { product: true, branch: true },
+      });
+
+      if (!inv) {
+        // Direct product stock write-off if no explicit inventory table entry exists
+        const prod = await tx.product.findUnique({ where: { id: prodId } });
+        if (prod) {
+          if (prod.stock > 0) {
+            const defaultBranch = await tx.branch.findFirst({ where: { deletedAt: null, isActive: true } });
+            if (defaultBranch) {
+              await tx.stockMovement.create({
+                data: {
+                  productId: prod.id,
+                  branchId: defaultBranch.id,
+                  type: StockMovementType.ADJUSTMENT_OUT,
+                  quantity: prod.stock,
+                  previousQty: prod.stock,
+                  newQty: 0,
+                  referenceType: 'FACILITY_DEALLOCATION',
+                  referenceId: prod.id,
+                  notes: `Deallocated SKU from catalog balance`,
+                  performedById: userId,
+                },
+              });
+            }
+          }
+          const updatedProd = await tx.product.update({
+            where: { id: prodId },
+            data: { stock: 0 },
+          });
+          return {
+            id,
+            productId: prodId,
+            quantity: 0,
+            product: updatedProd,
+          };
+        }
+      }
+    }
+
     if (!inv) throw new AppError('NOT_FOUND', 'Inventory record not found', 404);
 
     if (inv.quantity > 0) {
@@ -618,7 +661,7 @@ export const deleteInventoryItem = async (id: string, userId: string = 'system')
     }
 
     const deleted = await tx.inventory.delete({
-      where: { id },
+      where: { id: inv.id },
     });
 
     await syncProductStock(inv.productId, tx);

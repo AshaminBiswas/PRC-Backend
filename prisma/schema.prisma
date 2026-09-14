@@ -2794,10 +2794,11 @@ model ExpenseFloatTopUp {
   date        DateTime  @db.Date
   amount      Int       // In paise
   source      String    // e.g. "Cash from Bank", "HQ Float", "Petty Cash Reimbursement"
-  referenceNo String?   @map("reference_no")
-  notes       String?   @db.Text
-  addedById   String    @map("added_by_id")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  referenceNo       String?   @map("reference_no")
+  notes             String?   @db.Text
+  receiptAttachment String?   @map("receipt_attachment")
+  addedById         String    @map("added_by_id")
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   branch      Branch    @relation(fields: [branchId], references: [id])
   addedBy     User      @relation("FloatAddedBy", fields: [addedById], references: [id])

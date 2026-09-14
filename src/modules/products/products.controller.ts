@@ -88,6 +88,7 @@ export const deleteProduct = async (req: Request, res: Response, next: NextFunct
     await productsService.deleteProduct(req.params.id);
     clearResponseCache('cache:*products*');
     clearResponseCache('cache:*categories*');
+    clearResponseCache('cache:*inventory*');
     logAdminAction({
       userId: req.user?.id || 'system',
       action: 'PRODUCT_DELETED',

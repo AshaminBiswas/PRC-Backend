@@ -418,6 +418,8 @@ export const getMe = async (userId: string) => {
     phone: user.phone, companyName: user.companyName, gstin: user.gstin,
     role: getPrimaryRoleSlug(user.userRoles), permissions, avatar: user.avatar,
     isVerified: user.isVerified, mustChangePassword: user.mustChangePassword ?? false,
+    twoFactorEnabled: user.twoFactorEnabled ?? false,
+    isTwoFactorEnabled: user.twoFactorEnabled ?? false,
     createdAt: user.createdAt, lastLoginAt: user.lastLoginAt,
   };
 };

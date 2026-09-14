@@ -124,6 +124,7 @@ export const FloatTopUpSchema = z.object({
   source: z.string().min(2, 'Source of float cash is required (e.g. Bank Withdrawal, HQ Float)'),
   referenceNo: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  receiptAttachment: z.string().optional().nullable(),
 });
 
 export type FloatTopUpInput = z.infer<typeof FloatTopUpSchema>;

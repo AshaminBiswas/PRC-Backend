@@ -968,6 +968,7 @@ export class ExpensesService {
           source: input.source,
           referenceNo: input.referenceNo || null,
           notes: input.notes || null,
+          receiptAttachment: input.receiptAttachment || null,
           addedById: userId,
         },
         include: {
