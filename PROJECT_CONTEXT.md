@@ -997,19 +997,27 @@ The actual cause is **Render free-tier cold-start**: when the Render container i
 - `PRC-Backend`: `npx tsc --noEmit` passed with **0 compiler errors**.
 - `admin`: `npx tsc --noEmit` passed with **0 compiler errors**.
 - `frontend`: `npm run build` (Vite) succeeded with **0 errors**.
-- Database: `node src/scripts/fix-db.js` executed cleanly, applying the `paid_by` schema patch to PostgreSQL.
+### 40. Rate Limiting, CORS Resilience & Reverse Proxy Infrastructure (2026-09-15)
+
+#### 40.1 Architecture & Fixes
+- **Management & Operational Dashboard Bypass**:
+  - In `src/middleware/rateLimit.middleware.ts`, normalized user role checks via `.toLowerCase().replace(/[-_]/g, '')`.
+  - Authenticated roles (`super_admin`, `super-admin`, `admin`, `manager`, `accountant`, `cashier`, `staff`) now completely bypass the rate limiter, preventing false-positive 429 errors during intensive management console operations (e.g. updating expense entries, float audits, bulk edits).
+- **CORS Header Guarantee on Rate Limit & Error Responses**:
+  - In `src/middleware/rateLimit.middleware.ts`, injected `Access-Control-Allow-Origin: req.headers.origin` and `Access-Control-Allow-Credentials: true` directly before sending 429 Too Many Requests responses in both Redis and in-memory paths.
+  - In `src/utils/response.ts`, enhanced `sendError` to automatically inject origin and credentials CORS headers if absent, preventing Chrome/Edge from masking 4xx/5xx errors as generic `ERR_FAILED` or `blocked by CORS policy` network failures.
+- **Render Cloud Reverse Proxy Detection (`trust proxy`)**:
+  - In `src/app.ts`, configured `app.set('trust proxy', 1)` when running in production (`env.NODE_ENV === 'production'`) or on Render (`process.env.RENDER`), ensuring Express accurately parses real client IPs from `X-Forwarded-For` rather than clustering all worldwide users into Render's shared gateway IP.
+- **Global Umbrella Limit Expansion**:
+  - Increased `generalLimiter` default capacity from 1,200 to 3,000 req/min per IP to comfortably accommodate high-frequency frontend and admin operations.
+- **Admin Console Background Keep-Alive Throttling**:
+  - In `d:\admin\src\api\adminApi.ts`, added a 60-second rate-throttle guard (`_lastKeepAlivePing`) to `keepAliveServerPing()`, eliminated `mode: 'no-cors'` in favor of standard CORS with a 10s timeout, and removed redundant `/health` cascade pings to eliminate ping storms on window focus / tab visibility changes.
+
+### 40.2 Verification & Quality Assurance
+- `PRC-Backend`: `npx tsc --noEmit` passed with **0 compiler errors**.
+- `admin`: `npx tsc --noEmit` passed with **0 compiler errors**.
+- Full-stack build and schema integrity preserved.
 
 ---
 
-*Last Updated: 2026-09-15 (Daily Cash Expense Tracker custom date selection, Cash Float date picker and top-up list records, Cash Float Excel worksheets across Day/Week/Month/Year, mobile-friendly fast entry UI revamp, payer attribution, and multi-branch Excel reporting suite complete; 0 TypeScript compiler errors across full stack)*
-
-
-
-
-
-
-
-
-
-
-
+*Last Updated: 2026-09-15 (Rate limiting role bypass normalization, CORS header injection on error/429 responses, Render trust proxy IP parsing, admin keep-alive ping throttling, and zero-error full-stack compilation verified)*

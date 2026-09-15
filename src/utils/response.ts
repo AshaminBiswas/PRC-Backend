@@ -74,6 +74,11 @@ export const sendError = (
   error: ApiError,
   statusCode = 400
 ): Response => {
+  const origin = (res.req as any)?.headers?.origin;
+  if (origin && !res.getHeader('Access-Control-Allow-Origin')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
   return res.status(statusCode).json({
     success: false,
     error,

@@ -73,7 +73,7 @@ import { startKeepAlive } from './jobs/keepAlive';
 
 const app = express();
 
-if (env.scaling.trustProxy) {
+if (env.scaling.trustProxy || env.NODE_ENV === 'production' || process.env.RENDER) {
   app.set('trust proxy', 1);
 }
 

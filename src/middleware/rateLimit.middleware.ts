@@ -65,8 +65,17 @@ export const createRateLimiter = (options: RateLimitOptions) => {
       }
     }
 
-    // ── Super-Admin & Executive Admin Bypass: Never rate-limit management dashboard traffic
-    if (roleSlug === 'super-admin' || roleSlug === 'admin' || roleSlug === 'manager') {
+    // ── Management Dashboard Bypass: Never rate-limit admin, super-admin, accountant, cashier or staff traffic
+    const normalizedRole = String(roleSlug || '').toLowerCase().replace(/[-_]/g, '');
+    const isAdminUser =
+      normalizedRole.includes('admin') ||
+      normalizedRole.includes('super') ||
+      normalizedRole === 'manager' ||
+      normalizedRole === 'accountant' ||
+      normalizedRole === 'cashier' ||
+      normalizedRole === 'staff';
+
+    if (isAdminUser) {
       return next();
     }
 
@@ -88,12 +97,22 @@ export const createRateLimiter = (options: RateLimitOptions) => {
     const key = `rl:${prefix}:${identifier}`;
     const now = Date.now();
 
+    // Helper to ensure CORS headers are present on rate-limit responses
+    const injectCorsHeaders = () => {
+      const origin = req.headers.origin;
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
+    };
+
     try {
       // 1. Try Redis sliding window counter
       const currentCountVal = await getCache<any>(key);
       const currentCount = currentCountVal ? parseInt(String(currentCountVal), 10) : 0;
 
       if (currentCount >= effectiveMax) {
+        injectCorsHeaders();
         res.setHeader('Retry-After', windowSeconds);
         sendError(
           res,
@@ -119,6 +138,7 @@ export const createRateLimiter = (options: RateLimitOptions) => {
       }
 
       if (memEntry.count >= effectiveMax) {
+        injectCorsHeaders();
         res.setHeader('Retry-After', windowSeconds);
         sendError(
           res,
@@ -231,6 +251,6 @@ export const adminLimiter = createRateLimiter({
 /** 11. Global General Umbrella (Public Catalog Reads & Generic Fallback) */
 export const generalLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute sliding window
-  max: 1200, // 1200 req/min per client
+  max: 3000, // 3000 req/min per client
   keyPrefix: 'general',
 });
