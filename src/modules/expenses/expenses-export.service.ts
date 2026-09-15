@@ -83,6 +83,123 @@ function styleSummaryRow(row: ExcelJS.Row, bgArgb: string = 'FFF1F5F9') {
   });
 }
 
+/** Helper to format standard Raw / Itemized Vouchers worksheet with all required columns and autoFilter */
+export function addRawVouchersWorksheet(
+  wb: ExcelJS.Workbook,
+  sheetName: string,
+  entries: any[],
+  defaultBranchName: string = 'All Branches'
+): ExcelJS.Worksheet {
+  const ws = wb.addWorksheet(sheetName, {
+    views: [{ showGridLines: true, state: 'frozen', ySplit: 1 }],
+  });
+
+  ws.columns = [
+    { header: 'Date', key: 'date', width: 14 },
+    { header: 'Voucher No', key: 'entryNumber', width: 20 },
+    { header: 'Branch', key: 'branch', width: 22 },
+    { header: 'Who Paid (Name)', key: 'paidBy', width: 22 },
+    { header: 'Category', key: 'category', width: 22 },
+    { header: 'Sub-Category', key: 'subCategory', width: 18 },
+    { header: 'Amount (₹)', key: 'amount', width: 18 },
+    { header: 'Payment Mode', key: 'paymentMode', width: 16 },
+    { header: 'Description / Note', key: 'description', width: 36 },
+    { header: 'Paid To (Vendor / Person)', key: 'paidTo', width: 26 },
+    { header: 'Receipt Slip', key: 'receiptSlip', width: 22 },
+    { header: 'Status', key: 'status', width: 14 },
+    { header: 'Approved By', key: 'approvedBy', width: 20 },
+  ];
+
+  styleHeaderRow(ws.getRow(1), NAVY_HEADER);
+
+  entries.forEach((e, idx) => {
+    const dStr = e.date instanceof Date
+      ? e.date.toISOString().split('T')[0]
+      : e.date
+      ? String(e.date).split('T')[0]
+      : '-';
+
+    const branchName = e.branch?.name || defaultBranchName;
+    const payerName = e.paidBy
+      ? e.paidBy
+      : e.addedBy
+      ? `${e.addedBy.firstName || ''} ${e.addedBy.lastName || ''}`.trim() || e.addedBy.email
+      : e.employee?.name || '-';
+
+    const approverName = e.approvedBy
+      ? `${e.approvedBy.firstName || ''} ${e.approvedBy.lastName || ''}`.trim() || e.approvedBy.email
+      : '-';
+
+    const row = ws.addRow([
+      dStr,
+      e.entryNumber,
+      branchName,
+      payerName,
+      e.category?.name || 'Uncategorized',
+      e.subCategory || '-',
+      paiseToRupees(e.amount),
+      e.paymentMode,
+      e.description,
+      e.paidTo,
+      e.receiptAttachment ? { text: 'View Slip / Receipt', hyperlink: e.receiptAttachment } : 'No Slip',
+      e.status,
+      approverName,
+    ]);
+
+    styleDataRow(row, idx % 2 === 1);
+
+    // Number formatting (Amount is column 7)
+    row.getCell(7).numFmt = RUPEE_FORMAT;
+    row.getCell(7).alignment = { horizontal: 'right' };
+
+    // Alignments
+    row.getCell(1).alignment = { horizontal: 'center' };
+    row.getCell(2).alignment = { horizontal: 'center' };
+    row.getCell(8).alignment = { horizontal: 'center' };
+    row.getCell(12).alignment = { horizontal: 'center' };
+
+    // Receipt Slip Hyperlink Styling (Column 11)
+    const receiptCell = row.getCell(11);
+    if (e.receiptAttachment) {
+      receiptCell.font = { color: { argb: 'FF2563EB' }, underline: true, size: 9.5, name: 'Segoe UI' };
+      receiptCell.alignment = { horizontal: 'center' };
+    } else {
+      receiptCell.font = { color: { argb: 'FF94A3B8' }, italic: true, size: 9.5, name: 'Segoe UI' };
+      receiptCell.alignment = { horizontal: 'center' };
+    }
+  });
+
+  // Summary Row if entries exist
+  if (entries.length > 0) {
+    const totalRow = ws.addRow([
+      'TOTAL',
+      '',
+      '',
+      '',
+      '',
+      '',
+      { formula: `SUM(G2:G${entries.length + 1})` },
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+    styleSummaryRow(totalRow);
+    totalRow.getCell(7).numFmt = RUPEE_FORMAT;
+    totalRow.getCell(7).alignment = { horizontal: 'right' };
+  }
+
+  // Enable AutoFilter on header row
+  ws.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: Math.max(entries.length + 1, 1), column: ws.columns.length },
+  };
+
+  return ws;
+}
+
 // ─── 1. Day-Wise Multi-Sheet Workbook ────────────────────────────────────────
 export async function buildDayWiseWorkbook(data: {
   date: string;
@@ -150,63 +267,7 @@ export async function buildDayWiseWorkbook(data: {
   });
 
   // ── Sheet 2: Itemized Transactions ────────────────────────────────────────
-  const s2 = wb.addWorksheet('Itemized Expenses', {
-    views: [{ showGridLines: true, state: 'frozen', ySplit: 1 }],
-  });
-
-  s2.columns = [
-    { header: 'Voucher No', key: 'entryNumber', width: 20 },
-    { header: 'Time', key: 'time', width: 12 },
-    { header: 'Category', key: 'category', width: 22 },
-    { header: 'Sub-Category', key: 'subCategory', width: 18 },
-    { header: 'Description / Note', key: 'description', width: 36 },
-    { header: 'Paid To', key: 'paidTo', width: 24 },
-    { header: 'Mode', key: 'paymentMode', width: 14 },
-    { header: 'Amount (₹)', key: 'amount', width: 18 },
-    { header: 'Status', key: 'status', width: 14 },
-    { header: 'Logged By', key: 'addedBy', width: 20 },
-    { header: 'Approved By', key: 'approvedBy', width: 20 },
-  ];
-  styleHeaderRow(s2.getRow(1), NAVY_HEADER);
-
-  data.entries.forEach((e, idx) => {
-    const row = s2.addRow([
-      e.entryNumber,
-      e.time,
-      e.category?.name || 'Uncategorized',
-      e.subCategory || '-',
-      e.description,
-      e.paidTo,
-      e.paymentMode,
-      paiseToRupees(e.amount),
-      e.status,
-      e.addedBy ? `${e.addedBy.firstName || ''} ${e.addedBy.lastName || ''}`.trim() || e.addedBy.email : '-',
-      e.approvedBy ? `${e.approvedBy.firstName || ''} ${e.approvedBy.lastName || ''}`.trim() : '-',
-    ]);
-    styleDataRow(row, idx % 2 === 1);
-    row.getCell(8).numFmt = RUPEE_FORMAT;
-    row.getCell(8).alignment = { horizontal: 'right' };
-    row.getCell(2).alignment = { horizontal: 'center' };
-    row.getCell(7).alignment = { horizontal: 'center' };
-    row.getCell(9).alignment = { horizontal: 'center' };
-  });
-
-  const totalRow = s2.addRow([
-    'TOTAL',
-    '',
-    '',
-    '',
-    '',
-    '',
-    '',
-    { formula: `SUM(H2:H${data.entries.length + 1})` },
-    '',
-    '',
-    '',
-  ]);
-  styleSummaryRow(totalRow);
-  totalRow.getCell(8).numFmt = RUPEE_FORMAT;
-  totalRow.getCell(8).alignment = { horizontal: 'right' };
+  addRawVouchersWorksheet(wb, 'Itemized Expenses', data.entries, data.branchName);
 
   return wb;
 }
@@ -289,6 +350,11 @@ export async function buildWeekWiseWorkbook(data: {
   sumRow.getCell(5).alignment = { horizontal: 'right' };
   sumRow.getCell(8).alignment = { horizontal: 'center' };
 
+  s1.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: data.days.length + 1, column: s1.columns.length },
+  };
+
   // ── Sheet 2: Category Breakdown Pivot ─────────────────────────────────────
   const s2 = wb.addWorksheet('Category Breakdown', {
     views: [{ showGridLines: true, state: 'frozen', ySplit: 1 }],
@@ -327,43 +393,13 @@ export async function buildWeekWiseWorkbook(data: {
     }
   });
 
-  // ── Sheet 3: Raw Entries ──────────────────────────────────────────────────
-  const s3 = wb.addWorksheet('Raw Vouchers', {
-    views: [{ showGridLines: true, state: 'frozen', ySplit: 1 }],
-  });
-  s3.columns = [
-    { header: 'Voucher No', key: 'entryNumber', width: 18 },
-    { header: 'Date', key: 'date', width: 14 },
-    { header: 'Time', key: 'time', width: 12 },
-    { header: 'Category', key: 'category', width: 20 },
-    { header: 'Description', key: 'description', width: 34 },
-    { header: 'Paid To', key: 'paidTo', width: 22 },
-    { header: 'Mode', key: 'paymentMode', width: 14 },
-    { header: 'Amount (₹)', key: 'amount', width: 18 },
-    { header: 'Status', key: 'status', width: 14 },
-  ];
-  styleHeaderRow(s3.getRow(1), NAVY_HEADER);
+  s2.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: data.categoryBreakdown.length + 1, column: s2.columns.length },
+  };
 
-  data.entries.forEach((e, idx) => {
-    const row = s3.addRow([
-      e.entryNumber,
-      e.date instanceof Date ? e.date.toISOString().split('T')[0] : String(e.date).split('T')[0],
-      e.time,
-      e.category?.name || '-',
-      e.description,
-      e.paidTo,
-      e.paymentMode,
-      paiseToRupees(e.amount),
-      e.status,
-    ]);
-    styleDataRow(row, idx % 2 === 1);
-    row.getCell(8).numFmt = RUPEE_FORMAT;
-    row.getCell(8).alignment = { horizontal: 'right' };
-    row.getCell(2).alignment = { horizontal: 'center' };
-    row.getCell(3).alignment = { horizontal: 'center' };
-    row.getCell(7).alignment = { horizontal: 'center' };
-    row.getCell(9).alignment = { horizontal: 'center' };
-  });
+  // ── Sheet 3: Raw Itemized Vouchers ─────────────────────────────────────────
+  addRawVouchersWorksheet(wb, 'Raw Vouchers', data.entries, data.branchName);
 
   return wb;
 }
@@ -386,6 +422,7 @@ export async function buildMonthWiseWorkbook(data: {
   }[];
   reconciliations: any[];
   categoryTotals: Record<string, number>;
+  entries?: any[];
 }): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'PRC Hardware Daily Cash Expense Tracker';
@@ -452,6 +489,11 @@ export async function buildMonthWiseWorkbook(data: {
     }
   }
 
+  s1.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: data.days.length + 1, column: s1.columns.length },
+  };
+
   // ── Sheet 2: Daily Closing & Reconciliation Log ───────────────────────────
   const s2 = wb.addWorksheet('Reconciliation Log', {
     views: [{ showGridLines: true, state: 'frozen', ySplit: 1 }],
@@ -509,6 +551,16 @@ export async function buildMonthWiseWorkbook(data: {
     row.getCell(8).alignment = { horizontal: 'center' };
   });
 
+  s2.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: data.reconciliations.length + 1, column: s2.columns.length },
+  };
+
+  // ── Sheet 3: Raw Itemized Vouchers ─────────────────────────────────────────
+  if (data.entries && data.entries.length > 0) {
+    addRawVouchersWorksheet(wb, 'Raw Vouchers', data.entries, data.branchName);
+  }
+
   return wb;
 }
 
@@ -529,6 +581,7 @@ export async function buildYearWiseWorkbook(data: {
   }[];
   annualCategoryTotals: Record<string, number>;
   annualGrandTotal: number;
+  entries?: any[];
 }): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'PRC Hardware Daily Cash Expense Tracker';
@@ -588,6 +641,11 @@ export async function buildYearWiseWorkbook(data: {
   }
   grandRow.getCell(totalRowValues.length).alignment = { horizontal: 'center' };
 
+  s1.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: data.categoryNames.length + 1, column: s1.columns.length },
+  };
+
   // ── Sheet 2: Month-by-Month Financials ────────────────────────────────────
   const s2 = wb.addWorksheet('Monthly Financial Rollup', {
     views: [{ showGridLines: true, state: 'frozen', ySplit: 1 }],
@@ -618,6 +676,16 @@ export async function buildYearWiseWorkbook(data: {
     });
     row.getCell(6).alignment = { horizontal: 'center' };
   });
+
+  s2.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: data.months.length + 1, column: s2.columns.length },
+  };
+
+  // ── Sheet 3: Raw Itemized Vouchers ─────────────────────────────────────────
+  if (data.entries && data.entries.length > 0) {
+    addRawVouchersWorksheet(wb, 'Raw Vouchers', data.entries, data.branchName);
+  }
 
   return wb;
 }

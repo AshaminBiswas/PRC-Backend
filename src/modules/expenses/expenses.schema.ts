@@ -21,6 +21,7 @@ export const CreateExpenseSchema = z.object({
   paymentMode: ExpensePaymentModeEnum.default('CASH'),
   description: z.string().min(2, 'Description or note is required'),
   paidTo: z.string().min(2, 'Paid to (recipient/vendor) is required'),
+  paidBy: z.string().optional().nullable(),
   receiptAttachment: z.string().optional().nullable(),
   branchId: z.string().min(1, 'Branch ID is required'),
   departmentId: z.string().optional().nullable(),
@@ -54,8 +55,13 @@ export const UpdateExpenseSchema = z.object({
   paymentMode: ExpensePaymentModeEnum.optional(),
   description: z.string().min(2).optional(),
   paidTo: z.string().min(2).optional(),
+  paidBy: z.string().optional().nullable(),
   receiptAttachment: z.string().optional().nullable(),
   employeeId: z.string().optional().nullable(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
+    .optional(),
   changeReason: z.string().optional().default('Expense details updated'),
 });
 

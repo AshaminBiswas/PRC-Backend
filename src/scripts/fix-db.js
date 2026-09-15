@@ -35,6 +35,7 @@ const STATEMENTS = [
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_secret" TEXT;`,
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "two_factor_backup_codes" TEXT[] DEFAULT ARRAY[]::TEXT[];`,
   `ALTER TABLE "expense_float_top_ups" ADD COLUMN IF NOT EXISTS "receipt_attachment" TEXT;`,
+  `ALTER TABLE "expense_entries" ADD COLUMN IF NOT EXISTS "paid_by" TEXT;`,
 
   // ─── DAILY CASH EXPENSE TRACKER MODULE TABLES & TYPES ───
   `DO $$ BEGIN
@@ -72,6 +73,7 @@ const STATEMENTS = [
     "payment_mode"       "ExpensePaymentMode" NOT NULL DEFAULT 'CASH',
     "description"        TEXT NOT NULL,
     "paid_to"            TEXT NOT NULL,
+    "paid_by"            TEXT,
     "receipt_attachment" TEXT,
     "branch_id"          TEXT NOT NULL,
     "department_id"      TEXT,

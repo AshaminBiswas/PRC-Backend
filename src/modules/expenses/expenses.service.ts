@@ -126,6 +126,7 @@ export class ExpensesService {
           paymentMode: input.paymentMode as ExpensePaymentMode,
           description: input.description,
           paidTo: input.paidTo,
+          paidBy: input.paidBy ? input.paidBy.trim() : null,
           receiptAttachment: input.receiptAttachment || null,
           branchId: input.branchId,
           departmentId: input.departmentId || null,
@@ -139,7 +140,11 @@ export class ExpensesService {
         include: {
           category: true,
           branch: true,
+          employee: true,
           addedBy: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+          approvedBy: {
             select: { id: true, firstName: true, lastName: true, email: true },
           },
         },
@@ -644,6 +649,8 @@ export class ExpensesService {
       input.amount !== undefined ? amountToPaise(input.amount, input.amountInPaise) : oldAmount;
     const amountDiff = newAmount - oldAmount;
     const wasApproved = expense.status === 'APPROVED';
+    const targetDate = input.date ? parseDateOnly(input.date) : expense.date;
+    const dateChanged = targetDate.getTime() !== expense.date.getTime();
     const date = expense.date;
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
@@ -747,12 +754,15 @@ export class ExpensesService {
           ...(input.paymentMode ? { paymentMode: input.paymentMode } : {}),
           ...(input.description ? { description: input.description.trim() } : {}),
           ...(input.paidTo ? { paidTo: input.paidTo.trim() } : {}),
+          ...(input.paidBy !== undefined ? { paidBy: input.paidBy ? input.paidBy.trim() : null } : {}),
           ...(input.receiptAttachment !== undefined ? { receiptAttachment: input.receiptAttachment } : {}),
           ...(input.employeeId !== undefined ? { employeeId: input.employeeId } : {}),
+          ...(input.date ? { date: targetDate } : {}),
         },
         include: {
           category: true,
           branch: true,
+          employee: true,
           addedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
           approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
         },
@@ -1385,7 +1395,7 @@ export class ExpensesService {
             date: selectedDate,
             isVoid: false,
           },
-          include: { category: true, addedBy: true, approvedBy: true },
+          include: { category: true, branch: true, employee: true, addedBy: true, approvedBy: true },
           orderBy: { time: 'asc' },
         }),
         prisma.expenseDailyRollup.findMany({
@@ -1446,7 +1456,7 @@ export class ExpensesService {
             date: { gte: start, lte: endDate },
             isVoid: false,
           },
-          include: { category: true },
+          include: { category: true, branch: true, employee: true, addedBy: true, approvedBy: true },
           orderBy: [{ date: 'asc' }, { time: 'asc' }],
         }),
         prisma.expenseDailyRollup.findMany({
@@ -1526,7 +1536,7 @@ export class ExpensesService {
       const monthStart = new Date(Date.UTC(year, month - 1, 1));
       const monthEnd = new Date(Date.UTC(year, month - 1, daysInMonth));
 
-      const [ledgers, topUps, rollups, categories] = await Promise.all([
+      const [ledgers, topUps, rollups, categories, entries] = await Promise.all([
         prisma.expenseDailyLedger.findMany({
           where: {
             ...(query.branchId ? { branchId: query.branchId } : {}),
@@ -1548,6 +1558,15 @@ export class ExpensesService {
           },
         }),
         prisma.expenseCategory.findMany({ where: { isDeleted: false }, orderBy: { name: 'asc' } }),
+        prisma.expenseEntry.findMany({
+          where: {
+            ...(query.branchId ? { branchId: query.branchId } : {}),
+            date: { gte: monthStart, lte: monthEnd },
+            isVoid: false,
+          },
+          include: { category: true, branch: true, employee: true, addedBy: true, approvedBy: true },
+          orderBy: [{ date: 'asc' }, { time: 'asc' }],
+        }),
       ]);
 
       const categoryNames = categories.map((c) => c.name);
@@ -1602,6 +1621,7 @@ export class ExpensesService {
           days,
           reconciliations: ledgers,
           categoryTotals,
+          entries,
         }),
         filename: `Cash_Expenses_Month_${year}-${String(month).padStart(2, '0')}_${branch?.code || 'ALL'}.xlsx`,
       };
@@ -1611,7 +1631,7 @@ export class ExpensesService {
     const now = new Date();
     const year = query.year || now.getFullYear();
 
-    const [monthlyRollups, ledgers, topUps, categories] = await Promise.all([
+    const [monthlyRollups, ledgers, topUps, categories, entries] = await Promise.all([
       prisma.expenseMonthlyRollup.findMany({
         where: {
           ...(query.branchId ? { branchId: query.branchId } : {}),
@@ -1637,6 +1657,18 @@ export class ExpensesService {
         },
       }),
       prisma.expenseCategory.findMany({ where: { isDeleted: false }, orderBy: { name: 'asc' } }),
+      prisma.expenseEntry.findMany({
+        where: {
+          ...(query.branchId ? { branchId: query.branchId } : {}),
+          date: {
+            gte: new Date(Date.UTC(year, 0, 1)),
+            lte: new Date(Date.UTC(year, 11, 31)),
+          },
+          isVoid: false,
+        },
+        include: { category: true, branch: true, employee: true, addedBy: true, approvedBy: true },
+        orderBy: [{ date: 'asc' }, { time: 'asc' }],
+      }),
     ]);
 
     const categoryNames = categories.map((c) => c.name);
@@ -1689,6 +1721,7 @@ export class ExpensesService {
         months,
         annualCategoryTotals,
         annualGrandTotal,
+        entries,
       }),
       filename: `Cash_Expenses_Year_${year}_${branch?.code || 'ALL'}.xlsx`,
     };

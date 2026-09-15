@@ -2726,6 +2726,7 @@ model ExpenseEntry {
   paymentMode        ExpensePaymentMode @default(CASH) @map("payment_mode")
   description        String             @db.Text
   paidTo             String             @map("paid_to")
+  paidBy             String?            @map("paid_by")
   receiptAttachment  String?            @map("receipt_attachment")
   branchId           String             @map("branch_id")
   departmentId       String?            @map("department_id")

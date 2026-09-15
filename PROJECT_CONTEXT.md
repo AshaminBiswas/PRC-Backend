@@ -55,7 +55,7 @@ D:\
     - **Administrator Master Console (`AdminManagementPage.tsx`)**: Enterprise staff credentials directory with 4 interactive KPI metric cards, role-filtered staff tables, mobile touch cards, 360 activity inspector modal, and **Super Admin Direct Password Management** (1-click `KeyRound` modal to change/reset passwords for any administrator role without requiring previous passwords, cryptographically secure random password generator, forced password change on next sign-in flag `mustChangePassword`, optional email notification dispatch, and 1-click temporary password copy confirmation).
     - **Executive Authentication & Recovery (`AdminLoginPage.tsx`)**: Enterprise login portal supporting standard email/password authentication, TOTP 2FA verification with 8-digit emergency backup recovery, and **Admin Self-Service Password Recovery** (dedicated multi-stage forgot password flow directly on the console card featuring registered corporate email validation, 6-digit numeric OTP verification with 60-second resend countdown, live password match validation, and seamless transition back to login).
     - **Employee & Payroll Management Workspace (`EmployeeManagementPage.tsx`)**: 6-tab enterprise HR hub (Employee Master Directory; **Worker Operations Hub** with 3 dedicated sub-views for Worker Attendance, Worker Advances & Recovery, and Worker Monthly Payroll Runs; Daily Attendance Matrix with 0ms optimistic updates and worker-only filter toggle; Leave Ledger with automated monthly CL/EL accrual; Advances & Deductions tracking with worker-only filter and full edit/delete modals; and Monthly Payroll Engine with worker-only filter, formula calculation, Super Admin disbursement authorization, PDF payslip generation, and automated payslip emailing).
-    - **Daily Cash Expense Tracker Workspace (`ExpensesPage.tsx`)**: 6-tab responsive operational cash management hub with **Instant 0ms Optimistic Voucher Approvals & Rejections** (immediate UI state transitions, live balance mutation, and non-blocking background synchronization with automated rollback on error; zero artificial polling delays), **Stale-While-Revalidate (SWR) Instant Boot** (0ms initial mount utilizing local storage cached facilities, categories, and balances with parallel background refresh and clean shimmer loading states), Fast-Log Cash Outflow form with quick preset buttons, auto-approval threshold notifications, recently logged voucher preview card with direct ledger shortcuts and inline approval, receipt attachments, and live Today transaction feed; Dedicated Organization Expense Ledger Tab for browsing, searching, and filtering all historical vouchers across dates, categories, statuses, and branches; Pending Approval Queue for management authorization with inline 1-click Approve/Reject; Float Top-Up & End-of-Day Physical Cash Reconciliation with interactive currency denomination counter ($\times 500, 200, 100, 50, 20, 10, 5, 2, 1$) and automated variance flags; Category Master & Monthly Budgets; and Multi-Sheet Server-Side Excel Generator for Day/Week/Month/Year expense reports with category breakdowns and professional styling.
+    - **Daily Cash Expense Tracker Workspace (`ExpensesPage.tsx`)**: 6-tab responsive operational cash management hub with **Instant 0ms Optimistic Voucher Approvals & Rejections** (immediate UI state transitions, live balance mutation, and non-blocking background synchronization with automated rollback on error; zero artificial polling delays), **Stale-While-Revalidate (SWR) Instant Boot** (0ms initial mount utilizing local storage cached facilities, categories, and balances with parallel background refresh and clean shimmer loading states), Fast-Log Cash Outflow form with dual-attribution (`paidBy` Who Paid Name field + `paidTo` Vendor/Person), quick preset buttons, auto-approval threshold notifications, recently logged voucher preview card with direct ledger shortcuts and inline approval, receipt attachments, and live Today transaction feed; Dedicated Organization Expense Ledger Tab for browsing, searching, and filtering all historical vouchers across dates, categories, statuses, and branches; Pending Approval Queue for management authorization with inline 1-click Approve/Reject; Float Top-Up & End-of-Day Physical Cash Reconciliation with interactive currency denomination counter ($\times 500, 200, 100, 50, 20, 10, 5, 2, 1$) and automated variance flags; Category Master & Monthly Budgets; and Multi-Sheet Server-Side Excel Generator for Day/Week/Month/Year expense reports featuring branch location selection (Delhi HQ, Kolkata Branch, or All Branches Consolidated), uniform 13-column itemized voucher worksheets across all report periods with clickable receipt slip hyperlinks, and native Excel `autoFilter` header controls.
 - **State & Auth**: `AdminAuthContext` (JWT in localStorage), `ThemeContext` (Light/Dark mode).
 - **Features**: Real-time SSE notification stream, executive analytics, product/variant CRUD, quotation pipeline, GST Tax Invoice Hub, custom B2B pricing, RBAC roles & permissions, media studio.
 
@@ -165,7 +165,7 @@ D:\
     - `EmployeeIdSequence`: Atomic sequence generator tracking monthly sequences (`PPSE` + `YYYYMM` + `XXX`).
 15. **Daily Cash Expense Tracker & Cash-in-Hand Balance Suite**:
     - `ExpenseCategory`: Master directory of expense heads (`name`, `code` unique, `description`, `icon`, `color`, `isActive`, `isDefault`, `maxLimitPaise`, `requiresApproval`, `monthlyBudgetPaise`, `displayOrder`). Pre-seeded with 10 industry-standard categories (Logistics, Packaging, Tea/Snacks, Site Supplies, Repair, Utilities, Petty Office, Travel, Casual Labor, Miscellaneous).
-    - `ExpenseEntry`: Itemized operational cash outflow records (`expenseNumber` sequential `EXP-YYYY-MM-XXXX`, `branchId`, `categoryId`, `amountPaise` strictly integer paise, `paymentMode` enum `CASH`/`UPI`/`BANK_TRANSFER`/`PETTY_CARD`/`CHEQUE`, `paidTo`, `contactNumber`, `purpose`, `invoiceNumber`, `receiptUrl`, `notes`, `status` enum `PENDING_APPROVAL`/`APPROVED`/`REJECTED`/`AUTO_APPROVED`/`VOIDED`, `approvedById`, `approvedAt`, `rejectionReason`, `voidReason`, `voidedById`, `voidedAt`, `offlineClientId`, `syncedAt`, `createdById`, `employeeId`).
+    - `ExpenseEntry`: Itemized operational cash outflow records (`expenseNumber` sequential `EXP-YYYY-MM-XXXX`, `branchId`, `categoryId`, `amountPaise` strictly integer paise, `paymentMode` enum `CASH`/`UPI`/`BANK_TRANSFER`/`PETTY_CARD`/`CHEQUE`, `paidTo`, `paidBy` (cashier/payer staff name), `contactNumber`, `purpose`, `invoiceNumber`, `receiptUrl`, `notes`, `status` enum `PENDING_APPROVAL`/`APPROVED`/`REJECTED`/`AUTO_APPROVED`/`VOIDED`, `approvedById`, `approvedAt`, `rejectionReason`, `voidReason`, `voidedById`, `voidedAt`, `offlineClientId`, `syncedAt`, `createdById`, `employeeId`).
     - `ExpenseDailyLedger`: End-of-day physical cash count reconciliation and audit locking (`branchId`, `date`, `openingBalancePaise`, `totalFloatInPaise`, `totalExpensePaise`, `closingBalancePaise`, `physicalCashCountPaise`, `variancePaise`, `varianceReason`, `status` enum `OPEN`/`RECONCILED`/`VARIANCE_FLAGGED`/`LOCKED`, `notes`, `denominationJson` storing currency note counts $\times 500, 200, 100, 50, 20, 10, 5, 2, 1$, `closedById`, `closedAt`, `approvedById`, `approvedAt`). `@@unique([branchId, date])`.
     - `ExpenseFloatTopUp`: Replenishment of branch cash-in-hand register float (`branchId`, `amountPaise`, `source`, `referenceNumber`, `notes`, `addedById`).
     - `BranchCashBalance`: $O(1)$ fast lookup table maintaining live running cash balance (`branchId` unique, `currentBalancePaise`, `lastCalculatedAt`, `lastExpenseAt`).
@@ -227,7 +227,7 @@ All modules follow a uniform, production-grade layered architecture:
 | `wishlist` | `/api/v1/wishlist` | Customer saved wishlists & demand forecast tracking |
 | `installer-payments` | `/api/v1/installer-payments` | **Cubicle Installer Payment Tracking** — Dynamic Models Master CRUD across 3 categories (`CUBICLE`, `UMP`, `LOCKER`), atomic sequential bill generation (`PPSI-00001`), automated NCR territory detection, deductions & penalties (`deductionAmount`, `deductionReason`), installment payments ledger, auto-clearance calculation (`Net Total = Math.max(0, Subtotal + Travel - Deductions)`), automated PDF advice with red deduction itemization, 26-column Excel (.xlsx) export with deduction metrics, technician filter queries, and dedicated installer payment history ledger endpoint (`GET /installers/:id/ledger`). |
 | `employees` | `/api/v1/employees` | **Employee Management & Payroll Suite** — Master employee HR directory with auto-generated atomic sequential IDs (`PPSE202609001`), strict Government ID validation (Aadhaar/PAN/Voter ID), bank credentials, daily attendance tracking with Sunday override & overtime hours, automated leave accrual (+1.00 CL/month, +0.25 EL/month), advance and deduction recovery pipelines, monthly payroll formula calculation engine ($\text{Payable Days} = \text{Total Days} - \text{Default Sundays} + \text{Approved Sundays}$, $\text{Paid Days} = \text{Present} + \text{CL} + \text{EL} + 0.5 \times \text{Half} + \text{Approved Sundays}$, $\text{OT Pay} = \text{OT Hours} \times (\text{Per-Day Rate} / 8)$, $\text{Net} = \text{Gross} - \text{Advances} - \text{Deductions}$), Super Admin disbursement authorization (`POST /payroll/:id/mark-paid`), vector-styled A4 PDF payslip generation via `pdfmake`, and automated email dispatch with PDF attachment via `sendMail`. |
-| `expenses` | `/api/v1/expenses` | **Organization-Level Daily Cash Expense Tracker** — Fast entry cashier workflow (<10s), live running cash-in-hand balance ($O(1)$ `BranchCashBalance`), dual-layer threshold auto-approval ($\le ₹2,000$ auto-approved, $> ₹2,000$ admin review), **Atomic Batch Pipelined Transactions** (`prisma.$transaction([ ... ])` on approval/rejection eliminating interactive transaction overhead on PgBouncer pooler), receipt slip upload engine (`POST /upload-receipt` via Multer memory storage & Supabase CDN supporting JPEG, PNG, WEBP, HEIC, PDF up to 10MB), voucher edit pipeline (`PATCH /:id` with atomic balance recomputation and audit logging), super-admin voucher deletion (`DELETE /:id` with automatic financial refund/restoration for approved vouchers back into `BranchCashBalance.currentBalance`), float top-up replenishments, voiding with reverse balances & audit reasons, end-of-day physical cash reconciliation with denomination breakdown ($\times 500, 200, 100, 50, 20, 10, 5, 2, 1$) & variance reporting, multi-sheet Excel reports via `exceljs` (Summary, Day-wise, Week-wise, Month-wise, Year-wise, Category breakdown), pre-aggregated daily/monthly rollups on write, and offline tolerance sync. |
+| `expenses` | `/api/v1/expenses` | **Organization-Level Daily Cash Expense Tracker** — Fast entry cashier workflow (<10s) with dual attribution (`paidBy` Who Paid Name + `paidTo` Vendor/Person), live running cash-in-hand balance ($O(1)$ `BranchCashBalance`), dual-layer threshold auto-approval ($\le ₹2,000$ auto-approved, $> ₹2,000$ admin review), **Atomic Batch Pipelined Transactions** (`prisma.$transaction([ ... ])` on approval/rejection eliminating interactive transaction overhead on PgBouncer pooler), receipt slip upload engine (`POST /upload-receipt` via Multer memory storage & Supabase CDN supporting JPEG, PNG, WEBP, HEIC, PDF up to 10MB), voucher edit pipeline (`PATCH /:id` with atomic balance recomputation and audit logging), super-admin voucher deletion (`DELETE /:id` with automatic financial refund/restoration for approved vouchers back into `BranchCashBalance.currentBalance`), float top-up replenishments, voiding with reverse balances & audit reasons, end-of-day physical cash reconciliation with denomination breakdown ($\times 500, 200, 100, 50, 20, 10, 5, 2, 1$) & variance reporting, multi-sheet Excel reports via `exceljs` with branch location selection (Delhi HQ, Kolkata Branch, or All Branches Consolidated), uniform 13-column itemized voucher worksheets across all report periods (Date, Voucher No, Branch, Who Paid, Category, Sub-Category, Amount, Payment Mode, Description, Paid To, Clickable Receipt Slip, Status, Approved By) with native `autoFilter` header controls and total sum formulas, pre-aggregated daily/monthly rollups on write, and offline tolerance sync. |
 
 ---
 
@@ -920,6 +920,81 @@ The actual cause is **Render free-tier cold-start**: when the Render container i
 
 ### Verification
 - `npx tsc --noEmit` → **exit code 0** on both `admin` and `PRC-Backend`.
+
+---
+
+## 39. Daily Cash Expense Tracker — Optimistic UI, Payer Attribution & Multi-Branch Excel Reporting Suite (2026-09-15)
+
+### 39.1 Problem Statement & Requirements
+1. **Approval Lag & UI Slowness**: Users experienced server response delays (10-15s) when clicking Approve on expense vouchers, along with sluggish page loading when navigating to the Daily Cash Expense Tracker.
+2. **Excel Report Branch Selection**: Reports previously lacked an option to filter and export data specifically for the Kolkata Branch, Delhi HQ, or All Branches Consolidated.
+3. **Uniform Excel Columns & Formatting**:
+   - Every downloaded expense report (Day, Week, Month, Year) must feature a standard itemized vouchers table with all 13 standard columns: Current Date, Voucher No, Branch, Who Paid (Name / Employee), Category, Sub-Category, Amount, Payment Mode, Description / Note, Paid To (Vendor / Person), Slip (Receipt URL / Link), Status, and Approved By.
+   - Clickable hyperlinks for receipt attachments linking directly to the uploaded slip image or PDF document.
+   - Native Excel auto-filter (`autoFilter`) enabled on all report sheets so downloaded workbooks open with filter dropdowns ready for immediate analysis.
+4. **Fast Expense Logging Payer Name Field**:
+   - Addition of a "Who Paid (Name)" field (`paidBy`) to track the specific cashier or staff member who disbursed the funds, complementing the existing "Paid To (Vendor / Person)" (`paidTo`) field.
+
+### 39.2 Implementation Details
+
+#### 1. Database & Schema (`PRC-Backend`)
+- **Prisma Schema (`prisma/schema.prisma`)**: Added `paidBy String? @map("paid_by")` to `model ExpenseEntry`.
+- **Database Self-Healing (`src/scripts/fix-db.js`)**:
+  - Added idempotent DDL statement: `ALTER TABLE "expense_entries" ADD COLUMN IF NOT EXISTS "paid_by" TEXT;`.
+  - Added `"paid_by" TEXT,` to the `CREATE TABLE IF NOT EXISTS "expense_entries"` DDL definition.
+  - Executed and verified via `node src/scripts/fix-db.js`.
+- **Prisma Client**: Re-generated with `npx prisma generate` (`v5.22.0`).
+
+#### 2. Backend Validation & Services (`PRC-Backend`)
+- **Validation Schemas (`expenses.schema.ts`)**:
+  - Added `paidBy: z.string().optional().nullable()` to both `CreateExpenseSchema` and `UpdateExpenseSchema`.
+- **Expense Service (`expenses.service.ts`)**:
+  - `createExpense`: Stores `paidBy: input.paidBy ? input.paidBy.trim() : null` and includes full relations (`branch`, `employee`, `addedBy`, `approvedBy`).
+  - `updateExpense`: Updates `paidBy` and returns enriched relations.
+  - `exportReport`: Included `category`, `branch`, `employee`, `addedBy`, and `approvedBy` relations across Day, Week, Month, and Year reports. Added raw itemized voucher queries to Month and Year reports and forwarded them to the workbook generators.
+- **Excel Export Service (`expenses-export.service.ts`)**:
+  - Implemented `addRawVouchersWorksheet(wb, sheetName, entries, defaultBranchName)`:
+    - 13 standard columns: `Date`, `Voucher No`, `Branch`, `Who Paid (Name)`, `Category`, `Sub-Category`, `Amount (₹)`, `Payment Mode`, `Description / Note`, `Paid To (Vendor / Person)`, `Receipt Slip`, `Status`, `Approved By`.
+    - Clickable hyperlink for receipt slips (`{ text: 'View Slip / Receipt', hyperlink: e.receiptAttachment }`) with blue underline styling, falling back to `'No Slip'`.
+    - Total sum formula row: `SUM(G2:G{n})` formatted in Indian currency `₹#,##0.00`.
+    - Native `autoFilter` range activated across all columns (`ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(entries.length + 1, 1), column: ws.columns.length } }`).
+  - Unified Day Sheet 2, Week Sheet 3, Month Sheet 3, and Year Sheet 3 with `addRawVouchersWorksheet`.
+  - Added `autoFilter` to all summary, rollup, pivot, and reconciliation sheets across all 4 export workbooks.
+
+#### 3. Cross-Project Types & Frontend Alignment
+- **Admin Types (`admin/src/types/admin.ts`)**: Added `paidBy?: string | null;` to `ExpenseEntry` and `UpdateExpenseInput`.
+- **Admin API (`admin/src/api/expensesApi.ts`)**: Added `paidBy?: string | null;` to `OfflineQueuedExpense` and `createExpense`.
+- **Frontend Types (`frontend/src/types/index.ts`)**: Added `paidBy?: string | null;` to `ExpenseEntry`.
+- **Frontend Services (`frontend/src/services/cashExpenseService.ts`)**: Added `paidBy?: string | null;` to `createExpense`.
+
+#### 4. Admin UI Architecture (`admin/src/pages/ExpensesPage.tsx`)
+- **Excel Report Branch Filter**:
+  - Added `reportBranchId` state (defaults to `'ALL'`).
+  - Added interactive branch selection dropdown in the Multi-Sheet Excel Generator card header (Tab 5) with options: `All Branches (Consolidated)`, `Delhi HQ`, and `Kolkata Branch`.
+  - Wired `handleDownloadExcel(overridePeriod)` to pass the selected `reportBranchId` in the query params.
+- **Fast Expense Logging Form**:
+  - Added `entryDate` state defaulting to the user's current local date (`YYYY-MM-DD`), allowing staff to select custom or past dates for back-dated vouchers with automated reset back to current date on submit.
+  - Added `entryPaidBy` state and a dedicated "Who Paid (Name)" text input next to "Paid To (Vendor / Person)".
+  - Compact, high-density, mobile-first UI revamp: reduced padding (`p-3.5 sm:p-4`), scaled down input sizes (`text-xs`), normalized labels (`text-[11px] font-semibold`), removed redundant subtitle text ("Log cash outflow in under 10 seconds"), transformed category selection into a horizontal swipeable chip ribbon (`no-scrollbar`) saving >100px vertical scroll on mobile screens, and compacted slip file attachment and submit buttons.
+- **Edit Expense Modal**:
+  - Added `editDate` state and date picker allowing modification of expense dates with backend schema (`UpdateExpenseSchema.date`) and service (`updateExpense`) support.
+  - Added `editPaidBy` state and "Who Paid (Name)" input field.
+- **Voucher Displays**:
+  - Displayed `paidBy` attribution across Today's Outflows desktop table and mobile cards, Organization Ledger table and mobile drawer, Pending Approvals queue cards, and Recently Logged summary banner.
+- **Performance & Instant Feedback**:
+  - Zero-delay 0ms optimistic updates for instant UI status transitions on Approve/Reject without waiting for network round-trips.
+  - SWR local-storage cache hydration for instant initial tab mount with zero layout shift.
+
+### 39.3 Verification & Quality Assurance
+- `PRC-Backend`: `npx tsc --noEmit` passed with **0 compiler errors**.
+- `admin`: `npx tsc --noEmit` passed with **0 compiler errors**.
+- `frontend`: `npm run build` (Vite) succeeded with **0 errors**.
+- Database: `node src/scripts/fix-db.js` executed cleanly, applying the `paid_by` schema patch to PostgreSQL.
+
+---
+
+*Last Updated: 2026-09-15 (Daily Cash Expense Tracker custom date selection, mobile-friendly fast entry UI revamp, payer attribution, and multi-branch Excel reporting suite complete; 0 TypeScript compiler errors across full stack)*
+
 
 
 
