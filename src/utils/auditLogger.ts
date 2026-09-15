@@ -25,6 +25,7 @@ export type AuditEntity =
   | 'INVENTORY'
   | 'PURCHASE'
   | 'STOCK_TRANSFER'
+  | 'B2B_ORDER'
   | 'SYSTEM';
 
 export interface LogAdminActionParams {

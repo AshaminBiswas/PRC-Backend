@@ -2357,6 +2357,442 @@ const STATEMENTS = [
   `ALTER TABLE "employees" ALTER COLUMN "bank_ifsc" DROP NOT NULL`,
   `ALTER TABLE "employees" ALTER COLUMN "bank_name" DROP NOT NULL`,
   `ALTER TABLE "employees" ALTER COLUMN "bank_account_holder" DROP NOT NULL`,
+
+  // ─── B2B ORDER MANAGEMENT PIPELINE ──────────────────────────────────────────
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'B2bOrderStatus') THEN
+      CREATE TYPE "B2bOrderStatus" AS ENUM ('pending_approval', 'confirmed', 'processing', 'ready', 'completed', 'rejected', 'cancelled');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'B2bOrderSource') THEN
+      CREATE TYPE "B2bOrderSource" AS ENUM ('admin_created', 'customer_frontend');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'StockReservationStatus') THEN
+      CREATE TYPE "StockReservationStatus" AS ENUM ('active', 'released', 'consumed');
+    END IF;
+  END $$`,
+  `ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'B2B_ORDER'`,
+  `ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'B2B_ADJUSTMENT'`,
+  `ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'B2B_CANCELLATION'`,
+
+  `CREATE TABLE IF NOT EXISTS "b2b_orders" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "order_number" TEXT NOT NULL UNIQUE,
+    "customer_id" TEXT NOT NULL REFERENCES "users"("id"),
+    "branch_id" TEXT NOT NULL REFERENCES "branches"("id"),
+    "source" "B2bOrderSource" NOT NULL,
+    "status" "B2bOrderStatus" NOT NULL DEFAULT 'pending_approval',
+    "source_quotation_id" TEXT REFERENCES "quotes"("id") ON DELETE SET NULL,
+    "source_po_id" TEXT REFERENCES "po_submissions"("id") ON DELETE SET NULL,
+    "payment_status" TEXT NOT NULL DEFAULT 'pending',
+    "payment_method" TEXT NOT NULL DEFAULT 'bank_transfer',
+    "paid_amount" NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    "due_amount" NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    "subtotal" NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    "discount_total" NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    "tax_total" NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    "grand_total" NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    "client_request_id" TEXT NOT NULL UNIQUE,
+    "created_by" TEXT NOT NULL REFERENCES "users"("id"),
+    "created_by_type" TEXT NOT NULL DEFAULT 'customer',
+    "approved_by" TEXT REFERENCES "users"("id"),
+    "approved_at" TIMESTAMP(3),
+    "rejected_reason" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "cancelled_at" TIMESTAMP(3),
+    "cancelled_by" TEXT REFERENCES "users"("id"),
+    "cancellation_reason" TEXT
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "b2b_order_items" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "order_id" TEXT NOT NULL REFERENCES "b2b_orders"("id") ON DELETE CASCADE,
+    "product_id" TEXT NOT NULL REFERENCES "products"("id"),
+    "sku" TEXT NOT NULL,
+    "quantity" NUMERIC(12, 2) NOT NULL,
+    "unit_price" NUMERIC(12, 2) NOT NULL,
+    "discount" NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    "tax" NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    "line_total" NUMERIC(12, 2) NOT NULL,
+    "configuration" JSONB,
+    "is_removed" BOOLEAN NOT NULL DEFAULT false,
+    "removed_at" TIMESTAMP(3),
+    "removed_by" TEXT
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "stock_reservations" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "order_id" TEXT NOT NULL REFERENCES "b2b_orders"("id") ON DELETE CASCADE,
+    "order_item_id" TEXT NOT NULL REFERENCES "b2b_order_items"("id") ON DELETE CASCADE,
+    "product_id" TEXT NOT NULL REFERENCES "products"("id"),
+    "branch_id" TEXT NOT NULL REFERENCES "branches"("id"),
+    "quantity" NUMERIC(12, 2) NOT NULL,
+    "status" "StockReservationStatus" NOT NULL DEFAULT 'active',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "released_at" TIMESTAMP(3),
+    "consumed_at" TIMESTAMP(3)
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS "b2b_order_sequences" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "financial_year" TEXT NOT NULL UNIQUE,
+    "next_number" INTEGER NOT NULL DEFAULT 1,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS "b2b_orders_customer_id_idx" ON "b2b_orders"("customer_id")`,
+  `CREATE INDEX IF NOT EXISTS "b2b_orders_branch_id_idx" ON "b2b_orders"("branch_id")`,
+  `CREATE INDEX IF NOT EXISTS "b2b_orders_status_idx" ON "b2b_orders"("status")`,
+  `CREATE INDEX IF NOT EXISTS "b2b_orders_created_at_idx" ON "b2b_orders"("created_at")`,
+  `CREATE INDEX IF NOT EXISTS "b2b_orders_source_idx" ON "b2b_orders"("source")`,
+  `CREATE INDEX IF NOT EXISTS "b2b_order_items_order_id_idx" ON "b2b_order_items"("order_id")`,
+  `CREATE INDEX IF NOT EXISTS "b2b_order_items_product_id_idx" ON "b2b_order_items"("product_id")`,
+  `CREATE INDEX IF NOT EXISTS "stock_reservations_branch_prod_status_idx" ON "stock_reservations"("branch_id", "product_id", "status")`,
+  `CREATE INDEX IF NOT EXISTS "stock_reservations_order_id_idx" ON "stock_reservations"("order_id")`,
+  `CREATE INDEX IF NOT EXISTS "stock_reservations_order_item_id_idx" ON "stock_reservations"("order_item_id")`,
+
+  `CREATE OR REPLACE FUNCTION submit_b2b_order(p_payload jsonb)
+  RETURNS jsonb
+  LANGUAGE plpgsql
+  AS $$
+  DECLARE
+    v_client_request_id TEXT;
+    v_customer_id TEXT;
+    v_branch_id TEXT;
+    v_source TEXT;
+    v_created_by TEXT;
+    v_created_by_type TEXT;
+    v_order_number TEXT;
+    v_source_quote_id TEXT;
+    v_source_po_id TEXT;
+    v_payment_method TEXT;
+    v_subtotal NUMERIC(12,2);
+    v_discount_total NUMERIC(12,2);
+    v_tax_total NUMERIC(12,2);
+    v_grand_total NUMERIC(12,2);
+    v_order_id TEXT;
+    v_existing_order jsonb;
+    v_customer RECORD;
+    v_branch RECORD;
+    v_item jsonb;
+    v_item_id TEXT;
+    v_product_id TEXT;
+    v_sku TEXT;
+    v_qty NUMERIC(12,2);
+    v_unit_price NUMERIC(12,2);
+    v_discount NUMERIC(12,2);
+    v_tax NUMERIC(12,2);
+    v_line_total NUMERIC(12,2);
+    v_config jsonb;
+    v_inv RECORD;
+    v_created_order jsonb;
+  BEGIN
+    v_client_request_id := p_payload->>'client_request_id';
+    IF v_client_request_id IS NULL OR v_client_request_id = '' THEN
+      RAISE EXCEPTION 'MISSING_CLIENT_REQUEST_ID:client_request_id is required' USING ERRCODE = 'P0001';
+    END IF;
+
+    SELECT json_build_object(
+      'id', o.id,
+      'order_number', o.order_number,
+      'status', o.status,
+      'client_request_id', o.client_request_id
+    )::jsonb INTO v_existing_order
+    FROM "b2b_orders" o
+    WHERE o.client_request_id = v_client_request_id;
+
+    IF v_existing_order IS NOT NULL THEN
+      RETURN v_existing_order;
+    END IF;
+
+    v_customer_id := p_payload->>'customer_id';
+    v_branch_id := p_payload->>'branch_id';
+    v_source := COALESCE(p_payload->>'source', 'customer_frontend');
+    v_created_by := COALESCE(p_payload->>'created_by', v_customer_id);
+    v_created_by_type := COALESCE(p_payload->>'created_by_type', 'customer');
+    v_order_number := p_payload->>'order_number';
+    v_source_quote_id := p_payload->>'source_quotation_id';
+    v_source_po_id := p_payload->>'source_po_id';
+    v_payment_method := COALESCE(p_payload->>'payment_method', 'bank_transfer');
+    v_subtotal := COALESCE((p_payload->>'subtotal')::numeric, 0);
+    v_discount_total := COALESCE((p_payload->>'discount_total')::numeric, 0);
+    v_tax_total := COALESCE((p_payload->>'tax_total')::numeric, 0);
+    v_grand_total := COALESCE((p_payload->>'grand_total')::numeric, 0);
+
+    SELECT id, "companyName", gstin INTO v_customer
+    FROM "users"
+    WHERE id = v_customer_id AND "deletedAt" IS NULL;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'CUSTOMER_NOT_FOUND:Customer account not found' USING ERRCODE = 'P0001';
+    END IF;
+
+    IF (v_customer."companyName" IS NULL OR TRIM(v_customer."companyName") = '')
+       AND (v_customer.gstin IS NULL OR TRIM(v_customer.gstin) = '') THEN
+      RAISE EXCEPTION 'CUSTOMER_NOT_B2B:Customer is not registered as a B2B partner' USING ERRCODE = 'P0001';
+    END IF;
+
+    SELECT id, "isActive" INTO v_branch
+    FROM "branches"
+    WHERE id = v_branch_id AND "deletedAt" IS NULL;
+
+    IF NOT FOUND OR NOT v_branch."isActive" THEN
+      RAISE EXCEPTION 'INVALID_BRANCH:Fulfilment branch is invalid or inactive' USING ERRCODE = 'P0001';
+    END IF;
+
+    v_order_id := gen_random_uuid()::text;
+
+    INSERT INTO "b2b_orders" (
+      "id", "order_number", "customer_id", "branch_id", "source", "status",
+      "source_quotation_id", "source_po_id", "payment_status", "payment_method",
+      "paid_amount", "due_amount", "subtotal", "discount_total", "tax_total",
+      "grand_total", "client_request_id", "created_by", "created_by_type",
+      "created_at", "updated_at"
+    ) VALUES (
+      v_order_id, v_order_number, v_customer_id, v_branch_id, v_source::"B2bOrderSource",
+      'pending_approval'::"B2bOrderStatus", v_source_quote_id, v_source_po_id,
+      'pending', v_payment_method, 0, v_grand_total, v_subtotal, v_discount_total,
+      v_tax_total, v_grand_total, v_client_request_id, v_created_by, v_created_by_type,
+      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    );
+
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_payload->'items')
+    LOOP
+      v_product_id := v_item->>'product_id';
+      v_sku := v_item->>'sku';
+      v_qty := (v_item->>'quantity')::numeric;
+      v_unit_price := (v_item->>'unit_price')::numeric;
+      v_discount := COALESCE((v_item->>'discount')::numeric, 0);
+      v_tax := COALESCE((v_item->>'tax')::numeric, 0);
+      v_line_total := (v_item->>'line_total')::numeric;
+      v_config := v_item->'configuration';
+
+      IF v_qty <= 0 THEN
+        RAISE EXCEPTION 'INVALID_QUANTITY:Item quantity must be greater than 0' USING ERRCODE = 'P0001';
+      END IF;
+
+      SELECT id, quantity, "reservedQuantity" INTO v_inv
+      FROM "inventories"
+      WHERE ("productId" = v_product_id OR product_id = v_product_id)
+        AND ("branchId" = v_branch_id OR branch_id = v_branch_id)
+      FOR UPDATE;
+
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'INSUFFICIENT_STOCK:%', v_sku USING ERRCODE = 'P0001';
+      END IF;
+
+      IF (v_inv.quantity - COALESCE(v_inv."reservedQuantity", 0)) < v_qty THEN
+        RAISE EXCEPTION 'INSUFFICIENT_STOCK:%', v_sku USING ERRCODE = 'P0001';
+      END IF;
+
+      UPDATE "inventories"
+      SET "reservedQuantity" = COALESCE("reservedQuantity", 0) + v_qty,
+          reserved_quantity = COALESCE(reserved_quantity, 0) + v_qty,
+          "updatedAt" = CURRENT_TIMESTAMP
+      WHERE id = v_inv.id;
+
+      v_item_id := gen_random_uuid()::text;
+      INSERT INTO "b2b_order_items" (
+        "id", "order_id", "product_id", "sku", "quantity", "unit_price",
+        "discount", "tax", "line_total", "configuration"
+      ) VALUES (
+        v_item_id, v_order_id, v_product_id, v_sku, v_qty, v_unit_price,
+        v_discount, v_tax, v_line_total, v_config
+      );
+
+      INSERT INTO "stock_reservations" (
+        "id", "order_id", "order_item_id", "product_id", "branch_id",
+        "quantity", "status", "created_at"
+      ) VALUES (
+        gen_random_uuid()::text, v_order_id, v_item_id, v_product_id, v_branch_id,
+        v_qty, 'active'::"StockReservationStatus", CURRENT_TIMESTAMP
+      );
+    END LOOP;
+
+    SELECT json_build_object(
+      'id', o.id,
+      'order_number', o.order_number,
+      'status', o.status,
+      'client_request_id', o.client_request_id,
+      'grand_total', o.grand_total,
+      'created_at', o.created_at
+    )::jsonb INTO v_created_order
+    FROM "b2b_orders" o
+    WHERE o.id = v_order_id;
+
+    RETURN v_created_order;
+  END;
+  $$`,
+
+  `CREATE OR REPLACE FUNCTION approve_b2b_order(p_order_id text, p_admin_id text)
+  RETURNS jsonb
+  LANGUAGE plpgsql
+  AS $$
+  DECLARE
+    v_order RECORD;
+    v_res RECORD;
+    v_inv RECORD;
+    v_old_stock INTEGER;
+    v_new_stock INTEGER;
+    v_result jsonb;
+  BEGIN
+    SELECT * INTO v_order
+    FROM "b2b_orders"
+    WHERE id = p_order_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'ORDER_NOT_FOUND:B2B order not found' USING ERRCODE = 'P0001';
+    END IF;
+
+    IF v_order.status = 'confirmed' THEN
+      SELECT json_build_object('id', o.id, 'status', o.status, 'order_number', o.order_number)::jsonb
+      INTO v_result FROM "b2b_orders" o WHERE o.id = p_order_id;
+      RETURN v_result;
+    END IF;
+
+    IF v_order.status != 'pending_approval' THEN
+      RAISE EXCEPTION 'INVALID_STATUS:Order cannot be approved in status %', v_order.status USING ERRCODE = 'P0001';
+    END IF;
+
+    FOR v_res IN
+      SELECT r.id, r.order_item_id, r.product_id, r.branch_id, r.quantity, i.sku
+      FROM "stock_reservations" r
+      JOIN "b2b_order_items" i ON i.id = r.order_item_id
+      WHERE r.order_id = p_order_id AND r.status = 'active'
+      FOR UPDATE OF r
+    LOOP
+      SELECT id, quantity, "reservedQuantity" INTO v_inv
+      FROM "inventories"
+      WHERE ("productId" = v_res.product_id OR product_id = v_res.product_id)
+        AND ("branchId" = v_res.branch_id OR branch_id = v_res.branch_id)
+      FOR UPDATE;
+
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'STOCK_CHANGED_SINCE_SUBMISSION:Inventory not found for SKU %', v_res.sku USING ERRCODE = 'P0001';
+      END IF;
+
+      IF v_inv.quantity < v_res.quantity THEN
+        RAISE EXCEPTION 'STOCK_CHANGED_SINCE_SUBMISSION:Insufficient stock for SKU %', v_res.sku USING ERRCODE = 'P0001';
+      END IF;
+
+      v_old_stock := v_inv.quantity;
+      v_new_stock := v_old_stock - v_res.quantity::integer;
+
+      UPDATE "inventories"
+      SET quantity = v_new_stock,
+          "reservedQuantity" = GREATEST(0, COALESCE("reservedQuantity", 0) - v_res.quantity::integer),
+          reserved_quantity = GREATEST(0, COALESCE(reserved_quantity, 0) - v_res.quantity::integer),
+          "updatedAt" = CURRENT_TIMESTAMP
+      WHERE id = v_inv.id;
+
+      UPDATE "stock_reservations"
+      SET status = 'consumed'::"StockReservationStatus",
+          consumed_at = CURRENT_TIMESTAMP
+      WHERE id = v_res.id;
+
+      INSERT INTO "stock_movements" (
+        "id", "productId", "product_id", "branchId", "branch_id",
+        "type", "quantity", "previousQty", "previous_qty",
+        "newQty", "new_qty", "referenceType", "reference_type",
+        "referenceId", "reference_id", "performedById", "performed_by_id",
+        "notes", "createdAt", "created_at"
+      ) VALUES (
+        gen_random_uuid()::text, v_res.product_id, v_res.product_id,
+        v_res.branch_id, v_res.branch_id, 'B2B_ORDER'::"StockMovementType",
+        v_res.quantity::integer, v_old_stock, v_old_stock, v_new_stock, v_new_stock,
+        'B2B_ORDER', 'B2B_ORDER', p_order_id, p_order_id,
+        p_admin_id, p_admin_id, 'B2B Order Confirmation (' || v_order.order_number || ')',
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      );
+    END LOOP;
+
+    UPDATE "b2b_orders"
+    SET status = 'confirmed'::"B2bOrderStatus",
+        approved_by = p_admin_id,
+        approved_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_order_id;
+
+    SELECT json_build_object(
+      'id', o.id,
+      'order_number', o.order_number,
+      'status', o.status,
+      'approved_by', o.approved_by,
+      'approved_at', o.approved_at
+    )::jsonb INTO v_result
+    FROM "b2b_orders" o
+    WHERE o.id = p_order_id;
+
+    RETURN v_result;
+  END;
+  $$`,
+
+  `CREATE OR REPLACE FUNCTION reject_b2b_order(p_order_id text, p_admin_id text, p_reason text)
+  RETURNS jsonb
+  LANGUAGE plpgsql
+  AS $$
+  DECLARE
+    v_order RECORD;
+    v_res RECORD;
+    v_result jsonb;
+  BEGIN
+    SELECT * INTO v_order
+    FROM "b2b_orders"
+    WHERE id = p_order_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'ORDER_NOT_FOUND:B2B order not found' USING ERRCODE = 'P0001';
+    END IF;
+
+    IF v_order.status = 'rejected' THEN
+      SELECT json_build_object('id', o.id, 'status', o.status, 'order_number', o.order_number)::jsonb
+      INTO v_result FROM "b2b_orders" o WHERE o.id = p_order_id;
+      RETURN v_result;
+    END IF;
+
+    IF v_order.status != 'pending_approval' THEN
+      RAISE EXCEPTION 'INVALID_STATUS:Order cannot be rejected in status %', v_order.status USING ERRCODE = 'P0001';
+    END IF;
+
+    FOR v_res IN
+      SELECT id, product_id, branch_id, quantity
+      FROM "stock_reservations"
+      WHERE order_id = p_order_id AND status = 'active'
+      FOR UPDATE
+    LOOP
+      UPDATE "inventories"
+      SET "reservedQuantity" = GREATEST(0, COALESCE("reservedQuantity", 0) - v_res.quantity::integer),
+          reserved_quantity = GREATEST(0, COALESCE(reserved_quantity, 0) - v_res.quantity::integer),
+          "updatedAt" = CURRENT_TIMESTAMP
+      WHERE ("productId" = v_res.product_id OR product_id = v_res.product_id)
+        AND ("branchId" = v_res.branch_id OR branch_id = v_res.branch_id);
+
+      UPDATE "stock_reservations"
+      SET status = 'released'::"StockReservationStatus",
+          released_at = CURRENT_TIMESTAMP
+      WHERE id = v_res.id;
+    END LOOP;
+
+    UPDATE "b2b_orders"
+    SET status = 'rejected'::"B2bOrderStatus",
+        rejected_reason = p_reason,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = p_order_id;
+
+    SELECT json_build_object(
+      'id', o.id,
+      'order_number', o.order_number,
+      'status', o.status,
+      'rejected_reason', o.rejected_reason
+    )::jsonb INTO v_result
+    FROM "b2b_orders" o
+    WHERE o.id = p_order_id;
+
+    RETURN v_result;
+  END;
+  $$`,
 ];
 
 async function run() {

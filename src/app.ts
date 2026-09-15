@@ -53,6 +53,7 @@ import installerPaymentsRoutes from './modules/installer-payments/installer-paym
 import employeeManagementRoutes from './modules/employee-management/employee-management.routes';
 import aiAgentRoutes from './modules/ai-agent/ai-agent.routes';
 import expensesRoutes from './modules/expenses/expenses.routes';
+import b2bOrdersRoutes from './modules/b2b-orders/b2b-orders.routes';
 import {
   branchesRouter,
   suppliersRouter,
@@ -387,6 +388,7 @@ app.use(`${prefix}/b2b-pricing`, b2bPricingRoutes);
 app.use(`${prefix}/audit`, auditRoutes);
 app.use(`${prefix}/po-management`, poManagementRoutes);
 app.use(`${prefix}/proforma-invoices`, proformaInvoicesRoutes);
+app.use(`${prefix}/b2b-orders`, b2bOrdersRoutes);
 app.use(`${prefix}/installer-payments`, installerPaymentsRoutes);
 app.use(`${prefix}/employees`, employeeManagementRoutes);
 app.use(`${prefix}/expenses`, expensesRoutes);

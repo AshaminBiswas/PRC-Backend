@@ -82,7 +82,7 @@ D:\
 
 ## 3. Database Schema & Prisma Models (`prisma/schema.prisma`)
 
-### Core Models Registry (75 Active Models):
+### Core Models Registry (79 Active Models):
 
 1. **Authentication, Users & RBAC**:
    - `User`: Customers, staff, and superadmins (`email`, `phone`, `role`, `status`, `isTwoFactorEnabled`, `twoFactorSecret`, `b2bCompanyName`, `b2bGstin`).
@@ -174,6 +174,11 @@ D:\
     - `ExpenseAuditLog`: Immutable financial security audit log tracking every expense mutation, approval, rejection, void, top-up, and daily ledger lock.
     - `ExpenseSequence`: Atomic concurrency-safe sequence generator for `EXP-YYYY-MM-XXXX`.
     - `ExpenseSettings`: Branch or global threshold and policy configuration (`autoApprovalLimitPaise` default 200000 = ₹2,000, `requireReceiptAbovePaise` default 50000 = ₹500, `requireEmployeeLinkAbovePaise` default 500000 = ₹5,000, `maxDailyExpenseLimitPaise` default 5000000 = ₹50,000, `negativeBalanceAllowed` default false).
+16. **B2B Order Management & Physical Stock Reservation Suite**:
+    - `B2bOrder`: Master B2B enterprise order record (`orderNumber` unique sequential `PRC-B2B-YYYY-YY/XXXX`, `customerId` FK to `User`, `branchId` FK to `Branch`, `source` enum `ADMIN_OFFLINE`/`CUSTOMER_SELF_SERVICE`, `status` enum `PENDING_APPROVAL`/`CONFIRMED`/`CANCELLED`/`REJECTED`, `subtotalPaise`, `taxAmountPaise`, `grandTotalPaise`, `quoteId` optional FK to `Quote`, `poSubmissionId` optional FK to `PoSubmission`, `clientRequestId` unique idempotency key, `notes`, `approvedById`, `approvedAt`, `rejectionReason`, `rejectedById`, `rejectedAt`, `cancelledById`, `cancelledAt`, `cancellationReason`).
+    - `B2bOrderItem`: Itemized order line records (`orderId` FK to `B2bOrder`, `productId` FK to `Product`, `sku`, `name`, `quantity`, `unitPricePaise`, `taxPercent`, `taxAmountPaise`, `totalPaise`, `isRemoved`).
+    - `StockReservation`: Non-deducted inventory hold placed during `PENDING_APPROVAL` (`b2bOrderId` FK to `B2bOrder`, `b2bOrderItemId` FK to `B2bOrderItem`, `branchId` FK to `Branch`, `productId` FK to `Product`, `quantity`, `status` enum `ACTIVE`/`CONVERTED`/`RELEASED`, `expiresAt`). Available stock formula: $\text{Available} = \text{Physical} - \text{Active Reservations}$.
+    - `B2bOrderSequence`: Atomic transaction-safe yearly sequence generator (`financialYear`, `lastSequence`) producing sequential `PRC-B2B-YYYY-YY/XXXX` order references.
 
 > **Note on Removed Subsystems**: The legacy multi-tenant enterprise venture/POS subsystem was permanently removed in favor of direct SKU catalog management and this streamlined multi-branch inventory tracking suite.
 
@@ -190,6 +195,7 @@ All modules follow a uniform, production-grade layered architecture:
 | `appointments` | `/api/v1/appointments` | Hardware service & installation scheduling |
 | `auth` | `/api/v1/auth` | JWT auth, 2FA TOTP, email verification, password resets |
 | `b2b-pricing` | `/api/v1/b2b-pricing` | Customer-specific pricing matrices & bulk rate lookup |
+| `b2b-orders` | `/api/v1/b2b-orders` | Dedicated B2B Dual-Channel Order Management — Admin Offline orders (immediate confirm + physical stock deduction), Customer Self-Service orders (`pending_approval` + stock reservation), Super Admin approval gate (reservation -> physical deduction `B2B_ORDER`), Super Admin rejection (releases reservation, 0 stock movements), customer self-cancellation (strictly `pending_approval`), Super Admin cancellation (restores stock `B2B_CANCELLATION`), Super Admin line-item editing (delta stock adjustments `B2B_ADJUSTMENT`), and available stock lookup (`physical - reservedQuantity`). |
 | `banners` | `/api/v1/banners` | Promotional hero banners, position targeting, CTR metrics |
 | `cart` | `/api/v1/cart` | Shopping cart sync, item mutations, stock availability |
 | `categories` | `/api/v1/categories` | Hierarchical category taxonomy & bestseller flags |
@@ -1020,4 +1026,111 @@ The actual cause is **Render free-tier cold-start**: when the Render container i
 
 ---
 
-*Last Updated: 2026-09-15 (Rate limiting role bypass normalization, CORS header injection on error/429 responses, Render trust proxy IP parsing, admin keep-alive ping throttling, and zero-error full-stack compilation verified)*
+### 41. B2B Order Management & Physical Stock Reservation Suite (2026-09-15)
+
+#### 41.1 System Architecture & Invariant Rules
+The B2B Order Management module provides enterprise dual-channel order placement, approval gates, physical vs reserved stock tracking, and complete audit synchronization:
+
+1. **Dual-Channel Order Ingestion**:
+   - **Channel 1 (Admin Offline Orders)**: Super Admin places an order on a customer's behalf from the Admin Panel (`POST /api/v1/b2b-orders/offline`). Trusted by definition — the order is created directly in `CONFIRMED` status, physical inventory is deducted immediately in a single database transaction, and a `B2B_ORDER` stock movement is recorded.
+   - **Channel 2 (Customer Self-Service Orders)**: Authenticated B2B wholesale customer places their own order (or converts an approved quotation) via `POST /api/v1/b2b-orders/submit`. The order lands in `PENDING_APPROVAL` status. Physical stock is **NOT** deducted; instead, inventory is **reserved** in `StockReservation` with `status: ACTIVE` and incremented on `Inventory.reservedQuantity`.
+2. **Available Stock Invariant Formula**:
+   $$\text{Available Stock} = \text{Physical Stock (`Inventory.quantity`)} - \text{Active Reservations (`Inventory.reservedQuantity`)}$$
+   - Prevents overselling across retail and B2B channels. Available stock is returned by `GET /api/v1/b2b-orders/stock-check` and enforced during both submission and approval.
+3. **Super Admin Approval Gate**:
+   - Only users with `req.user.role === 'super_admin'` can approve (`POST /:id/approve`), reject (`POST /:id/reject`), edit (`PATCH /:id/edit`), or cancel confirmed orders (`POST /:id/cancel`). Non-super-admins receive HTTP 403 Forbidden.
+   - **Approval**: Transitions status to `CONFIRMED`, decrements `Inventory.reservedQuantity`, decrements `Inventory.quantity` (physical deduction), marks reservations as `CONVERTED`, logs `B2B_ORDER` stock movements, and records `approvedById` and `approvedAt`.
+   - **Rejection**: Transitions status to `REJECTED`, releases reservations (`RELEASED`), decrements `Inventory.reservedQuantity`, records `rejectionReason`, and logs **zero** stock movements (no physical stock was touched).
+4. **Customer Self-Service Cancellation Protocol**:
+   - Authenticated customers can cancel their own orders via `POST /api/v1/b2b-orders/:id/customer-cancel` **strictly when** `status === 'PENDING_APPROVAL'`.
+   - Releasing the order decrements `Inventory.reservedQuantity`, marks reservations `RELEASED`, sets order status to `CANCELLED`, and logs zero physical movements.
+   - Attempting to cancel a `CONFIRMED` order returns HTTP 400 Bad Request ("Only orders in pending_approval status can be cancelled by the customer").
+5. **Super Admin Confirmed Order Cancellation & Restocking**:
+   - Super Admin can cancel confirmed orders via `POST /api/v1/b2b-orders/:id/cancel`.
+   - Restores physical inventory (`Inventory.quantity += line.quantity`), logs `B2B_CANCELLATION` stock movements with the audit reason, and sets status to `CANCELLED`.
+6. **Super Admin Confirmed Order Editing with Delta Stock Adjustments**:
+   - Super Admin can edit quantities or soft-remove line items (`isRemoved: true`) via `PATCH /api/v1/b2b-orders/:id/edit`.
+   - **Positive Delta** (increase): Verifies available physical stock, deducts difference from `Inventory.quantity`, and logs `B2B_ADJUSTMENT` movement.
+   - **Negative Delta** (decrease / removal): Returns surplus back to `Inventory.quantity` and logs `B2B_ADJUSTMENT` movement.
+   - Recalculates order subtotal, 18% GST tax, and grand total.
+7. **Numbering Pattern & Idempotency**:
+   - Sequence format: `PRC-B2B-<FY>/<seq>` (e.g. `PRC-B2B-2026-27/001`) generated atomically via `B2bOrderSequence`.
+   - Idempotency: `client_request_id` header or body field. If an order with that key exists, the existing record is returned without duplicate insertion.
+
+#### 41.2 Database & Migrations (`PRC-Backend`)
+- **Schema (`prisma/schema.prisma`)**:
+  - Added enum values to `StockMovementType`: `B2B_ORDER`, `B2B_ADJUSTMENT`, `B2B_CANCELLATION`.
+  - Added enums: `B2bOrderStatus`, `B2bOrderSource`, `StockReservationStatus`.
+  - Added models: `B2bOrder`, `B2bOrderItem`, `StockReservation`, `B2bOrderSequence`.
+  - Relations wired on `User`, `Branch`, `Product`, `Quote`, and `PoSubmission`.
+- **Idempotent Boot Patch (`src/scripts/fix-db.js`)**:
+  - DDL statements for all enum types, tables, foreign keys, unique indexes (`client_request_id`, `order_number`, `sequence`), and concurrency-safe PostgreSQL stored procedures:
+    - `submit_b2b_order(p_customer_id, p_branch_id, p_quote_id, p_po_submission_id, p_client_request_id, p_order_number, p_notes, p_items)`: Locks `Inventory` rows with `FOR UPDATE`, validates available stock ($\ge \text{quantity}$), creates order, items, and active reservations, and increments `reserved_quantity`.
+    - `approve_b2b_order(p_order_id, p_approved_by)`: Locks inventory rows, verifies physical stock $\ge$ reserved qty, deducts physical stock, decrements reserved stock, marks reservations `CONVERTED`, updates order to `CONFIRMED`, and logs `B2B_ORDER` audit movements.
+    - `reject_b2b_order(p_order_id, p_rejected_by, p_reason)`: Decrements `reserved_quantity`, marks reservations `RELEASED`, updates order to `REJECTED`, and logs zero physical movements.
+
+#### 41.3 Backend REST API (`/api/v1/b2b-orders`)
+- `POST /submit`: Customer self-service order creation (requires authenticated B2B customer; lands in `PENDING_APPROVAL`).
+- `POST /offline`: Super Admin offline order creation (requires `role === 'super_admin'`; immediately `CONFIRMED` + physical deduction).
+- `POST /:id/approve`: Super Admin order approval (converts reservations to physical deductions).
+- `POST /:id/reject`: Super Admin order rejection (releases reservations, 0 physical movements).
+- `PATCH /:id/edit`: Super Admin confirmed order editing (delta stock adjustments with `B2B_ADJUSTMENT`).
+- `POST /:id/cancel`: Super Admin confirmed order cancellation (restores physical stock with `B2B_CANCELLATION`).
+- `POST /:id/customer-cancel`: Customer self-service cancellation (strictly `pending_approval`).
+- `GET /`: Admin order list with status filter, search, pagination, and KPI counts.
+- `GET /my`: Customer order list.
+- `GET /:id`: Order details with line items, reservations, and stock movements.
+- `GET /stock-check`: Real-time stock check returning physical, reserved, and available quantity for SKU list at branch.
+
+#### 41.4 Admin Console Implementation (`d:\admin`)
+- **Types (`src/types/admin.ts`)**: Added `B2BOrder`, `B2BOrderItem`, `StockReservation`, `B2BOrderStatus`, `B2BOrderSource` and mounted `'b2b-orders'` view in `AdminView`.
+- **API Client (`src/api/b2bOrdersApi.ts`)**: Complete typed REST client for all endpoints.
+- **B2B Orders Workspace (`src/pages/B2BOrdersPage.tsx`)**:
+  - **4 Interactive KPI Metric Cards**: Pending Approval, Confirmed Orders, Monthly B2B Revenue, and Cancelled/Rejected counts.
+  - **Pending Approval Action Queue**: Dedicated high-contrast priority alert banner highlighting pending customer orders with 1-click Approve/Reject buttons.
+  - **Status Tabs & Server-Side Filters**: All, Pending Approval, Confirmed, Cancelled, Rejected tabs with search by order reference, company name, or customer email.
+  - **Create Offline Order Modal**: Super Admin offline order creation with branch selection, customer picker, product combobox, real-time available stock badge, auto-calculated 18% GST and grand totals.
+  - **Approve Order Modal**: Confirmation modal with live inventory re-check badge.
+  - **Reject Order Modal**: Mandatory rejection reason input.
+  - **Edit Confirmed Order Modal**: Dynamic line item adjustments (quantity increases/decreases, remove line) with delta calculation and live stock check for positive deltas.
+  - **Cancel Confirmed Order Modal**: Mandatory cancellation reason input and restock audit notification.
+  - **360° Order Dossier Drawer**: Comprehensive sliding drawer displaying full order metadata, milestone timeline, customer details, fulfillment branch, financial breakdown, and line item cards.
+- **Navigation & Layout (`AdminSidebar.tsx`, `AdminLayout.tsx`)**: Mounted under "Sales & Fulfillment" with live pending approval badge counter.
+
+#### 41.5 Customer Storefront Implementation (`d:\frontend`)
+- **Types (`src/types/b2bOrder.ts`, `src/types/index.ts`)**: Type definitions for customer-facing B2B orders.
+- **Service (`src/services/b2bOrderService.ts`)**: REST client for submit, fetch, cancel, and stock-check.
+- **Convert Approved Quotation to Official B2B Order (`src/pages/CustomerQuoteApprovalPage.tsx`)**:
+  - For accepted/approved quotations, added a prominent **"Convert to Official B2B Order"** action button.
+  - Interactive conversion modal: fulfillment branch selector, line item preview with real-time available stock badges (`In Stock`, `Low Stock`, `Out of Stock`), subtotal, 18% GST calculation, grand total, and delivery notes.
+  - Idempotent submission with navigation to profile orders tab.
+- **Customer User Profile B2B Orders Tab (`src/components/auth/UserProfilePage.tsx`)**:
+  - Dedicated **"B2B Orders"** tab for registered B2B wholesale users with live badge count.
+  - "B2B" filter switcher on standard My Orders tab and quick shortcut button on Overview tab.
+  - Responsive order cards displaying order reference with 1-click copy, date, fulfillment branch, status badges with physical deduction / reservation indicator, and line item previews.
+  - **Customer Self-Service Cancellation**: Rendered strictly when `order.status === 'pending_approval'`; opens cancellation confirmation modal with reason input.
+  - **360° Order Dossier Modal**: Milestone progression stepper (Submitted -> Under Review -> Confirmed -> Dispatched -> Completed), line item table, delivery notes, and financial breakdown.
+
+#### 41.6 Verification & Test Results
+- **Automated Integration Test Suite (`src/scripts/test-b2b-scenarios.ts`)**: Executed against live Supabase PostgreSQL database:
+  - **33/33 checks passed across all 12 specification scenarios (0 failures)**:
+    1. Non-B2B customer blocked with HTTP 403 (PASS).
+    2. Customer submit creates `pending_approval` + active reservation, physical stock NOT deducted (PASS).
+    3. Available stock formula holds: $\text{Available} = \text{Physical} - \text{Reserved}$ (PASS).
+    4. Super Admin approve converts reservation to deduction & logs `B2B_ORDER` movement (PASS).
+    5. Super Admin reject releases reservation with 0 stock movements (PASS).
+    6. Customer self-cancellation allowed for `pending_approval`, blocked for `confirmed` with HTTP 400 (PASS).
+    7. Admin offline order confirms & deducts physical stock in 1 single request (PASS).
+    8. Non-super admin write operations strictly blocked with HTTP 403 (PASS).
+    9. Concurrency & idempotency on `client_request_id` returns existing order without duplicates (PASS).
+    10. Stock exhaustion prevents submission and blocks approval if concurrent physical stock drops (PASS).
+    11. Super Admin order editing handles positive delta deductions and negative delta returns with `B2B_ADJUSTMENT` logs (PASS).
+    12. Super Admin cancellation on confirmed order restores physical inventory with `B2B_CANCELLATION` log (PASS).
+- **Compilation & Build Quality Assurance**:
+  - `PRC-Backend`: `npx tsc --noEmit` passed with **0 compiler errors**.
+  - `admin`: `npx tsc --noEmit` passed with **0 compiler errors**.
+  - `frontend`: `npm run build` (Vite) transformed 1,716 modules in 7.45s with **0 errors**.
+
+---
+
+*Last Updated: 2026-09-15 (B2B Order Management dual-channel suite, stock reservation lifecycle, Super Admin approval gate, storefront quote-to-order conversion, profile B2B management, 12/12 scenario test suite passing, and zero-error full-stack compilation verified)*
