@@ -1388,6 +1388,8 @@ export class ExpensesService {
             ...(query.branchId ? { branchId: query.branchId } : {}),
             date: selectedDate,
           },
+          include: { branch: true, addedBy: true },
+          orderBy: { createdAt: 'asc' },
         }),
         prisma.expenseEntry.findMany({
           where: {
@@ -1449,6 +1451,8 @@ export class ExpensesService {
             ...(query.branchId ? { branchId: query.branchId } : {}),
             date: { gte: start, lte: endDate },
           },
+          include: { branch: true, addedBy: true },
+          orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
         }),
         prisma.expenseEntry.findMany({
           where: {
@@ -1520,6 +1524,7 @@ export class ExpensesService {
           days,
           categoryBreakdown,
           entries,
+          topUps,
         }),
         filename: `Cash_Expenses_Week_${start.toISOString().split('T')[0]}_${branch?.code || 'ALL'}.xlsx`,
       };
@@ -1550,6 +1555,8 @@ export class ExpensesService {
             ...(query.branchId ? { branchId: query.branchId } : {}),
             date: { gte: monthStart, lte: monthEnd },
           },
+          include: { branch: true, addedBy: true },
+          orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
         }),
         prisma.expenseDailyRollup.findMany({
           where: {
@@ -1622,6 +1629,7 @@ export class ExpensesService {
           reconciliations: ledgers,
           categoryTotals,
           entries,
+          topUps,
         }),
         filename: `Cash_Expenses_Month_${year}-${String(month).padStart(2, '0')}_${branch?.code || 'ALL'}.xlsx`,
       };
@@ -1655,6 +1663,8 @@ export class ExpensesService {
             lte: new Date(Date.UTC(year, 11, 31)),
           },
         },
+        include: { branch: true, addedBy: true },
+        orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
       }),
       prisma.expenseCategory.findMany({ where: { isDeleted: false }, orderBy: { name: 'asc' } }),
       prisma.expenseEntry.findMany({
@@ -1722,6 +1732,7 @@ export class ExpensesService {
         annualCategoryTotals,
         annualGrandTotal,
         entries,
+        topUps,
       }),
       filename: `Cash_Expenses_Year_${year}_${branch?.code || 'ALL'}.xlsx`,
     };

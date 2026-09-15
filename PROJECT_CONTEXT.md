@@ -983,7 +983,15 @@ The actual cause is **Render free-tier cold-start**: when the Render container i
   - Displayed `paidBy` attribution across Today's Outflows desktop table and mobile cards, Organization Ledger table and mobile drawer, Pending Approvals queue cards, and Recently Logged summary banner.
 - **Performance & Instant Feedback**:
   - Zero-delay 0ms optimistic updates for instant UI status transitions on Approve/Reject without waiting for network round-trips.
-  - SWR local-storage cache hydration for instant initial tab mount with zero layout shift.
+- **Cash Float Date Picker & Voucher List Updates**:
+  - **Custom Date Selection**: Added `topUpDate` state in `admin/src/pages/ExpensesPage.tsx` defaulting to `getTodayDateString()` (`YYYY-MM-DD`).
+  - **Date Picker in Top-Up Modal**: Added a dedicated top-up date input field with a "Set Today" shortcut in `isTopUpModalOpen` modal, allowing finance admins to record cash float additions for custom/past dates. Automatically resets to current date on submit.
+  - **Timezone-Safe Date Display**: Created `formatDisplayDate(dateStr, monthFormat)` parsing `YYYY-MM-DD` directly to prevent off-by-one day display drift across local timezones in the Cash Float History table and the Digital Cash Float Payment Voucher preview modal.
+  - **Full-Spectrum Excel Export for Cash Float Top-Ups**:
+    - Implemented `addFloatTopUpsWorksheet(wb, sheetName, topUps, defaultBranchName)` in `expenses-export.service.ts` featuring 9 standard columns: `Date`, `Record ID`, `Branch`, `Amount (₹)`, `Source of Cash Float`, `Reference / Cheque No`, `Notes / Purpose`, `Payment Receipt Slip`, and `Added By`.
+    - Includes clickable hyperlinks (`View Receipt Slip`), formula sum row (`=SUM(D2:D{n})`), rupee currency formatting, Segoe UI typography, and native Excel `autoFilter`.
+    - Injected itemized `Cash Float Top-Ups` worksheet across all 4 export periods: Day (Sheet 3), Week (Sheet 4), Month (Sheet 4), and Year (Sheet 4).
+    - Enriched `exportReport` in `expenses.service.ts` with `{ branch: true, addedBy: true }` relations and chronological ordering (`[{ date: 'asc' }, { createdAt: 'asc' }]`) for all float queries.
 
 ### 39.3 Verification & Quality Assurance
 - `PRC-Backend`: `npx tsc --noEmit` passed with **0 compiler errors**.
@@ -993,7 +1001,7 @@ The actual cause is **Render free-tier cold-start**: when the Render container i
 
 ---
 
-*Last Updated: 2026-09-15 (Daily Cash Expense Tracker custom date selection, mobile-friendly fast entry UI revamp, payer attribution, and multi-branch Excel reporting suite complete; 0 TypeScript compiler errors across full stack)*
+*Last Updated: 2026-09-15 (Daily Cash Expense Tracker custom date selection, Cash Float date picker and top-up list records, Cash Float Excel worksheets across Day/Week/Month/Year, mobile-friendly fast entry UI revamp, payer attribution, and multi-branch Excel reporting suite complete; 0 TypeScript compiler errors across full stack)*
 
 
 

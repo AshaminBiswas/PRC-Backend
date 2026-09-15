@@ -200,6 +200,97 @@ export function addRawVouchersWorksheet(
   return ws;
 }
 
+/** Helper to format standard Cash Float Top-Ups worksheet with all required columns, clickable links, and autoFilter */
+export function addFloatTopUpsWorksheet(
+  wb: ExcelJS.Workbook,
+  sheetName: string,
+  topUps: any[],
+  defaultBranchName: string = 'All Branches'
+): ExcelJS.Worksheet {
+  const ws = wb.addWorksheet(sheetName, {
+    views: [{ showGridLines: true, state: 'frozen', ySplit: 1 }],
+  });
+
+  ws.columns = [
+    { header: 'Date', key: 'date', width: 14 },
+    { header: 'Record ID', key: 'id', width: 18 },
+    { header: 'Branch', key: 'branch', width: 22 },
+    { header: 'Amount (₹)', key: 'amount', width: 18 },
+    { header: 'Source of Cash Float', key: 'source', width: 28 },
+    { header: 'Reference / Cheque No', key: 'referenceNo', width: 24 },
+    { header: 'Notes / Purpose', key: 'notes', width: 34 },
+    { header: 'Payment Receipt Slip', key: 'receiptAttachment', width: 24 },
+    { header: 'Added By', key: 'addedBy', width: 22 },
+  ];
+
+  styleHeaderRow(ws.getRow(1), NAVY_HEADER);
+
+  topUps.forEach((t, idx) => {
+    const dStr = t.date instanceof Date
+      ? t.date.toISOString().split('T')[0]
+      : t.date
+      ? String(t.date).split('T')[0]
+      : '-';
+
+    const branchName = t.branch?.name || defaultBranchName;
+    const addedByName = t.addedBy
+      ? `${t.addedBy.firstName || ''} ${t.addedBy.lastName || ''}`.trim() || t.addedBy.email
+      : '-';
+
+    const row = ws.addRow([
+      dStr,
+      `FLT-${t.id ? t.id.slice(0, 8).toUpperCase() : String(idx + 1).padStart(4, '0')}`,
+      branchName,
+      paiseToRupees(t.amount),
+      t.source,
+      t.referenceNo || '-',
+      t.notes || '-',
+      t.receiptAttachment ? { text: 'View Receipt Slip', hyperlink: t.receiptAttachment } : 'No Slip',
+      addedByName,
+    ]);
+
+    styleDataRow(row, idx % 2 === 1);
+    row.getCell(4).numFmt = RUPEE_FORMAT;
+    row.getCell(4).alignment = { horizontal: 'right' };
+
+    // Format clickable receipt link
+    if (t.receiptAttachment) {
+      row.getCell(8).font = {
+        name: 'Segoe UI',
+        size: 9.5,
+        color: { argb: 'FF2563EB' },
+        underline: true,
+      };
+    }
+  });
+
+  // Total row
+  if (topUps.length > 0) {
+    const totalRow = ws.addRow([
+      'TOTAL FLOAT TOP-UPS',
+      '',
+      '',
+      { formula: `SUM(D2:D${topUps.length + 1})` },
+      '',
+      '',
+      '',
+      '',
+      '',
+    ]);
+    styleSummaryRow(totalRow);
+    totalRow.getCell(4).numFmt = RUPEE_FORMAT;
+    totalRow.getCell(4).alignment = { horizontal: 'right' };
+  }
+
+  // Enable AutoFilter on header row
+  ws.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: Math.max(topUps.length + 1, 1), column: ws.columns.length },
+  };
+
+  return ws;
+}
+
 // ─── 1. Day-Wise Multi-Sheet Workbook ────────────────────────────────────────
 export async function buildDayWiseWorkbook(data: {
   date: string;
@@ -269,6 +360,11 @@ export async function buildDayWiseWorkbook(data: {
   // ── Sheet 2: Itemized Transactions ────────────────────────────────────────
   addRawVouchersWorksheet(wb, 'Itemized Expenses', data.entries, data.branchName);
 
+  // ── Sheet 3: Cash Float Top-Ups ───────────────────────────────────────────
+  if (data.topUps && data.topUps.length > 0) {
+    addFloatTopUpsWorksheet(wb, 'Cash Float Top-Ups', data.topUps, data.branchName);
+  }
+
   return wb;
 }
 
@@ -292,6 +388,7 @@ export async function buildWeekWiseWorkbook(data: {
     total: number;
   }[];
   entries: any[];
+  topUps?: any[];
 }): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'PRC Hardware Daily Cash Expense Tracker';
@@ -401,6 +498,11 @@ export async function buildWeekWiseWorkbook(data: {
   // ── Sheet 3: Raw Itemized Vouchers ─────────────────────────────────────────
   addRawVouchersWorksheet(wb, 'Raw Vouchers', data.entries, data.branchName);
 
+  // ── Sheet 4: Cash Float Top-Ups ───────────────────────────────────────────
+  if (data.topUps && data.topUps.length > 0) {
+    addFloatTopUpsWorksheet(wb, 'Cash Float Top-Ups', data.topUps, data.branchName);
+  }
+
   return wb;
 }
 
@@ -423,6 +525,7 @@ export async function buildMonthWiseWorkbook(data: {
   reconciliations: any[];
   categoryTotals: Record<string, number>;
   entries?: any[];
+  topUps?: any[];
 }): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'PRC Hardware Daily Cash Expense Tracker';
@@ -561,6 +664,11 @@ export async function buildMonthWiseWorkbook(data: {
     addRawVouchersWorksheet(wb, 'Raw Vouchers', data.entries, data.branchName);
   }
 
+  // ── Sheet 4: Cash Float Top-Ups ───────────────────────────────────────────
+  if (data.topUps && data.topUps.length > 0) {
+    addFloatTopUpsWorksheet(wb, 'Cash Float Top-Ups', data.topUps, data.branchName);
+  }
+
   return wb;
 }
 
@@ -582,6 +690,7 @@ export async function buildYearWiseWorkbook(data: {
   annualCategoryTotals: Record<string, number>;
   annualGrandTotal: number;
   entries?: any[];
+  topUps?: any[];
 }): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'PRC Hardware Daily Cash Expense Tracker';
@@ -685,6 +794,11 @@ export async function buildYearWiseWorkbook(data: {
   // ── Sheet 3: Raw Itemized Vouchers ─────────────────────────────────────────
   if (data.entries && data.entries.length > 0) {
     addRawVouchersWorksheet(wb, 'Raw Vouchers', data.entries, data.branchName);
+  }
+
+  // ── Sheet 4: Cash Float Top-Ups ───────────────────────────────────────────
+  if (data.topUps && data.topUps.length > 0) {
+    addFloatTopUpsWorksheet(wb, 'Cash Float Top-Ups', data.topUps, data.branchName);
   }
 
   return wb;
