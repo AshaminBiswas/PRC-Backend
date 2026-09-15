@@ -975,7 +975,7 @@ The actual cause is **Render free-tier cold-start**: when the Render container i
 - **Fast Expense Logging Form**:
   - Added `entryDate` state defaulting to the user's current local date (`YYYY-MM-DD`), allowing staff to select custom or past dates for back-dated vouchers with automated reset back to current date on submit.
   - Added `entryPaidBy` state and a dedicated "Who Paid (Name)" text input next to "Paid To (Vendor / Person)".
-  - Compact, high-density, mobile-first UI revamp: reduced padding (`p-3.5 sm:p-4`), scaled down input sizes (`text-xs`), normalized labels (`text-[11px] font-semibold`), removed redundant subtitle text ("Log cash outflow in under 10 seconds"), transformed category selection into a horizontal swipeable chip ribbon (`no-scrollbar`) saving >100px vertical scroll on mobile screens, and compacted slip file attachment and submit buttons.
+  - Compact, high-density, mobile-first UI revamp: reduced padding (`p-3.5 sm:p-4`), scaled down input sizes (`text-xs`), normalized labels (`text-[11px] font-semibold`), removed redundant subtitle text ("Log cash outflow in under 10 seconds"), transformed category selection and payment mode into streamlined, touch-friendly `<select>` dropdowns with dark mode support and local category memory (`localStorage`), and compacted slip file attachment and submit buttons.
 - **Edit Expense Modal**:
   - Added `editDate` state and date picker allowing modification of expense dates with backend schema (`UpdateExpenseSchema.date`) and service (`updateExpense`) support.
   - Added `editPaidBy` state and "Who Paid (Name)" input field.
