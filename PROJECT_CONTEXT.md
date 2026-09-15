@@ -1089,20 +1089,20 @@ The B2B Order Management module provides enterprise dual-channel order placement
   - **4 Interactive KPI Metric Cards**: Pending Approval, Confirmed Orders, Monthly B2B Revenue, and Cancelled/Rejected counts.
   - **Pending Approval Action Queue**: Dedicated high-contrast priority alert banner highlighting pending customer orders with 1-click Approve/Reject buttons.
   - **Status Tabs & Server-Side Filters**: All, Pending Approval, Confirmed, Cancelled, Rejected tabs with search by order reference, company name, or customer email.
-  - **Create Offline Order Modal**: Super Admin offline order creation with branch selection, customer picker, product combobox, real-time available stock badge, auto-calculated 18% GST and grand totals.
+  - **Create Offline Order Modal**: Super Admin offline order creation with branch selection, customer picker, product combobox, real-time available stock badge, dynamic payment method selection (Bank Transfer, Cheque, Credit Terms 30d, UPI, Cash), dynamic GST rate selector (18%, 12%, 5%, 28%, 0%), delivery notes input, and auto-calculated line taxes and grand totals.
   - **Approve Order Modal**: Confirmation modal with live inventory re-check badge.
   - **Reject Order Modal**: Mandatory rejection reason input.
   - **Edit Confirmed Order Modal**: Dynamic line item adjustments (quantity increases/decreases, remove line) with delta calculation and live stock check for positive deltas.
   - **Cancel Confirmed Order Modal**: Mandatory cancellation reason input and restock audit notification.
-  - **360° Order Dossier Drawer**: Comprehensive sliding drawer displaying full order metadata, milestone timeline, customer details, fulfillment branch, financial breakdown, and line item cards.
+  - **360° Order Dossier Drawer**: Comprehensive sliding drawer displaying full order metadata, milestone timeline, customer details, fulfillment branch, financial breakdown, and line item cards with dynamic tax labels and zero hardcoded facility fallbacks.
 - **Navigation & Layout (`AdminSidebar.tsx`, `AdminLayout.tsx`)**: Mounted under "Sales & Fulfillment" with live pending approval badge counter.
 
 #### 41.5 Customer Storefront Implementation (`d:\frontend`)
-- **Types (`src/types/b2bOrder.ts`, `src/types/index.ts`)**: Type definitions for customer-facing B2B orders.
+- **Types (`src/types/b2bOrder.ts`, `src/types/index.ts`)**: Type definitions for customer-facing B2B orders with dynamic `taxRate`, `taxPercent`, `paymentMethod`, and `notes`.
 - **Service (`src/services/b2bOrderService.ts`)**: REST client for submit, fetch, cancel, and stock-check.
 - **Convert Approved Quotation to Official B2B Order (`src/pages/CustomerQuoteApprovalPage.tsx`)**:
   - For accepted/approved quotations, added a prominent **"Convert to Official B2B Order"** action button.
-  - Interactive conversion modal: fulfillment branch selector, line item preview with real-time available stock badges (`In Stock`, `Low Stock`, `Out of Stock`), subtotal, 18% GST calculation, grand total, and delivery notes.
+  - Interactive conversion modal: fulfillment branch selector, line item preview with real-time available stock badges (`In Stock`, `Low Stock`, `Out of Stock`), subtotal, dynamic quotation GST rate calculation, grand total, and delivery notes.
   - Idempotent submission with navigation to profile orders tab.
 - **Customer User Profile B2B Orders Tab (`src/components/auth/UserProfilePage.tsx`)**:
   - Dedicated **"B2B Orders"** tab for registered B2B wholesale users with live badge count.
@@ -1126,10 +1126,14 @@ The B2B Order Management module provides enterprise dual-channel order placement
     10. Stock exhaustion prevents submission and blocks approval if concurrent physical stock drops (PASS).
     11. Super Admin order editing handles positive delta deductions and negative delta returns with `B2B_ADJUSTMENT` logs (PASS).
     12. Super Admin cancellation on confirmed order restores physical inventory with `B2B_CANCELLATION` log (PASS).
+- **Zero Hardcoded Data & Clean Database State Guarantee**:
+  - All test orders, test reservations, test audit movements, test notifications, and test users purged from the live database.
+  - Sequence tracking reset to pristine initial state (0 orders).
+  - All hardcoded fallback facilities (`Delhi HQ`, `DEL`), tax labels (`18% Flat Rate`), and payment methods replaced with dynamic data-driven controls.
 - **Compilation & Build Quality Assurance**:
   - `PRC-Backend`: `npx tsc --noEmit` passed with **0 compiler errors**.
   - `admin`: `npx tsc --noEmit` passed with **0 compiler errors**.
-  - `frontend`: `npm run build` (Vite) transformed 1,716 modules in 7.45s with **0 errors**.
+  - `frontend`: `npm run build` (Vite) transformed 1,716 modules in 7.36s with **0 errors**.
 
 ---
 

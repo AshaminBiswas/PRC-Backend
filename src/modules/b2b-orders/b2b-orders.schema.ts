@@ -6,6 +6,8 @@ export const B2bOrderItemInputSchema = z.object({
   quantity: z.coerce.number().positive('Quantity must be greater than 0'),
   unitPrice: z.coerce.number().nonnegative('Unit price cannot be negative'),
   discount: z.coerce.number().nonnegative().optional().default(0),
+  taxRate: z.coerce.number().nonnegative().optional(),
+  taxPercent: z.coerce.number().nonnegative().optional(),
   configuration: z.record(z.any()).optional().nullable(),
 });
 
@@ -15,6 +17,7 @@ export const SubmitB2bOrderSchema = z.object({
   sourceQuotationId: z.string().optional().nullable(),
   sourcePoId: z.string().optional().nullable(),
   paymentMethod: z.string().optional().default('bank_transfer'),
+  notes: z.string().optional(),
   items: z.array(B2bOrderItemInputSchema).min(1, 'At least one order line item is required'),
 });
 
@@ -40,6 +43,8 @@ export const EditB2bOrderItemSchema = z.object({
   quantity: z.coerce.number().nonnegative('Quantity cannot be negative'),
   unitPrice: z.coerce.number().nonnegative().optional(),
   discount: z.coerce.number().nonnegative().optional().default(0),
+  taxRate: z.coerce.number().nonnegative().optional(),
+  taxPercent: z.coerce.number().nonnegative().optional(),
   isRemoved: z.boolean().optional().default(false),
   configuration: z.record(z.any()).optional().nullable(),
 });

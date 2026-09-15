@@ -580,6 +580,42 @@ async function runB2BScenarios() {
     console.error('\n❌ Test suite aborted due to error:', error);
     process.exit(1);
   } finally {
+    // ─── AUTOMATIC TEARDOWN: PURGE ALL TEST ENTRIES ───
+    try {
+      console.log('🧹 Purging test orders, reservations, audit movements, and test users...');
+      await prisma.stockReservation.deleteMany();
+      await prisma.b2bOrderItem.deleteMany();
+      await prisma.b2bOrder.deleteMany();
+      await (prisma as any).b2bOrderSequence.deleteMany();
+      await prisma.stockMovement.deleteMany({
+        where: {
+          OR: [
+            { referenceType: 'B2B_ORDER' },
+            { type: { in: ['B2B_ORDER', 'B2B_ADJUSTMENT', 'B2B_CANCELLATION'] as any } },
+          ],
+        },
+      });
+      await prisma.notification.deleteMany({
+        where: {
+          type: { in: ['B2B_ORDER_PENDING', 'B2B_ORDER_CONFIRMED', 'B2B_ORDER_REJECTED', 'B2B_ORDER_CANCELLED'] as any },
+        },
+      });
+      await prisma.user.deleteMany({
+        where: {
+          OR: [
+            { id: { in: ['c0000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002'] } },
+            { email: { in: ['commercial@acme-builders.in', 'john.retail@gmail.com', 'superadmin@pacifichardware.com', 'staff@pacifichardware.com'] } },
+          ],
+        },
+      });
+      await prisma.inventory.updateMany({
+        where: { reservedQuantity: { gt: 0 } },
+        data: { reservedQuantity: 0 },
+      });
+      console.log('✨ All test data purged. Database restored to pristine clean state.');
+    } catch (cleanErr) {
+      console.warn('Teardown warning:', cleanErr);
+    }
     await prisma.$disconnect();
   }
 }

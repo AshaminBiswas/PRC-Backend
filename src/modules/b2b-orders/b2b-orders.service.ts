@@ -157,7 +157,7 @@ export const submitB2bOrder = async (user: UserContext, input: SubmitB2bOrderInp
     throw new AppError('INVALID_BRANCH', 'Selected fulfilment facility is invalid or inactive', 400);
   }
 
-  // Compute Line Items & Totals (Indian GST 18% tax line)
+  // Compute Line Items & Totals with dynamic tax rate per item
   let subtotal = 0;
   let discountTotal = 0;
   let taxTotal = 0;
@@ -167,7 +167,8 @@ export const submitB2bOrder = async (user: UserContext, input: SubmitB2bOrderInp
     const unitPrice = Number(item.unitPrice);
     const discount = Number(item.discount || 0);
     const taxableLine = Math.max(0, qty * unitPrice - discount);
-    const itemTax = Math.round(taxableLine * 0.18 * 100) / 100;
+    const rate = Number(item.taxRate ?? item.taxPercent ?? 18);
+    const itemTax = Math.round(taxableLine * (rate / 100) * 100) / 100;
     const lineTotal = Math.round((taxableLine + itemTax) * 100) / 100;
 
     subtotal += qty * unitPrice;
@@ -205,6 +206,7 @@ export const submitB2bOrder = async (user: UserContext, input: SubmitB2bOrderInp
     source_quotation_id: input.sourceQuotationId || null,
     source_po_id: input.sourcePoId || null,
     payment_method: input.paymentMethod || 'bank_transfer',
+    notes: input.notes || null,
     subtotal,
     discount_total: discountTotal,
     tax_total: taxTotal,
@@ -439,7 +441,7 @@ export const adminCreateB2bOrder = async (adminUser: UserContext, input: AdminCr
     throw new AppError('CUSTOMER_NOT_B2B', 'Selected customer does not have registered B2B credentials', 400);
   }
 
-  // Compute Line Items & Totals (18% GST line tax)
+  // Compute Line Items & Totals with dynamic tax rate per item
   let subtotal = 0;
   let discountTotal = 0;
   let taxTotal = 0;
@@ -449,7 +451,8 @@ export const adminCreateB2bOrder = async (adminUser: UserContext, input: AdminCr
     const unitPrice = Number(item.unitPrice);
     const discount = Number(item.discount || 0);
     const taxableLine = Math.max(0, qty * unitPrice - discount);
-    const itemTax = Math.round(taxableLine * 0.18 * 100) / 100;
+    const rate = Number(item.taxRate ?? item.taxPercent ?? 18);
+    const itemTax = Math.round(taxableLine * (rate / 100) * 100) / 100;
     const lineTotal = Math.round((taxableLine + itemTax) * 100) / 100;
 
     subtotal += qty * unitPrice;
@@ -486,6 +489,7 @@ export const adminCreateB2bOrder = async (adminUser: UserContext, input: AdminCr
     source_quotation_id: input.sourceQuotationId || null,
     source_po_id: input.sourcePoId || null,
     payment_method: input.paymentMethod || 'bank_transfer',
+    notes: input.notes || null,
     subtotal,
     discount_total: discountTotal,
     tax_total: taxTotal,
@@ -912,7 +916,10 @@ export const adminEditConfirmedB2bOrder = async (adminUser: UserContext, orderId
       const unitPrice = editedItem.unitPrice !== undefined ? Number(editedItem.unitPrice) : Number(origItem.unitPrice);
       const discount = editedItem.discount !== undefined ? Number(editedItem.discount) : Number(origItem.discount);
       const taxableLine = Math.max(0, newQty * unitPrice - discount);
-      const itemTax = Math.round(taxableLine * 0.18 * 100) / 100;
+      const origTaxable = Math.max(0, Number(origItem.quantity) * Number(origItem.unitPrice) - Number(origItem.discount || 0));
+      const origRate = origTaxable > 0 && origItem.tax ? (Number(origItem.tax) / origTaxable) * 100 : 18;
+      const rate = Number(editedItem.taxRate ?? editedItem.taxPercent ?? origRate);
+      const itemTax = Math.round(taxableLine * (rate / 100) * 100) / 100;
       const lineTotal = Math.round((taxableLine + itemTax) * 100) / 100;
 
       await (tx as any).b2bOrderItem.update({
