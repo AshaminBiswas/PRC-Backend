@@ -435,8 +435,8 @@ export class ExpensesService {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const appRecord = await tx.expenseEntry.update({
+    const [updated] = await prisma.$transaction([
+      prisma.expenseEntry.update({
         where: { id },
         data: {
           status: 'APPROVED',
@@ -450,22 +450,18 @@ export class ExpensesService {
           addedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
           approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
         },
-      });
-
-      // Mutate live balance, ledger, rollups
-      await tx.branchCashBalance.upsert({
+      }),
+      prisma.branchCashBalance.upsert({
         where: { branchId: expense.branchId },
         update: { currentBalance: { decrement: amount }, lastEntryAt: new Date() },
         create: { branchId: expense.branchId, currentBalance: -amount, lastEntryAt: new Date() },
-      });
-
-      await tx.expenseDailyLedger.upsert({
+      }),
+      prisma.expenseDailyLedger.upsert({
         where: { branchId_date: { branchId: expense.branchId, date } },
         update: { totalExpenses: { increment: amount }, closingBalance: { decrement: amount } },
         create: { branchId: expense.branchId, date, totalExpenses: amount, closingBalance: -amount },
-      });
-
-      await tx.expenseDailyRollup.upsert({
+      }),
+      prisma.expenseDailyRollup.upsert({
         where: {
           branchId_date_categoryId: {
             branchId: expense.branchId,
@@ -481,9 +477,8 @@ export class ExpensesService {
           totalAmount: amount,
           entryCount: 1,
         },
-      });
-
-      await tx.expenseMonthlyRollup.upsert({
+      }),
+      prisma.expenseMonthlyRollup.upsert({
         where: {
           branchId_year_month_categoryId: {
             branchId: expense.branchId,
@@ -501,9 +496,8 @@ export class ExpensesService {
           totalAmount: amount,
           entryCount: 1,
         },
-      });
-
-      await tx.expenseAuditLog.create({
+      }),
+      prisma.expenseAuditLog.create({
         data: {
           expenseId: id,
           action: 'APPROVE',
@@ -511,10 +505,8 @@ export class ExpensesService {
           reason: notes || null,
           changes: { previousStatus: expense.status, newStatus: 'APPROVED', amount },
         },
-      });
-
-      return appRecord;
-    });
+      }),
+    ]);
 
     return updated;
   }
@@ -525,16 +517,21 @@ export class ExpensesService {
     if (!expense) throw new AppError('NOT_FOUND', 'Expense entry not found', 404);
     if (expense.isVoid) throw new AppError('BAD_REQUEST', 'Cannot reject a voided entry', 400);
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const rec = await tx.expenseEntry.update({
+    const [rec] = await prisma.$transaction([
+      prisma.expenseEntry.update({
         where: { id },
         data: {
           status: 'REJECTED',
           rejectionReason: reason,
         },
-      });
-
-      await tx.expenseAuditLog.create({
+        include: {
+          category: true,
+          branch: true,
+          addedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+          approvedBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        },
+      }),
+      prisma.expenseAuditLog.create({
         data: {
           expenseId: id,
           action: 'REJECT',
@@ -542,12 +539,10 @@ export class ExpensesService {
           reason,
           changes: { previousStatus: expense.status, newStatus: 'REJECTED' },
         },
-      });
+      }),
+    ]);
 
-      return rec;
-    });
-
-    return updated;
+    return rec;
   }
 
   // ─── 8. Void Expense (Audit & Reversal) ───────────────────────────────────────

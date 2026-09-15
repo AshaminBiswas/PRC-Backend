@@ -95,6 +95,8 @@ const STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS "expense_entries_added_by_idx" ON "expense_entries"("added_by_id")`,
   `CREATE INDEX IF NOT EXISTS "expense_entries_date_idx" ON "expense_entries"("date")`,
   `CREATE INDEX IF NOT EXISTS "expense_entries_is_void_idx" ON "expense_entries"("is_void")`,
+  `CREATE INDEX IF NOT EXISTS "expense_entries_status_idx" ON "expense_entries"("status")`,
+  `CREATE INDEX IF NOT EXISTS "expense_entries_status_void_idx" ON "expense_entries"("status", "is_void")`,
   `CREATE INDEX IF NOT EXISTS "expense_entries_client_temp_id_idx" ON "expense_entries"("client_temp_id")`,
 
   `CREATE TABLE IF NOT EXISTS "expense_daily_ledgers" (
@@ -131,6 +133,7 @@ const STATEMENTS = [
     "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
   `CREATE INDEX IF NOT EXISTS "expense_float_top_ups_branch_date_idx" ON "expense_float_top_ups"("branch_id", "date")`,
+  `CREATE INDEX IF NOT EXISTS "expense_float_top_ups_branch_created_idx" ON "expense_float_top_ups"("branch_id", "created_at" DESC)`,
 
   `CREATE TABLE IF NOT EXISTS "branch_cash_balances" (
     "branch_id"          TEXT NOT NULL PRIMARY KEY,
