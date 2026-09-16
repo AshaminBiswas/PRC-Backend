@@ -255,26 +255,8 @@ export class BarcodeService {
       },
     };
 
-    const printer = new pdfmake({
-      Roboto: {
-        normal: path.join(path.dirname(require.resolve('pdfmake/package.json')), 'fonts/Roboto/Roboto-Regular.ttf'),
-        bold: path.join(path.dirname(require.resolve('pdfmake/package.json')), 'fonts/Roboto/Roboto-Medium.ttf'),
-        italics: path.join(path.dirname(require.resolve('pdfmake/package.json')), 'fonts/Roboto/Roboto-Italic.ttf'),
-        bolditalics: path.join(
-          path.dirname(require.resolve('pdfmake/package.json')),
-          'fonts/Roboto/Roboto-MediumItalic.ttf'
-        ),
-      },
-    });
-
-    return new Promise<Buffer>((resolve, reject) => {
-      const pdfDoc = printer.createPdfKitDocument(docDefinition);
-      const chunks: Buffer[] = [];
-      pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
-      pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-      pdfDoc.on('error', (err: any) => reject(err));
-      pdfDoc.end();
-    });
+    const doc = pdfmake.createPdf(docDefinition);
+    return await doc.getBuffer();
   }
 
   /**
