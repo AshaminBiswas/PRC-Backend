@@ -10,6 +10,7 @@ import {
   recordAttendanceHandler,
   batchRecordAttendanceHandler,
   listAttendanceHandler,
+  deleteAttendanceHandler,
   accrueMonthlyLeaveHandler,
   adjustLeaveHandler,
   getLeaveLedgerHandler,
@@ -116,6 +117,7 @@ router.delete('/detail/:id', authorize('employees.delete'), deactivateEmployeeHa
 router.get('/attendance', authorize('attendance.read'), listAttendanceHandler);
 router.post('/attendance', authorize('attendance.mark', 'attendance.update'), recordAttendanceHandler);
 router.post('/attendance/batch', authorize('attendance.batch', 'attendance.mark'), batchRecordAttendanceHandler);
+router.delete('/attendance', authorize('attendance.mark', 'attendance.update'), deleteAttendanceHandler);
 
 // ─── Leave Ledger ─────────────────────────────────────────────────────────────
 router.post('/leave/accrue-monthly', authorize('leaves.accrue'), accrueMonthlyLeaveHandler);

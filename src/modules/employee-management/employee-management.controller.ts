@@ -112,6 +112,22 @@ export const listAttendanceHandler = async (req: Request, res: Response, next: N
   }
 };
 
+export const deleteAttendanceHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const employeeId = (req.query.employeeId || req.body.employeeId) as string;
+    const date = (req.query.date || req.body.date) as string;
+    if (!employeeId || !date) {
+      sendError(res, { code: 'BAD_REQUEST', message: 'employeeId and date are required' }, 400);
+      return;
+    }
+    const deletedById = req.user?.id;
+    const result = await employeeService.deleteAttendance(employeeId, date, deletedById);
+    sendSuccess(res, result, 'Attendance record cleared successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ─── Leave Handlers ───────────────────────────────────────────────────────────
 export const accrueMonthlyLeaveHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {

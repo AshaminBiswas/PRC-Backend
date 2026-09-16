@@ -2183,7 +2183,7 @@ const STATEMENTS = [
       CREATE TYPE "GovernmentIdType" AS ENUM ('AADHAAR', 'PAN', 'VOTER_ID');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AttendanceStatus') THEN
-      CREATE TYPE "AttendanceStatus" AS ENUM ('PRESENT', 'CL', 'EL', 'UL', 'HALF_DAY', 'LEAVE');
+      CREATE TYPE "AttendanceStatus" AS ENUM ('PRESENT', 'DOUBLE_DUTY', 'CL', 'EL', 'UL', 'HALF_DAY', 'LEAVE');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'PayrollStatus') THEN
       CREATE TYPE "PayrollStatus" AS ENUM ('DRAFT', 'FINALIZED', 'PAID');
@@ -2373,6 +2373,7 @@ const STATEMENTS = [
   `ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'B2B_ORDER'`,
   `ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'B2B_ADJUSTMENT'`,
   `ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'B2B_CANCELLATION'`,
+  `ALTER TYPE "AttendanceStatus" ADD VALUE IF NOT EXISTS 'DOUBLE_DUTY'`,
 
   `CREATE TABLE IF NOT EXISTS "b2b_orders" (
     "id" TEXT NOT NULL PRIMARY KEY,

@@ -406,6 +406,73 @@ export async function batchRecordAttendance(data: BatchAttendanceInput, markedBy
   return { updatedCount: records.length, records };
 }
 
+export async function deleteAttendance(employeeId: string, dateStr: string, deletedById?: string) {
+  const dateObj = new Date(dateStr);
+  const existing = await prisma.employeeAttendance.findUnique({
+    where: {
+      employeeId_date: {
+        employeeId,
+        date: dateObj,
+      },
+    },
+  });
+
+  if (!existing) {
+    return { success: true, message: 'No attendance record found to delete' };
+  }
+
+  // If existing record was CL or EL, refund the leave balance
+  if (existing.status === 'CL' || existing.status === 'EL') {
+    const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+    if (employee) {
+      if (existing.status === 'CL') {
+        const newCl = Number(employee.clBalance) + 1;
+        await prisma.employee.update({ where: { id: employeeId }, data: { clBalance: newCl } });
+        await prisma.employeeLeaveLedger.create({
+          data: {
+            employeeId,
+            leaveType: 'CL',
+            transactionType: 'ADJUSTMENT',
+            amount: new Prisma.Decimal(1),
+            balanceAfter: new Prisma.Decimal(newCl),
+            month: dateObj.getMonth() + 1,
+            year: dateObj.getFullYear(),
+            reason: `Refund 1 CL due to attendance deletion on ${dateStr}`,
+            recordedById: deletedById,
+          },
+        });
+      } else if (existing.status === 'EL') {
+        const newEl = Number(employee.elBalance) + 1;
+        await prisma.employee.update({ where: { id: employeeId }, data: { elBalance: newEl } });
+        await prisma.employeeLeaveLedger.create({
+          data: {
+            employeeId,
+            leaveType: 'EL',
+            transactionType: 'ADJUSTMENT',
+            amount: new Prisma.Decimal(1),
+            balanceAfter: new Prisma.Decimal(newEl),
+            month: dateObj.getMonth() + 1,
+            year: dateObj.getFullYear(),
+            reason: `Refund 1 EL due to attendance deletion on ${dateStr}`,
+            recordedById: deletedById,
+          },
+        });
+      }
+    }
+  }
+
+  await prisma.employeeAttendance.delete({
+    where: {
+      employeeId_date: {
+        employeeId,
+        date: dateObj,
+      },
+    },
+  });
+
+  return { success: true, message: 'Attendance record deleted successfully' };
+}
+
 export async function listAttendance(query: ListAttendanceQuery) {
   const { month, year, employeeId } = query;
   const startDate = new Date(year, month - 1, 1);
@@ -755,6 +822,7 @@ export async function calculateEmployeeMonthlyPayroll(
   });
 
   let presentDays = 0;
+  let doubleDutyDays = 0;
   let clDays = 0;
   let elDays = 0;
   let halfDays = 0;
@@ -774,6 +842,10 @@ export async function calculateEmployeeMonthlyPayroll(
     }
 
     switch (att.status) {
+      case 'DOUBLE_DUTY':
+        doubleDutyDays += 1;
+        presentDays += 2; // 2x duty days credit
+        break;
       case 'PRESENT':
         presentDays += 1;
         break;
@@ -842,6 +914,7 @@ export async function calculateEmployeeMonthlyPayroll(
     payableDays: Number(payableDays.toFixed(2)),
     perDayRate: Number(perDayRate.toFixed(2)),
     presentDays,
+    doubleDutyDays,
     clDays,
     elDays,
     halfDays,

@@ -209,6 +209,7 @@ enum GovernmentIdType {
 
 enum AttendanceStatus {
   PRESENT
+  DOUBLE_DUTY
   CL
   EL
   UL

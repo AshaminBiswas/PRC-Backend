@@ -9,7 +9,7 @@ export const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 // ─── Enums ───────────────────────────────────────────────────────────────────
 export const GovernmentIdTypeEnum = z.enum(['AADHAAR', 'PAN', 'VOTER_ID']);
 export const EmployeeStatusEnum = z.enum(['ACTIVE', 'INACTIVE', 'TERMINATED']);
-export const AttendanceStatusEnum = z.enum(['PRESENT', 'CL', 'EL', 'UL', 'HALF_DAY', 'LEAVE']);
+export const AttendanceStatusEnum = z.enum(['PRESENT', 'DOUBLE_DUTY', 'CL', 'EL', 'UL', 'HALF_DAY', 'LEAVE']);
 export const PayrollStatusEnum = z.enum(['DRAFT', 'FINALIZED', 'PAID']);
 export const LeaveTypeEnum = z.enum(['CL', 'EL']);
 export const LeaveTransactionTypeEnum = z.enum(['ACCRUAL', 'USAGE', 'ADJUSTMENT']);
