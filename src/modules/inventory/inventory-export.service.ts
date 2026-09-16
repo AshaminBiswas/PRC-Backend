@@ -22,7 +22,11 @@ import { getStockStatus } from './inventory.service';
 
 // ─── Excel Reports Generator ──────────────────────────────────────────────────
 
-export const generateStockExcel = async (data: any[], branchName: string = 'All Branches'): Promise<Buffer> => {
+export const generateStockExcel = async (
+  data: any[],
+  branchName: string = 'All Branches',
+  periodLabel?: string
+): Promise<Buffer> => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'PRC Hardware Inventory System';
   workbook.created = new Date();
@@ -34,7 +38,7 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
   // Title Header
   worksheet.mergeCells('A1:K1');
   const titleCell = worksheet.getCell('A1');
-  titleCell.value = `PACIFIC HARDWARE — MULTI-BRANCH STOCK REPORT (${branchName.toUpperCase()})`;
+  titleCell.value = `PACIFIC HARDWARE — MULTI-BRANCH STOCK MATRIX REPORT (${branchName.toUpperCase()})`;
   titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -43,7 +47,7 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
   // Metadata Sub-row
   worksheet.mergeCells('A2:K2');
   const metaCell = worksheet.getCell('A2');
-  metaCell.value = `Generated On: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} | Total Listed SKUs: ${data.length}`;
+  metaCell.value = `Generated On: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} | Scope: ${periodLabel || 'Current Live Snapshot'} | Total Listed SKUs: ${data.length}`;
   metaCell.font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF64748B' } };
   metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
   worksheet.getRow(2).height = 18;
@@ -79,6 +83,11 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
     };
   });
 
+  let grandOnHand = 0;
+  let grandAvailable = 0;
+  let grandReserved = 0;
+  let grandValuation = 0;
+
   // Table Rows
   data.forEach((row, index) => {
     const onHand = Number(row.quantity ?? row.stock ?? 0);
@@ -88,6 +97,11 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
     const stockInfo = getStockStatus(availableQty, reorder);
     const unitPrice = Number(row.product?.price ?? row.price ?? 0);
     const stockValue = onHand * unitPrice;
+
+    grandOnHand += onHand;
+    grandAvailable += availableQty;
+    grandReserved += reserved;
+    grandValuation += stockValue;
 
     const r = worksheet.addRow([
       row.product?.sku || row.sku || 'N/A',
@@ -138,6 +152,37 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
     });
   });
 
+  // Summary Row
+  const summaryRow = worksheet.addRow([
+    'TOTALS',
+    `Aggregated Across ${data.length} SKUs`,
+    '',
+    '',
+    grandOnHand,
+    grandAvailable,
+    grandReserved,
+    '',
+    '',
+    grandValuation,
+    '',
+  ]);
+  summaryRow.height = 24;
+  summaryRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+  summaryRow.eachCell((cell, colNumber) => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF0F172A' } },
+      bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+    };
+    if (colNumber >= 5 && colNumber <= 7) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '#,##0';
+    } else if (colNumber === 10) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '₹#,##0.00';
+    }
+  });
+
   // Set Column Widths
   worksheet.columns = [
     { width: 16 }, // SKU
@@ -149,7 +194,7 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
     { width: 14 }, // Reserved Qty
     { width: 14 }, // Reorder Level
     { width: 16 }, // Unit Price (₹)
-    { width: 18 }, // Stock Value (₹)
+    { width: 20 }, // Stock Value (₹)
     { width: 18 }, // Stock Status
   ];
 
@@ -157,150 +202,300 @@ export const generateStockExcel = async (data: any[], branchName: string = 'All 
   return Buffer.from(buffer);
 };
 
-export const generatePurchasesExcel = async (purchases: any[]): Promise<Buffer> => {
+export const generatePurchasesExcel = async (purchases: any[], periodLabel?: string): Promise<Buffer> => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'PRC Hardware Inventory System';
-  const worksheet = workbook.addWorksheet('Purchase History', {
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet('Itemized Procurement', {
     views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }],
   });
 
-  worksheet.mergeCells('A1:G1');
+  // Title Header
+  worksheet.mergeCells('A1:K1');
   const titleCell = worksheet.getCell('A1');
-  titleCell.value = 'PACIFIC HARDWARE — PURCHASE & PROCUREMENT AUDIT LEDGER';
-  titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.value = 'PACIFIC HARDWARE — ITEMIZED PROCUREMENT & PURCHASES AUDIT REPORT';
+  titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  worksheet.getRow(1).height = 30;
+  worksheet.getRow(1).height = 32;
 
-  worksheet.mergeCells('A2:G2');
+  // Metadata Sub-row
+  const periodText = periodLabel || purchases[0]?.periodLabel || 'All Records';
+  worksheet.mergeCells('A2:K2');
   const metaCell = worksheet.getCell('A2');
-  metaCell.value = `Exported: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} | Total Purchases: ${purchases.length}`;
+  metaCell.value = `Exported: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} | Time Horizon: ${periodText} | Total POs: ${purchases.length}`;
   metaCell.font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF64748B' } };
   metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
   worksheet.getRow(2).height = 18;
 
+  // Blank row
+  worksheet.getRow(3).height = 10;
+
+  // Table Headers
   const headerRow = worksheet.getRow(4);
   headerRow.values = [
-    'Date',
-    'Invoice #',
+    'Purchase Date',
+    'Invoice / PO #',
     'Supplier / Vendor',
-    'Destination Branch',
-    'Items Count',
-    'Total Amount (₹)',
+    'Purchased By (Staff)',
+    'SKU',
+    'Item Description',
+    'Qty Purchased',
+    'Unit Cost (₹)',
+    'Line Total (₹)',
+    'Receiving Facility',
     'Notes / Reference',
   ];
-  headerRow.height = 24;
+  headerRow.height = 25;
   headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
   headerRow.eachCell((cell) => {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF334155' } },
+      left: { style: 'thin', color: { argb: 'FF334155' } },
+      bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+      right: { style: 'thin', color: { argb: 'FF334155' } },
+    };
   });
 
-  purchases.forEach((p, index) => {
-    const dateStr = new Date(p.purchaseDate || p.createdAt).toLocaleDateString('en-IN');
-    const r = worksheet.addRow([
-      dateStr,
-      p.invoiceNumber || 'N/A',
-      p.supplier?.name || 'N/A',
-      p.branch?.name || 'N/A',
-      p.items?.length || 0,
-      Number(p.totalAmount || 0),
-      p.notes || '',
-    ]);
+  let grandQty = 0;
+  let grandExpenditure = 0;
+  let rowIndex = 0;
 
-    r.height = 20;
-    r.font = { name: 'Arial', size: 9.5 };
-    const bgColor = index % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF';
-    r.eachCell((cell, col) => {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
-      cell.border = { bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
-      if (col === 6) {
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-        cell.numFmt = '₹#,##0.00';
-      } else if (col === 5) {
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-      } else {
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-      }
-    });
+  // Flatten purchases to itemized rows
+  purchases.forEach((p) => {
+    const dateStr = new Date(p.purchaseDate || p.createdAt).toLocaleDateString('en-IN');
+    const invoiceNo = p.invoiceNumber || 'N/A';
+    const supplierName = p.supplier?.name || 'N/A';
+    const buyerStr = p.buyerUser?.name
+      ? `${p.buyerUser.name} (${p.buyerUser.email})`
+      : 'PRC Staff Buyer';
+    const facilityName = p.branch?.name || 'Delhi Central Depot';
+    const notes = p.notes || '';
+
+    if (Array.isArray(p.items) && p.items.length > 0) {
+      p.items.forEach((item: any) => {
+        const qty = Number(item.quantity || 0);
+        const unitCost = Number(item.unitPurchasePrice || 0);
+        const lineTotal = Number(item.totalPrice || qty * unitCost);
+
+        grandQty += qty;
+        grandExpenditure += lineTotal;
+
+        const r = worksheet.addRow([
+          dateStr,
+          invoiceNo,
+          supplierName,
+          buyerStr,
+          item.product?.sku || item.sku || 'N/A',
+          item.product?.name || item.name || 'Purchased Item',
+          qty,
+          unitCost,
+          lineTotal,
+          facilityName,
+          notes,
+        ]);
+
+        r.height = 21;
+        r.font = { name: 'Arial', size: 9.5 };
+        const bgColor = rowIndex % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF';
+        rowIndex++;
+
+        r.eachCell((cell, col) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+          cell.border = {
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          };
+          if (col === 1 || col === 2 || col === 5) {
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          } else if (col === 7) {
+            cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            cell.numFmt = '#,##0';
+          } else if (col === 8 || col === 9) {
+            cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            cell.numFmt = '₹#,##0.00';
+          } else {
+            cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          }
+        });
+      });
+    } else {
+      // In case of an invoice without sub-items
+      const totalAmount = Number(p.totalAmount || 0);
+      grandExpenditure += totalAmount;
+
+      const r = worksheet.addRow([
+        dateStr,
+        invoiceNo,
+        supplierName,
+        buyerStr,
+        'N/A',
+        'Consolidated PO Invoice',
+        0,
+        totalAmount,
+        totalAmount,
+        facilityName,
+        notes,
+      ]);
+
+      r.height = 21;
+      r.font = { name: 'Arial', size: 9.5 };
+      const bgColor = rowIndex % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF';
+      rowIndex++;
+
+      r.eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+      });
+    }
+  });
+
+  // Summary Row
+  const summaryRow = worksheet.addRow([
+    'TOTALS',
+    `Across ${purchases.length} Procurement Invoices`,
+    '',
+    '',
+    '',
+    '',
+    grandQty,
+    '',
+    grandExpenditure,
+    '',
+    '',
+  ]);
+  summaryRow.height = 24;
+  summaryRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+  summaryRow.eachCell((cell, colNumber) => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF0F172A' } },
+      bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+    };
+    if (colNumber === 7) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '#,##0';
+    } else if (colNumber === 9) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '₹#,##0.00';
+    }
   });
 
   worksheet.columns = [
-    { width: 14 },
-    { width: 18 },
-    { width: 28 },
-    { width: 20 },
-    { width: 14 },
-    { width: 20 },
-    { width: 30 },
+    { width: 14 }, // Date
+    { width: 18 }, // Invoice
+    { width: 28 }, // Supplier
+    { width: 30 }, // Buyer
+    { width: 16 }, // SKU
+    { width: 34 }, // Item Description
+    { width: 15 }, // Qty
+    { width: 16 }, // Unit Cost
+    { width: 18 }, // Line Total
+    { width: 22 }, // Receiving Facility
+    { width: 30 }, // Notes
   ];
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 };
 
-export const generateMovementsExcel = async (movements: any[]): Promise<Buffer> => {
+export const generateMovementsExcel = async (movements: any[], periodLabel?: string): Promise<Buffer> => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'PRC Hardware Inventory System';
-  const worksheet = workbook.addWorksheet('Stock Ledger', {
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet('Stock Movements Ledger', {
     views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }],
   });
 
-  worksheet.mergeCells('A1:H1');
+  // Title Header
+  worksheet.mergeCells('A1:K1');
   const titleCell = worksheet.getCell('A1');
-  titleCell.value = 'PACIFIC HARDWARE — IMMUTABLE STOCK MOVEMENT LEDGER';
-  titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.value = 'PACIFIC HARDWARE — IMMUTABLE STOCK MOVEMENT & AUDIT LEDGER';
+  titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
   titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  worksheet.getRow(1).height = 30;
+  worksheet.getRow(1).height = 32;
 
-  worksheet.mergeCells('A2:H2');
+  // Metadata Sub-row
+  const periodText = periodLabel || movements[0]?.periodLabel || 'All Records';
+  worksheet.mergeCells('A2:K2');
   const metaCell = worksheet.getCell('A2');
-  metaCell.value = `Exported: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} | Total Transactions: ${movements.length}`;
+  metaCell.value = `Exported: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} | Time Horizon: ${periodText} | Total Audit Transactions: ${movements.length}`;
   metaCell.font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF64748B' } };
   metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getRow(2).height = 18;
 
+  // Blank row
+  worksheet.getRow(3).height = 10;
+
+  // Table Headers
   const headerRow = worksheet.getRow(4);
   headerRow.values = [
     'Timestamp',
     'Product SKU',
     'Product Name',
-    'Branch',
+    'Facility / Branch',
     'Movement Type',
-    'Qty Changed',
-    'Stock (Before → After)',
-    'Reason / Notes',
+    'Delta Qty',
+    'Stock Progression',
+    'Performed By (Actor)',
+    'Reference Type',
+    'Reference ID',
+    'Audit Notes / Reason',
   ];
-  headerRow.height = 24;
+  headerRow.height = 25;
   headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
   headerRow.eachCell((cell) => {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF334155' } },
+      left: { style: 'thin', color: { argb: 'FF334155' } },
+      bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+      right: { style: 'thin', color: { argb: 'FF334155' } },
+    };
   });
 
   movements.forEach((m, idx) => {
-    const timeStr = new Date(m.createdAt).toLocaleString('en-IN');
+    const timeStr = new Date(m.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     const isPositive = ['PURCHASE_IN', 'TRANSFER_IN', 'ADJUSTMENT_IN', 'RETURN_IN'].includes(m.type);
     const sign = isPositive ? `+${m.quantity}` : `-${m.quantity}`;
+    const actorStr = m.actorUser?.name
+      ? `${m.actorUser.name} (${m.actorUser.email})`
+      : (m.performedById || 'System');
 
     const r = worksheet.addRow([
       timeStr,
       m.product?.sku || 'N/A',
       m.product?.name || 'N/A',
-      m.branch?.name || 'N/A',
+      m.branch?.name || 'Central Depot',
       m.type,
       sign,
-      `${m.previousQty} → ${m.newQty}`,
-      m.notes || m.referenceType || '',
+      `${m.previousQty ?? 0} → ${m.newQty ?? 0}`,
+      actorStr,
+      m.referenceType || 'MANUAL',
+      m.referenceId || 'N/A',
+      m.notes || '',
     ]);
 
-    r.height = 20;
+    r.height = 21;
     r.font = { name: 'Arial', size: 9.5 };
     const bgColor = idx % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF';
     r.eachCell((cell, col) => {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
-      cell.border = { bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
-      if (col === 6) {
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+
+      if (col === 1 || col === 2 || col === 5 || col === 7 || col === 9 || col === 10) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else if (col === 6) {
         cell.alignment = { horizontal: 'right', vertical: 'middle' };
         cell.font = {
           name: 'Arial',
@@ -308,25 +503,203 @@ export const generateMovementsExcel = async (movements: any[]): Promise<Buffer> 
           bold: true,
           color: { argb: isPositive ? 'FF16A34A' : 'FFDC2626' },
         };
-      } else if (col === 7) {
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else {
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
       }
     });
   });
 
   worksheet.columns = [
-    { width: 20 },
-    { width: 16 },
-    { width: 34 },
-    { width: 18 },
-    { width: 18 },
-    { width: 14 },
-    { width: 22 },
-    { width: 30 },
+    { width: 22 }, // Timestamp
+    { width: 16 }, // SKU
+    { width: 34 }, // Product Name
+    { width: 20 }, // Facility
+    { width: 18 }, // Type
+    { width: 14 }, // Delta
+    { width: 20 }, // Progression
+    { width: 30 }, // Actor
+    { width: 20 }, // Ref Type
+    { width: 22 }, // Ref ID
+    { width: 32 }, // Notes
   ];
 
   const mBuffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(mBuffer);
+};
+
+export const generateOrdersConsumptionExcel = async (orders: any[], periodLabel?: string): Promise<Buffer> => {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'PRC Hardware Inventory System';
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet('Orders & Consumption', {
+    views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }],
+  });
+
+  // Title Header
+  worksheet.mergeCells('A1:N1');
+  const titleCell = worksheet.getCell('A1');
+  titleCell.value = 'PACIFIC HARDWARE — CUSTOMER ORDERS & INVENTORY CONSUMPTION REPORT';
+  titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getRow(1).height = 32;
+
+  // Metadata Sub-row
+  const periodText = periodLabel || orders[0]?.periodLabel || 'All Records';
+  worksheet.mergeCells('A2:N2');
+  const metaCell = worksheet.getCell('A2');
+  metaCell.value = `Exported: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} | Time Horizon: ${periodText} | Total Line Items: ${orders.length}`;
+  metaCell.font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF64748B' } };
+  metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getRow(2).height = 18;
+
+  // Blank row
+  worksheet.getRow(3).height = 10;
+
+  // Table Headers
+  const headerRow = worksheet.getRow(4);
+  headerRow.values = [
+    'Order Date & Time',
+    'Order #',
+    'Channel',
+    'Customer Name (Who Placed)',
+    'Customer Email',
+    'Customer Phone / Business',
+    'SKU',
+    'Product Name',
+    'Qty Ordered',
+    'Selling Price (₹)',
+    'Line Total (₹)',
+    'Fulfillment Facility',
+    'Order Status',
+    'Payment Status',
+  ];
+  headerRow.height = 25;
+  headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+  headerRow.eachCell((cell) => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF334155' } },
+      left: { style: 'thin', color: { argb: 'FF334155' } },
+      bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+      right: { style: 'thin', color: { argb: 'FF334155' } },
+    };
+  });
+
+  let grandQty = 0;
+  let grandTotal = 0;
+
+  orders.forEach((row, idx) => {
+    const timeStr = new Date(row.orderDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const qty = Number(row.quantity || 0);
+    const unitPrice = Number(row.unitPrice || 0);
+    const lineTotal = Number(row.lineTotal || qty * unitPrice);
+
+    grandQty += qty;
+    grandTotal += lineTotal;
+
+    const contactStr = row.gstin
+      ? `${row.companyName} (GSTIN: ${row.gstin})`
+      : `${row.customerPhone !== 'N/A' ? row.customerPhone : ''} ${row.companyName !== 'Direct Consumer (B2C)' ? `[${row.companyName}]` : ''}`.trim() || 'N/A';
+
+    const r = worksheet.addRow([
+      timeStr,
+      row.orderNumber || 'N/A',
+      row.channel,
+      row.customerName,
+      row.customerEmail,
+      contactStr,
+      row.sku,
+      row.productName,
+      qty,
+      unitPrice,
+      lineTotal,
+      row.facility,
+      row.orderStatus,
+      row.paymentStatus,
+    ]);
+
+    r.height = 21;
+    r.font = { name: 'Arial', size: 9.5 };
+    const bgColor = idx % 2 === 0 ? 'FFF8FAFC' : 'FFFFFFFF';
+
+    r.eachCell((cell, col) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+      cell.border = {
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+
+      if (col === 1 || col === 2 || col === 3 || col === 7 || col === 13 || col === 14) {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      } else if (col === 9) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.numFmt = '#,##0';
+      } else if (col === 10 || col === 11) {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        cell.numFmt = '₹#,##0.00';
+      } else {
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      }
+    });
+  });
+
+  // Summary Row
+  const summaryRow = worksheet.addRow([
+    'TOTALS',
+    `Aggregated Across ${orders.length} Order Line Items`,
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    grandQty,
+    '',
+    grandTotal,
+    '',
+    '',
+    '',
+  ]);
+  summaryRow.height = 24;
+  summaryRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } };
+  summaryRow.eachCell((cell, colNumber) => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF0F172A' } },
+      bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+    };
+    if (colNumber === 9) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '#,##0';
+    } else if (colNumber === 11) {
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      cell.numFmt = '₹#,##0.00';
+    }
+  });
+
+  worksheet.columns = [
+    { width: 22 }, // Date & Time
+    { width: 18 }, // Order #
+    { width: 18 }, // Channel
+    { width: 24 }, // Customer Name
+    { width: 26 }, // Customer Email
+    { width: 28 }, // Phone / Company
+    { width: 16 }, // SKU
+    { width: 34 }, // Product Name
+    { width: 14 }, // Qty
+    { width: 16 }, // Unit Price
+    { width: 18 }, // Line Total
+    { width: 22 }, // Facility
+    { width: 16 }, // Status
+    { width: 16 }, // Payment Status
+  ];
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 };
 
 // ─── PDF Reports Generator ────────────────────────────────────────────────────

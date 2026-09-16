@@ -17,6 +17,7 @@ import type {
   ListStockTransfersQuery,
   CreateStockAdjustmentInput,
   ListStockMovementsQuery,
+  InventoryReportQuery,
   QuickStockInput,
 } from './inventory.schema';
 
@@ -542,6 +543,7 @@ export const updateInventoryItem = async (
     reorderLevel?: number;
     quantity?: number;
     reservedQuantity?: number;
+    notes?: string;
   },
   userId: string = 'system'
 ) => {
@@ -578,7 +580,9 @@ export const updateInventoryItem = async (
           newQty,
           referenceType: 'MANUAL_INVENTORY_UPDATE',
           referenceId: inv.id,
-          notes: `Stock Matrix adjustment (${prevQty} → ${newQty})`,
+          notes: input.notes?.trim()
+            ? `Stock Matrix adjustment: ${input.notes.trim()} (${prevQty} → ${newQty})`
+            : `Stock Matrix adjustment (${prevQty} → ${newQty})`,
           performedById: userId,
         },
       });
@@ -1905,9 +1909,101 @@ export const reverseStockMovement = async (id: string, userId: string = 'system'
   });
 };
 
-// ─── 8. Reports Data Extractors ──────────────────────────────────────────────
+// ─── 8. Reports Data Extractors & Date Horizon Engine ──────────────────────────
 
-export const getStockReportData = async (branchId?: string, lowStockOnly?: boolean) => {
+export interface ResolvedDateRange {
+  startDate?: Date;
+  endDate?: Date;
+  label: string;
+}
+
+export const resolveReportDateRange = (query: {
+  period?: 'day' | 'week' | 'month' | 'year' | 'range' | string;
+  date?: string;
+  month?: number | string;
+  year?: number | string;
+  from?: string;
+  to?: string;
+}): ResolvedDateRange => {
+  const period = query.period || (query.from || query.to ? 'range' : undefined);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  if (period === 'day' || (query.date && !query.period)) {
+    const dStr = query.date || now.toISOString().split('T')[0];
+    const startDate = new Date(`${dStr}T00:00:00.000`);
+    const endDate = new Date(`${dStr}T23:59:59.999`);
+    return {
+      startDate,
+      endDate,
+      label: `Day: ${dStr}`,
+    };
+  }
+
+  if (period === 'week') {
+    const target = query.date ? new Date(query.date) : now;
+    const dayOfWeek = target.getDay(); // 0 is Sunday, 1 is Monday
+    const diffToMonday = (dayOfWeek + 6) % 7;
+    const monday = new Date(target);
+    monday.setDate(target.getDate() - diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    return {
+      startDate: monday,
+      endDate: sunday,
+      label: `Week: ${monday.toLocaleDateString('en-IN')} - ${sunday.toLocaleDateString('en-IN')}`,
+    };
+  }
+
+  if (period === 'month' || query.month) {
+    const m = query.month ? Number(query.month) - 1 : now.getMonth();
+    const y = query.year ? Number(query.year) : currentYear;
+    const startDate = new Date(y, m, 1, 0, 0, 0, 0);
+    const endDate = new Date(y, m + 1, 0, 23, 59, 59, 999);
+    const monthName = startDate.toLocaleString('en-US', { month: 'long' });
+    return {
+      startDate,
+      endDate,
+      label: `Month: ${monthName} ${y}`,
+    };
+  }
+
+  if (period === 'year' || query.year) {
+    const y = query.year ? Number(query.year) : currentYear;
+    const startDate = new Date(y, 0, 1, 0, 0, 0, 0);
+    const endDate = new Date(y, 11, 31, 23, 59, 59, 999);
+    return {
+      startDate,
+      endDate,
+      label: `Year: ${y}`,
+    };
+  }
+
+  if (period === 'range' || query.from || query.to) {
+    const startDate = query.from
+      ? new Date(query.from.includes('T') ? query.from : `${query.from}T00:00:00.000`)
+      : undefined;
+    const endDate = query.to
+      ? new Date(query.to.includes('T') ? query.to : `${query.to}T23:59:59.999`)
+      : undefined;
+    return {
+      startDate,
+      endDate,
+      label: `Custom Range: ${startDate ? startDate.toLocaleDateString('en-IN') : 'Start'} to ${endDate ? endDate.toLocaleDateString('en-IN') : 'Present'}`,
+    };
+  }
+
+  return { label: 'All Records' };
+};
+
+export const getStockReportData = async (branchIdOrQuery?: string | InventoryReportQuery, lowStockOnly?: boolean) => {
+  const branchId = typeof branchIdOrQuery === 'string' ? branchIdOrQuery : branchIdOrQuery?.branchId;
+  const isLowStock = typeof branchIdOrQuery === 'string' ? lowStockOnly : (lowStockOnly || (branchIdOrQuery as any)?.lowStock === true || (branchIdOrQuery as any)?.lowStock === 'true');
+
   const where: Prisma.InventoryWhereInput = {
     ...(branchId && branchId !== 'ALL' && branchId !== 'PRC_STOCK' ? { branchId } : {}),
   };
@@ -1956,60 +2052,305 @@ export const getStockReportData = async (branchId?: string, lowStockOnly?: boole
     })) as any;
   }
 
-  if (lowStockOnly) {
+  if (isLowStock) {
     return items.filter((i) => (i.quantity || 0) <= (i.reorderLevel || i.product?.reorderLevel || 10));
   }
   return items;
 };
 
-export const getPurchasesReportData = async (branchId?: string, supplierId?: string, from?: string, to?: string) => {
+export const getPurchasesReportData = async (
+  branchIdOrQuery?: string | Partial<InventoryReportQuery>,
+  supplierId?: string,
+  from?: string,
+  to?: string
+) => {
+  const query: Partial<InventoryReportQuery> = typeof branchIdOrQuery === 'object' && branchIdOrQuery !== null
+    ? branchIdOrQuery
+    : {
+        branchId: branchIdOrQuery,
+        supplierId,
+        from,
+        to,
+        channel: 'all',
+        format: 'xlsx',
+      };
+
+  const { startDate, endDate, label } = resolveReportDateRange(query);
   const where: Prisma.PurchaseWhereInput = {
-    ...(branchId ? { branchId } : {}),
-    ...(supplierId ? { supplierId } : {}),
-    ...(from || to
+    ...(query.branchId && query.branchId !== 'ALL' && query.branchId !== 'PRC_STOCK' ? { branchId: query.branchId } : {}),
+    ...(query.supplierId && query.supplierId !== 'ALL' ? { supplierId: query.supplierId } : {}),
+    ...(startDate || endDate
       ? {
           purchaseDate: {
-            ...(from ? { gte: new Date(from) } : {}),
-            ...(to ? { lte: new Date(to) } : {}),
+            ...(startDate ? { gte: startDate } : {}),
+            ...(endDate ? { lte: endDate } : {}),
           },
         }
       : {}),
   };
 
-  return readPrisma.purchase.findMany({
+  const purchases = await readPrisma.purchase.findMany({
     where,
     orderBy: { purchaseDate: 'desc' },
     include: {
       supplier: true,
       branch: true,
-      items: { include: { product: true } },
+      items: {
+        include: {
+          product: { select: { id: true, name: true, sku: true, price: true } },
+        },
+      },
     },
   });
+
+  // Enrich buyer staff information
+  const userIds = Array.from(new Set(purchases.map((p) => p.createdById).filter((id): id is string => Boolean(id) && id !== 'system')));
+  const users = userIds.length > 0
+    ? await readPrisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const enrichedPurchases = purchases.map((p) => {
+    const buyer = userMap.get(p.createdById);
+    const buyerName = buyer ? `${buyer.firstName} ${buyer.lastName}`.trim() : 'PRC Staff Buyer';
+    return {
+      ...p,
+      periodLabel: label,
+      buyerUser: p.createdById === 'system'
+        ? { name: 'System / Procurement Bot', email: 'system@prchardware.com' }
+        : { name: buyerName, email: buyer?.email || 'procurement@prchardware.com' },
+    };
+  });
+
+  return enrichedPurchases;
 };
 
-export const getMovementsReportData = async (branchId?: string, productId?: string, from?: string, to?: string) => {
+export const getMovementsReportData = async (
+  branchIdOrQuery?: string | Partial<InventoryReportQuery>,
+  productId?: string,
+  from?: string,
+  to?: string
+) => {
+  const query: Partial<InventoryReportQuery> = typeof branchIdOrQuery === 'object' && branchIdOrQuery !== null
+    ? branchIdOrQuery
+    : {
+        branchId: branchIdOrQuery,
+        productId,
+        from,
+        to,
+        channel: 'all',
+        format: 'xlsx',
+      };
+
+  const { startDate, endDate, label } = resolveReportDateRange(query);
   const where: Prisma.StockMovementWhereInput = {
-    ...(branchId ? { branchId } : {}),
-    ...(productId ? { productId } : {}),
-    ...(from || to
+    ...(query.branchId && query.branchId !== 'ALL' && query.branchId !== 'PRC_STOCK' ? { branchId: query.branchId } : {}),
+    ...(query.productId ? { productId: query.productId } : {}),
+    ...(startDate || endDate
       ? {
           createdAt: {
-            ...(from ? { gte: new Date(from) } : {}),
-            ...(to ? { lte: new Date(to) } : {}),
+            ...(startDate ? { gte: startDate } : {}),
+            ...(endDate ? { lte: endDate } : {}),
           },
         }
       : {}),
   };
 
-  return readPrisma.stockMovement.findMany({
+  const movements = await readPrisma.stockMovement.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     include: {
-      product: { select: { name: true, sku: true } },
-      branch: { select: { name: true, code: true } },
+      product: { select: { id: true, name: true, sku: true } },
+      branch: { select: { id: true, name: true, code: true, city: true } },
     },
   });
+
+  // Enrich actor staff information
+  const userIds = Array.from(new Set(movements.map((m) => m.performedById).filter((id): id is string => Boolean(id) && id !== 'system')));
+  const users = userIds.length > 0
+    ? await readPrisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const enrichedMovements = movements.map((m) => {
+    const actor = userMap.get(m.performedById);
+    const actorName = actor ? `${actor.firstName} ${actor.lastName}`.trim() : 'Admin Staff Member';
+    return {
+      ...m,
+      periodLabel: label,
+      actorUser: m.performedById === 'system'
+        ? { name: 'System / Automated Sync', email: 'system@prchardware.com' }
+        : { name: actorName, email: actor?.email || 'admin@prchardware.com' },
+    };
+  });
+
+  return enrichedMovements;
 };
+
+export interface OrderConsumptionItemRow {
+  orderId: string;
+  orderNumber: string;
+  orderDate: Date;
+  channel: 'B2C Storefront' | 'B2B Wholesale';
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  companyName: string;
+  gstin?: string;
+  sku: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  facility: string;
+  orderStatus: string;
+  paymentStatus: string;
+  periodLabel?: string;
+}
+
+export const getOrderConsumptionReportData = async (query: Partial<InventoryReportQuery> = {}): Promise<OrderConsumptionItemRow[]> => {
+  const { startDate, endDate, label } = resolveReportDateRange(query);
+  const channel = query.channel || 'all';
+
+  const dateFilter = startDate || endDate
+    ? {
+        ...(startDate ? { gte: startDate } : {}),
+        ...(endDate ? { lte: endDate } : {}),
+      }
+    : undefined;
+
+  const rows: OrderConsumptionItemRow[] = [];
+
+  // 1. Fetch B2C Orders (Storefront)
+  if (channel === 'all' || channel === 'b2c') {
+    try {
+      const b2cOrders = await readPrisma.order.findMany({
+        where: {
+          ...(dateFilter ? { createdAt: dateFilter } : {}),
+          ...(query.branchId && query.branchId !== 'ALL' && query.branchId !== 'PRC_STOCK'
+            ? { allocatedWarehouseId: query.branchId }
+            : {}),
+        },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, companyName: true } },
+          allocatedWarehouse: { select: { id: true, name: true, code: true } },
+          items: {
+            include: {
+              product: { select: { id: true, name: true, sku: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      for (const order of b2cOrders) {
+        const customerName = order.user
+          ? `${order.user.firstName || ''} ${order.user.lastName || ''}`.trim() || 'Storefront Customer'
+          : 'Storefront Customer';
+        const customerEmail = order.user?.email || 'N/A';
+        const customerPhone = order.user?.phone || 'N/A';
+        const companyName = order.user?.companyName || 'Direct Consumer (B2C)';
+        const facility = order.allocatedWarehouse?.name || 'Delhi Central Depot';
+
+        for (const item of order.items) {
+          rows.push({
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            orderDate: order.createdAt,
+            channel: 'B2C Storefront',
+            customerName,
+            customerEmail,
+            customerPhone,
+            companyName,
+            sku: item.sku || item.product?.sku || 'N/A',
+            productName: item.productName || item.product?.name || 'Catalog Item',
+            quantity: Number(item.quantity || 0),
+            unitPrice: Number(item.price || 0),
+            lineTotal: Number(item.total || Number(item.quantity || 0) * Number(item.price || 0)),
+            facility,
+            orderStatus: String(order.status),
+            paymentStatus: String(order.paymentStatus),
+            periodLabel: label,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.warn('[getOrderConsumptionReportData] B2C query warning:', err?.message || err);
+    }
+  }
+
+  // 2. Fetch B2B Orders (Wholesale / Contractor Portal)
+  if (channel === 'all' || channel === 'b2b') {
+    try {
+      const b2bOrders = await readPrisma.b2bOrder.findMany({
+        where: {
+          ...(dateFilter ? { createdAt: dateFilter } : {}),
+          ...(query.branchId && query.branchId !== 'ALL' && query.branchId !== 'PRC_STOCK'
+            ? { branchId: query.branchId }
+            : {}),
+        },
+        include: {
+          customer: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, companyName: true, gstin: true } },
+          branch: { select: { id: true, name: true, code: true } },
+          items: {
+            include: {
+              product: { select: { id: true, name: true, sku: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      for (const order of b2bOrders) {
+        const customerName = order.customer
+          ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim() || 'B2B Client'
+          : 'B2B Client';
+        const customerEmail = order.customer?.email || 'N/A';
+        const customerPhone = order.customer?.phone || 'N/A';
+        const companyName = order.customer?.companyName || customerName || 'B2B Enterprise';
+        const gstin = order.customer?.gstin || undefined;
+        const facility = order.branch?.name || 'Delhi Central Depot';
+
+        for (const item of order.items) {
+          rows.push({
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            orderDate: order.createdAt,
+            channel: 'B2B Wholesale',
+            customerName,
+            customerEmail,
+            customerPhone,
+            companyName,
+            gstin,
+            sku: item.sku || item.product?.sku || 'N/A',
+            productName: item.product?.name || item.sku,
+            quantity: Number(item.quantity || 0),
+            unitPrice: Number(item.unitPrice || 0),
+            lineTotal: Number(item.lineTotal || Number(item.quantity || 0) * Number(item.unitPrice || 0)),
+            facility,
+            orderStatus: String(order.status),
+            paymentStatus: String(order.paymentStatus),
+            periodLabel: label,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.warn('[getOrderConsumptionReportData] B2B query warning:', err?.message || err);
+    }
+  }
+
+  // Sort rows chronologically descending by order date
+  rows.sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
+
+  return rows;
+};
+
 
 // ─── 9. Sales & Restock Engine (Atomic Concurrency-Guarded Mutations) ────────
 

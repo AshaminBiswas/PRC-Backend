@@ -435,12 +435,13 @@ export const listStockMovements = async (req: Request, res: Response, next: Next
 
 export const exportStockReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { branchId, lowStock, format = 'xlsx' } = req.query as any;
+    const { branchId, lowStock, format = 'xlsx', period, date, month, year, from, to } = req.query as any;
     const isLowStock = lowStock === 'true' || lowStock === true;
     const data = await inventoryService.getStockReportData(branchId, isLowStock);
+    const { label: periodLabel } = inventoryService.resolveReportDateRange({ period, date, month, year, from, to });
 
     let branchName = 'All Branches';
-    if (branchId) {
+    if (branchId && branchId !== 'ALL' && branchId !== 'PRC_STOCK') {
       const b = await inventoryService.getBranchById(branchId);
       if (b) branchName = b.name;
     }
@@ -453,7 +454,7 @@ export const exportStockReport = async (req: Request, res: Response, next: NextF
       return;
     }
 
-    const buffer = await exportService.generateStockExcel(data, branchName);
+    const buffer = await exportService.generateStockExcel(data, branchName, periodLabel);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=Stock-Report-${Date.now()}.xlsx`);
     res.send(buffer);
@@ -464,10 +465,10 @@ export const exportStockReport = async (req: Request, res: Response, next: NextF
 
 export const exportPurchasesReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { branchId, supplierId, from, to } = req.query as any;
-    const purchases = await inventoryService.getPurchasesReportData(branchId, supplierId, from, to);
+    const purchases = await inventoryService.getPurchasesReportData(req.query as any);
+    const { label: periodLabel } = inventoryService.resolveReportDateRange(req.query as any);
 
-    const buffer = await exportService.generatePurchasesExcel(purchases);
+    const buffer = await exportService.generatePurchasesExcel(purchases, periodLabel);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=Purchases-Ledger-${Date.now()}.xlsx`);
     res.send(buffer);
@@ -478,12 +479,26 @@ export const exportPurchasesReport = async (req: Request, res: Response, next: N
 
 export const exportMovementsReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { branchId, productId, from, to } = req.query as any;
-    const movements = await inventoryService.getMovementsReportData(branchId, productId, from, to);
+    const movements = await inventoryService.getMovementsReportData(req.query as any);
+    const { label: periodLabel } = inventoryService.resolveReportDateRange(req.query as any);
 
-    const buffer = await exportService.generateMovementsExcel(movements);
+    const buffer = await exportService.generateMovementsExcel(movements, periodLabel);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=Stock-Movements-Ledger-${Date.now()}.xlsx`);
+    res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const exportOrdersConsumptionReport = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const orders = await inventoryService.getOrderConsumptionReportData(req.query as any);
+    const { label: periodLabel } = inventoryService.resolveReportDateRange(req.query as any);
+
+    const buffer = await exportService.generateOrdersConsumptionExcel(orders, periodLabel);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=Orders-Consumption-Ledger-${Date.now()}.xlsx`);
     res.send(buffer);
   } catch (error) {
     next(error);

@@ -379,3 +379,11 @@ inventoryReportsRouter.get(
     return controller.exportStockReport(req, res, next);
   }
 );
+
+inventoryReportsRouter.get(
+  '/orders',
+  authenticate,
+  authorize('inventory.reports.read', 'reports.export', 'reports.read'),
+  validate(InventoryReportQuerySchema, 'query'),
+  controller.exportOrdersConsumptionReport
+);

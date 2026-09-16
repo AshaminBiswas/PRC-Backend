@@ -175,9 +175,21 @@ export const InventoryReportQuerySchema = z.object({
   branchId: z.string().optional(),
   supplierId: z.string().optional(),
   productId: z.string().optional(),
+  period: z.enum(['day', 'week', 'month', 'year', 'range']).optional(),
+  date: z.string().optional(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
   from: z.string().optional(),
   to: z.string().optional(),
-  format: z.enum(['xlsx', 'pdf', 'json']).default('xlsx'),
+  channel: z.enum(['all', 'b2c', 'b2b']).optional().default('all'),
+  format: z.enum(['xlsx', 'pdf', 'json']).optional().default('xlsx'),
+});
+
+export const UpdateInventoryItemSchema = z.object({
+  quantity: z.number().int().min(0).optional(),
+  reorderLevel: z.number().int().min(0).optional(),
+  reservedQuantity: z.number().int().min(0).optional(),
+  notes: z.string().optional(),
 });
 
 // ─── Manual / POS Sales (Stock-Out) ──────────────────────────────────────────
@@ -220,4 +232,5 @@ export type InventoryReportQuery = z.infer<typeof InventoryReportQuerySchema>;
 export type CreateSaleItemInput = z.infer<typeof CreateSaleItemSchema>;
 export type CreateSaleInput = z.infer<typeof CreateSaleSchema>;
 export type QuickStockInput = z.infer<typeof QuickStockSchema>;
+export type UpdateInventoryItemInput = z.infer<typeof UpdateInventoryItemSchema>;
 
