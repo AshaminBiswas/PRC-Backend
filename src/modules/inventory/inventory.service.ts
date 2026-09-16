@@ -592,80 +592,162 @@ export const updateInventoryItem = async (
 
 export const deleteInventoryItem = async (id: string, userId: string = 'system') => {
   return prisma.$transaction(async (tx) => {
-    let inv = await tx.inventory.findUnique({
-      where: { id },
-      include: { product: true, branch: true },
-    });
+    let prodId: string | null = null;
+    let invRecord: any = null;
 
-    if (!inv && (id.startsWith('inv-') || id.length > 10)) {
-      const prodId = id.startsWith('inv-') ? id.slice(4) : id;
-      inv = await tx.inventory.findFirst({
-        where: { productId: prodId },
+    // 1. Identify by Inventory ID
+    if (!id.startsWith('inv-')) {
+      invRecord = await tx.inventory.findUnique({
+        where: { id },
         include: { product: true, branch: true },
       });
-
-      if (!inv) {
-        // Direct product stock write-off if no explicit inventory table entry exists
-        const prod = await tx.product.findUnique({ where: { id: prodId } });
-        if (prod) {
-          if (prod.stock > 0) {
-            const defaultBranch = await tx.branch.findFirst({ where: { deletedAt: null, isActive: true } });
-            if (defaultBranch) {
-              await tx.stockMovement.create({
-                data: {
-                  productId: prod.id,
-                  branchId: defaultBranch.id,
-                  type: StockMovementType.ADJUSTMENT_OUT,
-                  quantity: prod.stock,
-                  previousQty: prod.stock,
-                  newQty: 0,
-                  referenceType: 'FACILITY_DEALLOCATION',
-                  referenceId: prod.id,
-                  notes: `Deallocated SKU from catalog balance`,
-                  performedById: userId,
-                },
-              });
-            }
-          }
-          const updatedProd = await tx.product.update({
-            where: { id: prodId },
-            data: { stock: 0 },
-          });
-          return {
-            id,
-            productId: prodId,
-            quantity: 0,
-            product: updatedProd,
-          };
-        }
+      if (invRecord) {
+        prodId = invRecord.productId;
       }
     }
 
-    if (!inv) throw new AppError('NOT_FOUND', 'Inventory record not found', 404);
-
-    if (inv.quantity > 0) {
-      await tx.stockMovement.create({
-        data: {
-          productId: inv.productId,
-          branchId: inv.branchId,
-          type: StockMovementType.ADJUSTMENT_OUT,
-          quantity: inv.quantity,
-          previousQty: inv.quantity,
-          newQty: 0,
-          referenceType: 'FACILITY_DEALLOCATION',
-          referenceId: inv.id,
-          notes: `Deallocated SKU from branch ${inv.branch.name}`,
-          performedById: userId,
+    // 2. Identify if prefixed with inv- or if ID is a product ID
+    if (!prodId) {
+      const candidateProdId = id.startsWith('inv-') ? id.slice(4) : id;
+      const foundProduct = await tx.product.findFirst({
+        where: {
+          OR: [
+            { id: candidateProdId },
+            { id },
+            { sku: id },
+            { sku: candidateProdId },
+          ],
         },
       });
+
+      if (foundProduct) {
+        prodId = foundProduct.id;
+      }
     }
 
-    const deleted = await tx.inventory.delete({
-      where: { id: inv.id },
+    // 3. Fallback: Check if ID points to a variant
+    if (!prodId) {
+      const candidateVarId = id.startsWith('var-') ? id.slice(4) : id;
+      const foundVariant = await tx.productVariant.findFirst({
+        where: {
+          OR: [
+            { id },
+            { id: candidateVarId },
+            { sku: id },
+            { sku: candidateVarId },
+          ],
+        },
+      });
+      if (foundVariant) {
+        prodId = foundVariant.productId;
+      }
+    }
+
+    // 4. Fallback: Search inventory table by productId directly
+    if (!prodId) {
+      const invByProd = await tx.inventory.findFirst({
+        where: { productId: id },
+      });
+      if (invByProd) {
+        prodId = invByProd.productId;
+      }
+    }
+
+    if (!prodId) {
+      throw new AppError('NOT_FOUND', `Stock item or product with ID '${id}' not found`, 404);
+    }
+
+    // Retrieve full product record
+    const targetProduct = await tx.product.findUnique({
+      where: { id: prodId },
+      include: {
+        inventories: { include: { branch: true } },
+      },
     });
 
-    await syncProductStock(inv.productId, tx);
-    return deleted;
+    if (!targetProduct) {
+      // If product doesn't exist, clean up any dangling inventory record
+      if (invRecord) {
+        await tx.inventory.delete({ where: { id: invRecord.id } });
+        return { success: true, message: 'Dangling inventory record deleted', id };
+      }
+      throw new AppError('NOT_FOUND', 'Product not found', 404);
+    }
+
+    // 5. Write off all warehouse inventory units and record audit trail
+    const existingInvs = targetProduct.inventories || [];
+    for (const inv of existingInvs) {
+      if (inv.quantity > 0) {
+        await tx.stockMovement.create({
+          data: {
+            productId: targetProduct.id,
+            branchId: inv.branchId,
+            type: StockMovementType.ADJUSTMENT_OUT,
+            quantity: inv.quantity,
+            previousQty: inv.quantity,
+            newQty: 0,
+            referenceType: 'FACILITY_DEALLOCATION',
+            referenceId: inv.id,
+            notes: `Auto write-off: SKU '${targetProduct.sku}' deleted from stock list & catalog`,
+            performedById: userId,
+          },
+        });
+      }
+    }
+
+    // If product had standalone stock with no inventory rows
+    if (existingInvs.length === 0 && targetProduct.stock > 0) {
+      const defaultBranch = await tx.branch.findFirst({ where: { deletedAt: null, isActive: true } });
+      if (defaultBranch) {
+        await tx.stockMovement.create({
+          data: {
+            productId: targetProduct.id,
+            branchId: defaultBranch.id,
+            type: StockMovementType.ADJUSTMENT_OUT,
+            quantity: targetProduct.stock,
+            previousQty: targetProduct.stock,
+            newQty: 0,
+            referenceType: 'FACILITY_DEALLOCATION',
+            referenceId: targetProduct.id,
+            notes: `Auto write-off: SKU '${targetProduct.sku}' standalone stock cleared`,
+            performedById: userId,
+          },
+        });
+      }
+    }
+
+    // 6. Delete all warehouse inventory allocation rows for this product
+    await tx.inventory.deleteMany({
+      where: { productId: targetProduct.id },
+    });
+
+    // 7. Soft-delete the product from the catalog so it auto-deletes from the product listing page
+    const updatedProduct = await tx.product.update({
+      where: { id: targetProduct.id },
+      data: {
+        deletedAt: new Date(),
+        status: 'INACTIVE',
+        isVisible: false,
+        stock: 0,
+      },
+    });
+
+    // 8. Mark any variants as inactive and out of stock
+    await tx.productVariant.updateMany({
+      where: { productId: targetProduct.id },
+      data: {
+        isAvailable: false,
+        stock: 0,
+      },
+    });
+
+    return {
+      success: true,
+      message: `SKU '${targetProduct.sku}' deleted from stock and product catalog`,
+      id,
+      productId: targetProduct.id,
+      product: updatedProduct,
+    };
   });
 };
 
