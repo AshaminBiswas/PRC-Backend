@@ -23,4 +23,7 @@ barcodeRouter.get('/scan', BarcodeController.scanLookup);
 // ─── Order Dispatch & Verification ───────────────────────────────────────────
 barcodeRouter.post('/dispatch', authenticate, BarcodeController.dispatchScan);
 
+// ─── 2-Stage Fulfillment Lifecycle Scan (Packing vs Received) ─────────────────
+barcodeRouter.post('/stage-scan', authenticate, BarcodeController.executeStageScan);
+
 export default barcodeRouter;

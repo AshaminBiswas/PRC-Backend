@@ -109,4 +109,46 @@ export class BarcodeController {
       next(error);
     }
   }
+
+  /**
+   * POST /api/v1/barcode/stage-scan
+   * Executes 2-Stage Fulfillment Scan (PACKING or RECEIVED) with Single-Device Anti-Double-Scan protection
+   */
+  static async executeStageScan(req: Request, res: Response, next: NextFunction) {
+    try {
+      const {
+        sku,
+        stage,
+        trackingCode,
+        orderId,
+        orderItemId,
+        branchId,
+        deviceId,
+        deviceName,
+        notes,
+      } = req.body;
+
+      const user = (req as any).user;
+      const userId = user?.id;
+      const userName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.name;
+
+      const result = await BarcodeService.executeStageScan({
+        sku,
+        stage,
+        trackingCode,
+        orderId,
+        orderItemId,
+        branchId,
+        deviceId,
+        deviceName,
+        userId,
+        userName,
+        notes,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
 }

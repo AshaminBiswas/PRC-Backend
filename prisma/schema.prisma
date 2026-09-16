@@ -3050,7 +3050,37 @@ model B2bOrderSequence {
   @@map("b2b_order_sequences")
 }
 
+model ProductScanLifecycle {
+  id               String    @id @default(uuid())
+  sku              String
+  trackingCode     String    @map("tracking_code")
+  orderId          String?   @map("order_id")
+  orderItemId      String?   @map("order_item_id")
+  status           String    @default("PENDING_PACK") // PENDING_PACK, PACKED, RECEIVED
+  scanCount        Int       @default(0) @map("scan_count") // Max 2!
+  
+  // Stage 1: Packing
+  packedAt         DateTime? @map("packed_at")
+  packedBy         String?   @map("packed_by")
+  packedByName     String?   @map("packed_by_name")
+  packedDeviceId   String?   @map("packed_device_id")
+  packedBranchId   String?   @map("packed_branch_id")
+  packedNotes      String?   @map("packed_notes")
 
+  // Stage 2: Receiving
+  receivedAt       DateTime? @map("received_at")
+  receivedBy       String?   @map("received_by")
+  receivedByName   String?   @map("received_by_name")
+  receivedDeviceId String?   @map("received_device_id")
+  receivedBranchId String?   @map("received_branch_id")
+  receivedNotes    String?   @map("received_notes")
 
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at")
 
-
+  @@index([sku])
+  @@index([trackingCode])
+  @@index([status])
+  @@index([orderId])
+  @@map("product_scan_lifecycles")
+}

@@ -37,6 +37,35 @@ const STATEMENTS = [
   `ALTER TABLE "expense_float_top_ups" ADD COLUMN IF NOT EXISTS "receipt_attachment" TEXT;`,
   `ALTER TABLE "expense_entries" ADD COLUMN IF NOT EXISTS "paid_by" TEXT;`,
 
+  // ─── PRODUCT SCAN LIFECYCLES (PACKING & RECEIVING 2-STAGE VERIFICATION) ───
+  `CREATE TABLE IF NOT EXISTS "product_scan_lifecycles" (
+    "id"                  TEXT NOT NULL PRIMARY KEY,
+    "sku"                 TEXT NOT NULL,
+    "tracking_code"       TEXT NOT NULL,
+    "order_id"            TEXT,
+    "order_item_id"       TEXT,
+    "status"              TEXT NOT NULL DEFAULT 'PENDING_PACK',
+    "scan_count"          INTEGER NOT NULL DEFAULT 0,
+    "packed_at"           TIMESTAMP(3),
+    "packed_by"           TEXT,
+    "packed_by_name"      TEXT,
+    "packed_device_id"    TEXT,
+    "packed_branch_id"    TEXT,
+    "packed_notes"        TEXT,
+    "received_at"         TIMESTAMP(3),
+    "received_by"         TEXT,
+    "received_by_name"    TEXT,
+    "received_device_id"  TEXT,
+    "received_branch_id"  TEXT,
+    "received_notes"      TEXT,
+    "created_at"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"          TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );`,
+  `CREATE INDEX IF NOT EXISTS "product_scan_lifecycles_sku_idx" ON "product_scan_lifecycles"("sku");`,
+  `CREATE INDEX IF NOT EXISTS "product_scan_lifecycles_tracking_code_idx" ON "product_scan_lifecycles"("tracking_code");`,
+  `CREATE INDEX IF NOT EXISTS "product_scan_lifecycles_status_idx" ON "product_scan_lifecycles"("status");`,
+  `CREATE INDEX IF NOT EXISTS "product_scan_lifecycles_order_id_idx" ON "product_scan_lifecycles"("order_id");`,
+
   // ─── DAILY CASH EXPENSE TRACKER MODULE TABLES & TYPES ───
   `DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExpensePaymentMode') THEN

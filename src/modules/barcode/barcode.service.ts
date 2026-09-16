@@ -93,6 +93,30 @@ export interface BarcodeScanResponse {
     notes?: string | null;
     createdAt: string;
   }>;
+  lifecycle: {
+    id?: string;
+    status: 'PENDING_PACK' | 'PACKED' | 'RECEIVED';
+    scanCount: number;
+    canPack: boolean;
+    canReceive: boolean;
+    isCompleted: boolean;
+    stage1: {
+      packedAt: string;
+      packedBy?: string | null;
+      packedByName?: string | null;
+      packedDeviceId?: string | null;
+      packedBranchId?: string | null;
+      notes?: string | null;
+    } | null;
+    stage2: {
+      receivedAt: string;
+      receivedBy?: string | null;
+      receivedByName?: string | null;
+      receivedDeviceId?: string | null;
+      receivedBranchId?: string | null;
+      notes?: string | null;
+    } | null;
+  };
   barcodeUrl: string;
   qrCodeUrl: string;
   labelPdfUrl: string;
@@ -428,6 +452,41 @@ export class BarcodeService {
       createdAt: m.createdAt.toISOString(),
     }));
 
+    // Fetch latest 2-stage lifecycle record for this SKU
+    const latestLifecycle = await prisma.productScanLifecycle.findFirst({
+      where: { sku: product.sku },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const lifecycle = {
+      id: latestLifecycle?.id,
+      status: ((latestLifecycle?.status as any) || 'PENDING_PACK') as 'PENDING_PACK' | 'PACKED' | 'RECEIVED',
+      scanCount: latestLifecycle?.scanCount || 0,
+      canPack: !latestLifecycle || latestLifecycle.scanCount === 0,
+      canReceive: latestLifecycle?.scanCount === 1 && latestLifecycle.status === 'PACKED',
+      isCompleted: (latestLifecycle?.scanCount || 0) >= 2,
+      stage1: latestLifecycle?.packedAt
+        ? {
+            packedAt: latestLifecycle.packedAt.toISOString(),
+            packedBy: latestLifecycle.packedBy,
+            packedByName: latestLifecycle.packedByName,
+            packedDeviceId: latestLifecycle.packedDeviceId,
+            packedBranchId: latestLifecycle.packedBranchId,
+            notes: latestLifecycle.packedNotes,
+          }
+        : null,
+      stage2: latestLifecycle?.receivedAt
+        ? {
+            receivedAt: latestLifecycle.receivedAt.toISOString(),
+            receivedBy: latestLifecycle.receivedBy,
+            receivedByName: latestLifecycle.receivedByName,
+            receivedDeviceId: latestLifecycle.receivedDeviceId,
+            receivedBranchId: latestLifecycle.receivedBranchId,
+            notes: latestLifecycle.receivedNotes,
+          }
+        : null,
+    };
+
     return {
       found: true,
       product: {
@@ -465,6 +524,7 @@ export class BarcodeService {
       },
       dispatchOrders,
       recentMovements,
+      lifecycle,
       barcodeUrl: `/api/v1/barcode/${encodeURIComponent(product.sku)}/image`,
       qrCodeUrl: `/api/v1/barcode/${encodeURIComponent(product.sku)}/qr`,
       labelPdfUrl: `/api/v1/barcode/${encodeURIComponent(product.sku)}/label`,
@@ -582,5 +642,207 @@ export class BarcodeService {
         remainingBranchStock: updatedInv.quantity,
       };
     });
+  }
+
+  /**
+   * Executes a 2-Stage Lifecycle Scan (PACKING or RECEIVED) with Single-Device Anti-Double-Scan protection.
+   * Total allowed scans = strictly 2 (1x Packing + 1x Receiving).
+   */
+  static async executeStageScan(data: {
+    sku: string;
+    stage: 'PACKING' | 'RECEIVED';
+    trackingCode?: string;
+    orderId?: string;
+    orderItemId?: string;
+    branchId?: string;
+    deviceId: string;
+    deviceName?: string;
+    userId?: string;
+    userName?: string;
+    notes?: string;
+  }) {
+    const {
+      sku,
+      stage,
+      trackingCode,
+      orderId,
+      orderItemId,
+      branchId,
+      deviceId,
+      deviceName,
+      userId,
+      userName,
+      notes,
+    } = data;
+
+    if (!sku || !sku.trim()) {
+      throw new AppError('SKU_REQUIRED', 'SKU is required for stage scan', 400);
+    }
+    if (!deviceId || !deviceId.trim()) {
+      throw new AppError('DEVICE_REQUIRED', 'Device ID is required to ensure single-device scan enforcement', 400);
+    }
+    if (stage !== 'PACKING' && stage !== 'RECEIVED') {
+      throw new AppError('INVALID_STAGE', 'Scan stage must be either PACKING or RECEIVED', 400);
+    }
+
+    const cleanSku = sku.trim().toUpperCase();
+    const effectiveTrackingCode = trackingCode?.trim() || `${cleanSku}-${orderId || 'PARCEL'}`;
+
+    // 1. Verify product exists
+    const product = await prisma.product.findUnique({
+      where: { sku: cleanSku },
+    });
+    if (!product) {
+      throw new AppError('NOT_FOUND', `Product with SKU "${cleanSku}" not found`, 404);
+    }
+
+    // 2. Fetch active lifecycle record
+    let lifecycle = await prisma.productScanLifecycle.findFirst({
+      where: orderId
+        ? { sku: cleanSku, orderId }
+        : { sku: cleanSku, trackingCode: effectiveTrackingCode },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const now = new Date();
+
+    // 3. Handle Stage 1: PACKING (Outbound Dispatch)
+    if (stage === 'PACKING') {
+      if (lifecycle && (lifecycle.status === 'PACKED' || lifecycle.packedAt)) {
+        const timeStr = lifecycle.packedAt ? new Date(lifecycle.packedAt).toLocaleString('en-IN') : 'earlier';
+        const who = lifecycle.packedByName || lifecycle.packedDeviceId || 'another operator';
+        throw new AppError(
+          'ALREADY_PACKED',
+          `Item ${cleanSku} is ALREADY PACKED (${timeStr} by ${who}). A product can only be packed once!`,
+          409
+        );
+      }
+      if (lifecycle && lifecycle.scanCount >= 2) {
+        throw new AppError(
+          'LIFECYCLE_COMPLETED',
+          `Maximum 2 scans already reached for SKU ${cleanSku}. Item has already completed both packing and receiving!`,
+          409
+        );
+      }
+
+      // Create or update lifecycle record
+      if (!lifecycle) {
+        lifecycle = await prisma.productScanLifecycle.create({
+          data: {
+            sku: cleanSku,
+            trackingCode: effectiveTrackingCode,
+            orderId,
+            orderItemId,
+            status: 'PACKED',
+            scanCount: 1,
+            packedAt: now,
+            packedBy: userId,
+            packedByName: userName || 'Warehouse Staff',
+            packedDeviceId: deviceId,
+            packedBranchId: branchId,
+            packedNotes: notes || `Packed via Device ${deviceName || deviceId}`,
+          },
+        });
+      } else {
+        lifecycle = await prisma.productScanLifecycle.update({
+          where: { id: lifecycle.id },
+          data: {
+            status: 'PACKED',
+            scanCount: 1,
+            packedAt: now,
+            packedBy: userId,
+            packedByName: userName || 'Warehouse Staff',
+            packedDeviceId: deviceId,
+            packedBranchId: branchId,
+            packedNotes: notes || `Packed via Device ${deviceName || deviceId}`,
+          },
+        });
+      }
+
+      // If tied to an order with a specified branch, deduct physical stock
+      if (orderId && branchId) {
+        try {
+          await this.verifyAndDispatchOrder({
+            orderId,
+            orderItemId,
+            sku: cleanSku,
+            quantity: 1,
+            branchId,
+            staffUserId: userId,
+            notes: `Dispatched & Packed via Device ${deviceName || deviceId}`,
+          });
+        } catch (e: any) {
+          console.warn('[BarcodeService] Order dispatch notice on pack:', e?.message);
+        }
+      }
+
+      return {
+        success: true,
+        stage: 'PACKING',
+        status: 'PACKED',
+        scanCount: 1,
+        message: `[Scan 1/2] Packing scan confirmed for ${cleanSku}. Ready for transport.`,
+        lifecycle,
+      };
+    }
+
+    // 4. Handle Stage 2: RECEIVED (Inbound Delivery)
+    if (stage === 'RECEIVED') {
+      if (!lifecycle || !lifecycle.packedAt || lifecycle.status === 'PENDING_PACK') {
+        throw new AppError(
+          'NOT_YET_PACKED',
+          `Cannot Receive: Product ${cleanSku} has NOT been packed yet! Step 1 (Packing Scan) must be completed before receiving.`,
+          400
+        );
+      }
+      if (lifecycle.status === 'RECEIVED' || lifecycle.receivedAt || lifecycle.scanCount >= 2) {
+        const timeStr = lifecycle.receivedAt ? new Date(lifecycle.receivedAt).toLocaleString('en-IN') : 'earlier';
+        const who = lifecycle.receivedByName || lifecycle.receivedDeviceId || 'destination receiver';
+        throw new AppError(
+          'MAX_SCANS_REACHED',
+          `⛔ MAXIMUM 2 SCANS REACHED: Item ${cleanSku} was ALREADY RECEIVED (${timeStr} by ${who}). Both fulfillment lifecycle stages are complete. No further scans allowed!`,
+          409
+        );
+      }
+
+      // Update lifecycle to RECEIVED (Terminal State!)
+      lifecycle = await prisma.productScanLifecycle.update({
+        where: { id: lifecycle.id },
+        data: {
+          status: 'RECEIVED',
+          scanCount: 2,
+          receivedAt: now,
+          receivedBy: userId,
+          receivedByName: userName || 'Receiving Staff',
+          receivedDeviceId: deviceId,
+          receivedBranchId: branchId,
+          receivedNotes: notes || `Received safely via Device ${deviceName || deviceId}`,
+        },
+      });
+
+      // If linked to an order, advance order status
+      if (orderId) {
+        try {
+          await prisma.order.update({
+            where: { id: orderId },
+            data: { status: 'DELIVERED' },
+          });
+        } catch (e: any) {
+          console.warn('[BarcodeService] Order update on receive:', e?.message);
+        }
+      }
+
+      return {
+        success: true,
+        stage: 'RECEIVED',
+        status: 'RECEIVED',
+        scanCount: 2,
+        isCompleted: true,
+        message: `[Scan 2/2 Complete] Receiving confirmed for ${cleanSku}! Product lifecycle successfully fulfilled.`,
+        lifecycle,
+      };
+    }
+
+    throw new AppError('INVALID_STAGE', 'Unsupported scan stage', 400);
   }
 }
