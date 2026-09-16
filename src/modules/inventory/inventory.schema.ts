@@ -78,14 +78,19 @@ export const CreatePurchaseSchema = z.object({
 
 export const QuickStockSchema = z.object({
   sku: z.string().min(1, 'SKU is required').max(50),
-  name: z.string().min(1, 'Product Name is required').max(150),
+  name: z.string().min(1, 'SKU Name is required').max(150),
   branchId: z.string().min(1, 'Branch ID is required'),
-  quantity: z.number().int().min(1, 'Quantity must be at least 1'),
+  quantity: z.number().int().min(0).optional().default(1),
   unitCost: z.number().min(0).optional().default(0),
   sellingPrice: z.number().min(0).optional(),
   reorderLevel: z.number().int().min(0).optional().default(10),
   categoryId: z.string().optional(),
   notes: z.string().optional(),
+  finish: z.enum(['SS', 'NA', 'NYLON']).optional(),
+  colour: z.string().optional(),
+  height: z.number().min(0).optional(),
+  width: z.number().min(0).optional(),
+  length: z.number().min(0).optional(),
 });
 
 export const ListPurchasesQuerySchema = z.object({

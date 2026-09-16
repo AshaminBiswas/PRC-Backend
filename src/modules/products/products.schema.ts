@@ -15,6 +15,8 @@ export const ListProductsQuerySchema = z.object({
   isBestseller: z.coerce.boolean().optional(),
   isInOffer: z.coerce.boolean().optional(),
   isNewArrival: z.coerce.boolean().optional(),
+  finish: z.string().optional(),
+  colour: z.string().optional(),
   sortBy: z.string().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });
@@ -45,12 +47,14 @@ export const CreateProductSchema = z.object({
   compatibleFor: z.array(z.string()).optional(),
   warranty: z.string().optional(),
   weight: z.number().min(0).optional(),
+  finish: z.enum(['SS', 'NA', 'NYLON']).optional(),
+  colour: z.string().optional(),
   dimensions: z
     .object({
-      length: z.number().min(0),
-      width: z.number().min(0),
-      height: z.number().min(0),
-      unit: z.string().default('cm'),
+      length: z.number().min(0).optional(),
+      width: z.number().min(0).optional(),
+      height: z.number().min(0).optional(),
+      unit: z.string().default('mm'),
     })
     .optional(),
   attributes: z.record(z.union([z.boolean(), z.string(), z.number(), z.unknown()])).optional(),

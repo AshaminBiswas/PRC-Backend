@@ -1150,7 +1150,27 @@ export const quickStock = async (input: QuickStockInput, userId: string) => {
       if (cat) validCategoryId = cat.id;
     }
 
-    // 3. Find or create product
+    // 3. Prepare Dimensions, Attributes, and Colours
+    const hasDims = input.height !== undefined || input.width !== undefined || input.length !== undefined;
+    const dimensions = hasDims ? {
+      height: input.height !== undefined ? Number(input.height) : null,
+      width: input.width !== undefined ? Number(input.width) : null,
+      length: input.length !== undefined ? Number(input.length) : null,
+      unit: 'mm',
+    } : undefined;
+
+    const attributes: Record<string, any> = {
+      ...(input.finish ? { finish: input.finish } : {}),
+      ...(input.colour ? { colour: input.colour, color: input.colour } : {}),
+      ...(input.height !== undefined ? { height: Number(input.height) } : {}),
+      ...(input.width !== undefined ? { width: Number(input.width) } : {}),
+      ...(input.length !== undefined ? { length: Number(input.length) } : {}),
+      unit: 'mm',
+    };
+
+    const colours = input.colour ? [input.colour] : [];
+
+    // 4. Find or create product
     let product = await tx.product.findUnique({
       where: { sku: skuUpper },
     });
@@ -1170,10 +1190,14 @@ export const quickStock = async (input: QuickStockInput, userId: string) => {
           stock: 0,
           status: 'ACTIVE',
           isVisible: true,
+          ...(dimensions ? { dimensions } : {}),
+          attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+          colours: colours.length > 0 ? colours : undefined,
         },
       });
     } else {
       const priceVal = input.sellingPrice !== undefined && input.sellingPrice > 0 ? new Prisma.Decimal(input.sellingPrice) : undefined;
+      const prevAttrs = product.attributes && typeof product.attributes === 'object' ? (product.attributes as Record<string, any>) : {};
       product = await tx.product.update({
         where: { id: product.id },
         data: {
@@ -1184,11 +1208,14 @@ export const quickStock = async (input: QuickStockInput, userId: string) => {
           ...(priceVal ? { price: priceVal } : {}),
           ...(input.reorderLevel ? { reorderLevel: input.reorderLevel } : {}),
           ...(validCategoryId ? { categoryId: validCategoryId } : {}),
+          ...(dimensions ? { dimensions } : {}),
+          attributes: { ...prevAttrs, ...attributes },
+          ...(colours.length > 0 ? { colours } : {}),
         },
       });
     }
 
-    // 4. Update or create branch inventory
+    // 5. Update or create branch inventory
     let inv = await tx.inventory.findUnique({
       where: {
         productId_branchId: {
@@ -1199,7 +1226,8 @@ export const quickStock = async (input: QuickStockInput, userId: string) => {
     });
 
     const prevQty = inv ? inv.quantity : 0;
-    const newQty = prevQty + input.quantity;
+    const qtyToAdd = input.quantity !== undefined ? Number(input.quantity) : 1;
+    const newQty = prevQty + qtyToAdd;
 
     if (!inv) {
       inv = await tx.inventory.create({
@@ -1229,12 +1257,12 @@ export const quickStock = async (input: QuickStockInput, userId: string) => {
           productId: product.id,
           branchId: targetBranchId,
           type: StockMovementType.PURCHASE_IN,
-          quantity: input.quantity,
+          quantity: qtyToAdd,
           previousQty: prevQty,
           newQty,
           referenceType: 'QUICK_STOCK_ENTRY',
           referenceId: `QUICK-${Date.now().toString().slice(-6)}`,
-          notes: input.notes || `Initial quick stock registration: +${input.quantity} units (Destination: ${branch.name})`,
+          notes: input.notes || `Initial quick stock registration: +${qtyToAdd} units (Destination: ${branch.name})`,
           performedById: userId || 'system',
         },
       });
@@ -2999,6 +3027,8 @@ export const getProductTraceabilityDossier = async (productId: string) => {
       thumbnail: product.thumbnail,
       images: product.images,
       colours: product.colours,
+      finish: (product.attributes as any)?.finish || null,
+      colour: (product.attributes as any)?.colour || (product.attributes as any)?.color || (product.colours && product.colours[0]) || null,
       createdAt: product.createdAt ? new Date(product.createdAt).toISOString() : new Date().toISOString(),
       updatedAt: product.updatedAt ? new Date(product.updatedAt).toISOString() : new Date().toISOString(),
       listedByName: 'Master Catalog Admin',

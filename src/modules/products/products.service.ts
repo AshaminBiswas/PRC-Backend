@@ -39,6 +39,8 @@ export const productListSelect = {
   createdAt: true,
   updatedAt: true,
   category: { select: { id: true, name: true, slug: true } },
+  dimensions: true,
+  attributes: true,
 } as const;
 
 export const productDetailSelect = {
@@ -87,6 +89,7 @@ export const productDetailSelect = {
 const formatProduct = (p: any) => {
   const effectivePrice = p.offerPrice ?? p.salePrice;
   const numOfferPrice = effectivePrice ? Number(effectivePrice) : null;
+  const attrs = p.attributes && typeof p.attributes === 'object' ? p.attributes : {};
   return {
     ...p,
     price: Number(p.price),
@@ -96,10 +99,14 @@ const formatProduct = (p: any) => {
     weight: p.weight ? Number(p.weight) : null,
     inStock: (p.stock as number) > 0,
     materialId: p.materialId ?? null,
-    material: p.material?.name || (typeof p.attributes?.material === 'string' ? p.attributes.material : (p.specification?.material || null)),
+    material: p.material?.name || (typeof attrs?.material === 'string' ? attrs.material : (p.specification?.material || null)),
     materialObj: p.material ?? null,
     frequentlyPairedIds: Array.isArray(p.frequentlyPairedIds) ? p.frequentlyPairedIds : [],
     productSpecification: p.specification ?? null,
+    dimensions: p.dimensions ?? null,
+    attributes: p.attributes ?? null,
+    finish: attrs.finish || null,
+    colour: attrs.colour || attrs.color || (Array.isArray(p.colours) && p.colours[0]) || null,
     seo: {
       metaTitle: p.metaTitle ?? null,
       metaDescription: p.metaDescription ?? null,
@@ -134,6 +141,21 @@ export const listProducts = async (query: {
     where.OR = [
       { name: { contains: query.search, mode: 'insensitive' } },
       { sku: { contains: query.search, mode: 'insensitive' } },
+      { tags: { has: query.search } },
+      { colours: { has: query.search } },
+    ];
+  }
+  if ((query as any).finish && (query as any).finish !== 'ALL') {
+    const finVal = String((query as any).finish).trim();
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+      {
+        OR: [
+          { attributes: { path: ['finish'], equals: finVal } },
+          { attributes: { path: ['finish'], equals: finVal.toUpperCase() } },
+          { tags: { has: finVal } },
+        ],
+      },
     ];
   }
   if (query.categoryId) where.categoryId = query.categoryId;
@@ -414,12 +436,38 @@ export const createProduct = async (input: CreateProductInput) => {
   const finalMetaDescription = metaDescription || seo?.metaDescription || undefined;
   const finalMetaKeywords = metaKeywords || seo?.metaKeywords || undefined;
 
+  const mergedAttrs = {
+    ...(typeof attributes === 'object' && attributes ? attributes : {}),
+    ...(input.finish ? { finish: input.finish } : {}),
+    ...(input.colour ? { colour: input.colour, color: input.colour } : {}),
+    ...(dimensions?.height !== undefined ? { height: dimensions.height } : {}),
+    ...(dimensions?.width !== undefined ? { width: dimensions.width } : {}),
+    ...(dimensions?.length !== undefined ? { length: dimensions.length } : {}),
+    unit: dimensions?.unit || 'mm',
+  };
+
+  const finalDimensions = dimensions
+    ? {
+        ...dimensions,
+        unit: dimensions.unit || 'mm',
+      }
+    : (input.finish || input.colour)
+    ? {
+        unit: 'mm',
+      }
+    : undefined;
+
+  const finalColours = input.colour
+    ? Array.from(new Set([input.colour, ...(rest.colours || [])]))
+    : rest.colours;
+
   let product: any;
   if (skuExists && skuExists.deletedAt !== null) {
     product = await prisma.product.update({
       where: { id: skuExists.id },
       data: {
         ...rest,
+        colours: finalColours,
         frequentlyPairedIds: finalPairedIds,
         materialId: input.materialId || null,
         name: input.name,
@@ -431,8 +479,8 @@ export const createProduct = async (input: CreateProductInput) => {
         isBestseller: input.isBestseller ?? false,
         isInOffer: input.isInOffer ?? false,
         isNewArrival: input.isNewArrival ?? false,
-        dimensions: dimensions ? (dimensions as any) : undefined,
-        attributes: attributes ? (attributes as any) : undefined,
+        dimensions: finalDimensions ? (finalDimensions as any) : undefined,
+        attributes: mergedAttrs ? (mergedAttrs as any) : undefined,
         specification: (productSpecification || specification) ? ((productSpecification || specification) as any) : undefined,
         manufacturerInfo: manufacturerInfo ? (manufacturerInfo as any) : undefined,
         metaTitle: finalMetaTitle,
@@ -445,6 +493,7 @@ export const createProduct = async (input: CreateProductInput) => {
     product = await prisma.product.create({
       data: {
         ...rest,
+        colours: finalColours,
         frequentlyPairedIds: finalPairedIds,
         materialId: input.materialId || null,
         slug,
@@ -454,8 +503,8 @@ export const createProduct = async (input: CreateProductInput) => {
         isBestseller: input.isBestseller ?? false,
         isInOffer: input.isInOffer ?? false,
         isNewArrival: input.isNewArrival ?? false,
-        dimensions: dimensions ? (dimensions as any) : undefined,
-        attributes: attributes ? (attributes as any) : undefined,
+        dimensions: finalDimensions ? (finalDimensions as any) : undefined,
+        attributes: mergedAttrs ? (mergedAttrs as any) : undefined,
         specification: (productSpecification || specification) ? ((productSpecification || specification) as any) : undefined,
         manufacturerInfo: manufacturerInfo ? (manufacturerInfo as any) : undefined,
         metaTitle: finalMetaTitle,
@@ -546,15 +595,41 @@ export const updateProduct = async (id: string, input: UpdateProductInput) => {
   const finalMetaDescription = metaDescription !== undefined ? metaDescription : seo?.metaDescription;
   const finalMetaKeywords = metaKeywords !== undefined ? metaKeywords : seo?.metaKeywords;
 
+  const mergedAttrs = (attributes !== undefined || input.finish !== undefined || input.colour !== undefined || dimensions !== undefined)
+    ? {
+        ...(existing.attributes && typeof existing.attributes === 'object' ? (existing.attributes as any) : {}),
+        ...(typeof attributes === 'object' && attributes ? attributes : {}),
+        ...(input.finish !== undefined ? { finish: input.finish } : {}),
+        ...(input.colour !== undefined ? { colour: input.colour, color: input.colour } : {}),
+        ...(dimensions?.height !== undefined ? { height: dimensions.height } : {}),
+        ...(dimensions?.width !== undefined ? { width: dimensions.width } : {}),
+        ...(dimensions?.length !== undefined ? { length: dimensions.length } : {}),
+        unit: dimensions?.unit || (existing.dimensions as any)?.unit || 'mm',
+      }
+    : undefined;
+
+  const finalDimensions = dimensions !== undefined
+    ? {
+        ...(existing.dimensions && typeof existing.dimensions === 'object' ? (existing.dimensions as any) : {}),
+        ...dimensions,
+        unit: dimensions.unit || (existing.dimensions as any)?.unit || 'mm',
+      }
+    : undefined;
+
+  const finalColours = input.colour !== undefined
+    ? Array.from(new Set([input.colour, ...(rest.colours || existing.colours || [])]))
+    : rest.colours;
+
   const product = await prisma.product.update({
     where: { id },
     data: {
       ...rest,
+      ...(finalColours !== undefined ? { colours: finalColours } : {}),
       slug,
       ...(input.materialId !== undefined ? { materialId: input.materialId || null } : {}),
       ...(finalPairedIds !== undefined ? { frequentlyPairedIds: finalPairedIds } : {}),
-      dimensions: dimensions !== undefined ? (dimensions as any) : undefined,
-      attributes: attributes !== undefined ? (attributes as any) : undefined,
+      dimensions: finalDimensions !== undefined ? (finalDimensions as any) : undefined,
+      attributes: mergedAttrs !== undefined ? (mergedAttrs as any) : undefined,
       specification: (productSpecification !== undefined || specification !== undefined)
         ? ((productSpecification || specification) as any)
         : undefined,
