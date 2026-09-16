@@ -186,68 +186,38 @@ export class BarcodeService {
     const qrPng = await this.generateQrPng(qrUrl);
     const qrBase64 = `data:image/png;base64,${qrPng.toString('base64')}`;
 
-    // Extract Finish & Colour
-    const finish = (product as any).finish || (product.attributes as any)?.finish || '';
-    const colour = (product as any).colour || (product.attributes as any)?.colour || '';
-    const dims = (product.dimensions as any) || {};
-    const dimsStr =
-      dims.height || dims.width || dims.length
-        ? `${dims.height || '-'}×${dims.width || '-'}×${dims.length || '-'} mm`
-        : '';
-
-    const priceFormatted = `₹${Number(product.price).toLocaleString('en-IN')}`;
-
     const docDefinition: any = {
       pageSize: { width: pageWidth, height: pageHeight },
-      pageMargins: [6, 5, 6, 5],
+      pageMargins: [8, 6, 8, 6],
       content: [
         {
           columns: [
             {
               width: '*',
               stack: [
-                { text: companyName, fontSize: 6.5, bold: true, color: '#4B5563', characterSpacing: 0.5 },
+                { text: companyName, fontSize: 8, bold: true, color: '#1F2937', characterSpacing: 0.5 },
                 {
-                  text: product.name.length > 32 ? product.name.slice(0, 30) + '...' : product.name,
-                  fontSize: 7.5,
+                  text: `SKU: ${cleanSku}`,
+                  fontSize: 13,
                   bold: true,
-                  color: '#111827',
-                  margin: [0, 1, 0, 0],
-                },
-                {
-                  text: [
-                    finish ? `Fin: ${finish}  ` : '',
-                    colour ? `Col: ${colour}  ` : '',
-                    dimsStr ? `Dim: ${dimsStr}` : '',
-                  ]
-                    .join('')
-                    .trim(),
-                  fontSize: 5.5,
-                  color: '#374151',
-                  margin: [0, 1, 0, 0],
-                },
-                {
-                  text: `MRP: ${priceFormatted}`,
-                  fontSize: 7,
-                  bold: true,
-                  color: '#059669',
-                  margin: [0, 1, 0, 0],
+                  color: '#000000',
+                  margin: [0, 3, 0, 0],
                 },
               ],
             },
             {
-              width: 32,
+              width: 36,
               image: qrBase64,
-              fit: [30, 30],
+              fit: [34, 34],
               alignment: 'right',
             },
           ],
         },
         {
           image: barcodeBase64,
-          fit: [pageWidth - 14, 46],
+          fit: [pageWidth - 16, 56],
           alignment: 'center',
-          margin: [0, 3, 0, 0],
+          margin: [0, 5, 0, 0],
         },
       ],
       defaultStyle: {

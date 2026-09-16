@@ -13,6 +13,8 @@ export class BarcodeController {
 
       res.setHeader('Content-Type', 'image/png');
       res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       res.send(pngBuffer);
     } catch (error) {
       next(error);
@@ -31,6 +33,8 @@ export class BarcodeController {
 
       res.setHeader('Content-Type', 'image/png');
       res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       res.send(pngBuffer);
     } catch (error) {
       next(error);
@@ -51,6 +55,8 @@ export class BarcodeController {
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename="label-${sku}.pdf"`);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       res.send(pdfBuffer);
     } catch (error) {
       next(error);
