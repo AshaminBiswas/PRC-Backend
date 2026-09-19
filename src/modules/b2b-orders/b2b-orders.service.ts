@@ -1073,7 +1073,7 @@ export const listB2bOrders = async (query: ListB2bOrdersQuery) => {
     where.customerId = query.customerId;
   }
 
-  if (query.source) {
+  if (query.source && query.source !== 'ALL') {
     where.source = query.source;
   }
 
@@ -1089,7 +1089,7 @@ export const listB2bOrders = async (query: ListB2bOrdersQuery) => {
     ];
   }
 
-  const [total, orders] = await Promise.all([
+  const [total, orders, statusCountsRaw, sourceCountsRaw] = await Promise.all([
     (prisma as any).b2bOrder.count({ where }),
     (prisma as any).b2bOrder.findMany({
       where,
@@ -1103,13 +1103,15 @@ export const listB2bOrders = async (query: ListB2bOrdersQuery) => {
         reservations: true,
       },
     }),
+    (prisma as any).b2bOrder.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    }),
+    (prisma as any).b2bOrder.groupBy({
+      by: ['source'],
+      _count: { id: true },
+    }),
   ]);
-
-  // Status counts rollup for UI tabs (Pending Approval priority view)
-  const statusCountsRaw = await (prisma as any).b2bOrder.groupBy({
-    by: ['status'],
-    _count: { id: true },
-  });
 
   const statusCounts: Record<string, number> = {
     pending_approval: 0,
@@ -1125,6 +1127,15 @@ export const listB2bOrders = async (query: ListB2bOrdersQuery) => {
     statusCounts[row.status] = row._count.id;
   }
 
+  const sourceCounts: Record<string, number> = {
+    customer_frontend: 0,
+    admin_created: 0,
+  };
+
+  for (const row of sourceCountsRaw) {
+    sourceCounts[row.source] = row._count.id;
+  }
+
   return {
     items: orders.map(formatB2bOrder),
     pagination: {
@@ -1135,6 +1146,7 @@ export const listB2bOrders = async (query: ListB2bOrdersQuery) => {
       hasMore: skip + orders.length < total,
     },
     statusCounts,
+    sourceCounts,
   };
 };
 

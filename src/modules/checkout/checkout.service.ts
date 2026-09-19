@@ -477,6 +477,79 @@ export const placeOrder = async (userId: string, input: PlaceOrderInput) => {
       },
     });
 
+    // 5e. Automatically synchronize B2B Storefront Checkout Orders to B2B Pipeline
+    try {
+      const userProfile = await tx.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          companyName: true,
+          gstin: true,
+          userRoles: {
+            include: {
+              role: true,
+            },
+          },
+        },
+      });
+      const roleSlugs = (userProfile?.userRoles || [])
+        .map((ur) => ur.role?.slug || ur.role?.name || '')
+        .join(' ')
+        .toLowerCase();
+      const anyInput = input as any;
+      const isB2bCustomer = Boolean(
+        (userProfile?.companyName && userProfile.companyName.trim()) ||
+        (userProfile?.gstin && userProfile.gstin.trim()) ||
+        (anyInput.companyName && String(anyInput.companyName).trim()) ||
+        (anyInput.gstin && String(anyInput.gstin).trim()) ||
+        roleSlugs.includes('b2b') ||
+        roleSlugs.includes('commercial') ||
+        roleSlugs.includes('enterprise')
+      );
+
+      if (isB2bCustomer) {
+        await (tx as any).b2bOrder.create({
+          data: {
+            orderNumber: `B2B-${order.orderNumber.replace(/^PRC-/, '')}`,
+            customerId: userId,
+            branchId: fulfillingBranchId,
+            source: 'customer_frontend',
+            status: 'pending_approval',
+            paymentStatus: String(order.paymentStatus || 'pending').toLowerCase(),
+            paymentMethod: String(order.paymentMethod || 'bank_transfer').toLowerCase(),
+            subtotal: order.subtotal,
+            discountTotal: order.discountTotal,
+            taxTotal: order.taxTotal,
+            grandTotal: order.grandTotal,
+            clientRequestId: `frontend-checkout-${order.id}`,
+            createdBy: userId,
+            createdByType: 'customer',
+            items: {
+              create: cart.items.map((it) => {
+                const customB2B = b2bMap.get(it.productId);
+                const unitPrice = customB2B !== undefined && customB2B > 0
+                  ? customB2B
+                  : Number(it.variant?.salePrice || it.product.salePrice || it.product.price || 0);
+                const lineSubtotal = Number((unitPrice * it.quantity).toFixed(2));
+                const lineTax = Number((lineSubtotal * 0.18).toFixed(2));
+                return {
+                  productId: it.productId,
+                  sku: it.variant ? it.variant.sku : it.product.sku,
+                  quantity: it.quantity,
+                  unitPrice,
+                  discount: 0,
+                  tax: lineTax,
+                  lineTotal: Number((lineSubtotal + lineTax).toFixed(2)),
+                };
+              }),
+            },
+          },
+        });
+      }
+    } catch (b2bSyncErr) {
+      console.warn('[Checkout B2B Sync Warning]:', b2bSyncErr);
+    }
+
     if (cart.couponId) {
       await tx.coupon.update({
         where: { id: cart.couponId },
