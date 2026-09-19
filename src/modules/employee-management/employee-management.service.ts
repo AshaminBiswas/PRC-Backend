@@ -62,42 +62,67 @@ export async function generateEmployeeId(date = new Date()): Promise<string> {
 export async function createEmployee(data: CreateEmployeeInput, _createdById?: string) {
   const employeeId = await generateEmployeeId(new Date(data.joiningDate));
 
+  // If email is not provided or is placeholder, auto-generate collision-free internal email
+  let finalEmail = data.email ? data.email.trim().toLowerCase() : '';
+  if (
+    !finalEmail ||
+    finalEmail === 'none' ||
+    finalEmail === 'na' ||
+    finalEmail === 'nil' ||
+    finalEmail === 'null' ||
+    finalEmail === 'pending' ||
+    finalEmail === 'n/a'
+  ) {
+    finalEmail = `${employeeId.toLowerCase()}@internal.prc`;
+  }
+
+  const cleanPhone = (data.phone || '').replace(/[\s-]/g, '').trim() || '0000000000';
+  const cleanAddress = (data.address || '').trim() || 'N/A';
+  const cleanGovId = (data.governmentIdNumber || 'PENDING').replace(/[\s-]/g, '').trim().toUpperCase();
+
   const employee = await prisma.employee.create({
     data: {
       employeeId,
       name: data.name.trim(),
-      email: data.email.trim().toLowerCase(),
-      phone: data.phone.trim(),
-      address: data.address.trim(),
+      email: finalEmail,
+      phone: cleanPhone,
+      address: cleanAddress,
       governmentIdType: data.governmentIdType,
-      governmentIdNumber: data.governmentIdNumber.trim().toUpperCase(),
+      governmentIdNumber: cleanGovId,
       bankAccountNumber: data.bankAccountNumber ? data.bankAccountNumber.trim() : null,
       bankIfsc: data.bankIfsc ? data.bankIfsc.trim().toUpperCase() : null,
       bankName: data.bankName ? data.bankName.trim() : null,
       bankAccountHolder: data.bankAccountHolder ? data.bankAccountHolder.trim() : null,
-      designation: data.designation.trim(),
-      department: data.department.trim(),
+      designation: (data.designation || 'Workers').trim(),
+      department: (data.department || 'Operations').trim(),
       responsibilities: data.responsibilities?.trim() || null,
-      monthlyCtc: new Prisma.Decimal(data.monthlyCtc),
+      monthlyCtc: new Prisma.Decimal(data.monthlyCtc || 0),
       joiningDate: new Date(data.joiningDate),
-      status: data.status,
+      status: data.status || 'ACTIVE',
       clBalance: new Prisma.Decimal(0),
       elBalance: new Prisma.Decimal(0),
     },
   });
 
-  logger.info(`[Employee] Registered new employee ${employee.name} (${employee.employeeId})`);
+  logger.info(`[Employee] Registered new employee ${employee.name} (${employee.employeeId}, email: ${employee.email})`);
   return employee;
 }
 
 export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
   const updateData: any = {};
   if (data.name !== undefined) updateData.name = data.name.trim();
-  if (data.email !== undefined) updateData.email = data.email.trim().toLowerCase();
-  if (data.phone !== undefined) updateData.phone = data.phone.trim();
-  if (data.address !== undefined) updateData.address = data.address.trim();
+  if (data.email !== undefined && data.email !== null) {
+    const clean = data.email.trim().toLowerCase();
+    if (clean && clean !== 'none' && clean !== 'na' && clean !== 'nil' && clean !== 'null' && clean !== 'pending') {
+      updateData.email = clean;
+    }
+  }
+  if (data.phone !== undefined) updateData.phone = data.phone.replace(/[\s-]/g, '').trim();
+  if (data.address !== undefined) updateData.address = data.address.trim() || 'N/A';
   if (data.governmentIdType !== undefined) updateData.governmentIdType = data.governmentIdType;
-  if (data.governmentIdNumber !== undefined) updateData.governmentIdNumber = data.governmentIdNumber.trim().toUpperCase();
+  if (data.governmentIdNumber !== undefined) {
+    updateData.governmentIdNumber = (data.governmentIdNumber || 'PENDING').replace(/[\s-]/g, '').trim().toUpperCase();
+  }
   if (data.bankAccountNumber !== undefined) updateData.bankAccountNumber = data.bankAccountNumber ? data.bankAccountNumber.trim() : null;
   if (data.bankIfsc !== undefined) updateData.bankIfsc = data.bankIfsc ? data.bankIfsc.trim().toUpperCase() : null;
   if (data.bankName !== undefined) updateData.bankName = data.bankName ? data.bankName.trim() : null;
@@ -105,7 +130,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
   if (data.designation !== undefined) updateData.designation = data.designation.trim();
   if (data.department !== undefined) updateData.department = data.department.trim();
   if (data.responsibilities !== undefined) updateData.responsibilities = data.responsibilities?.trim() || null;
-  if (data.monthlyCtc !== undefined) updateData.monthlyCtc = new Prisma.Decimal(data.monthlyCtc);
+  if (data.monthlyCtc !== undefined) updateData.monthlyCtc = new Prisma.Decimal(data.monthlyCtc || 0);
   if (data.joiningDate !== undefined) updateData.joiningDate = new Date(data.joiningDate);
   if (data.status !== undefined) updateData.status = data.status;
 

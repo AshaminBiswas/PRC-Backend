@@ -410,6 +410,37 @@ async function seedAllPermissions() {
     }
   }
 
+  // Find Admin role (by slug or name) and assign standard operational permissions
+  const adminRole = await prisma.role.findFirst({
+    where: {
+      OR: [
+        { slug: 'admin' },
+        { name: { equals: 'Admin', mode: 'insensitive' } },
+      ],
+    },
+  });
+
+  if (adminRole) {
+    const allDbPerms = await prisma.permission.findMany({ select: { id: true, slug: true } });
+    const existingAdminPerms = await prisma.rolePermission.findMany({
+      where: { roleId: adminRole.id },
+      select: { permissionId: true },
+    });
+    const existingAdminPermIds = new Set(existingAdminPerms.map((rp) => rp.permissionId));
+
+    const missingForAdmin = allDbPerms
+      .filter((p) => !existingAdminPermIds.has(p.id))
+      .map((p) => ({ roleId: adminRole.id, permissionId: p.id }));
+
+    if (missingForAdmin.length > 0) {
+      await prisma.rolePermission.createMany({
+        data: missingForAdmin,
+        skipDuplicates: true,
+      });
+      console.log(`[seed-permissions] Linked ${missingForAdmin.length} new permissions to Admin role.`);
+    }
+  }
+
   const finalTotal = await prisma.permission.count();
   console.log(`[seed-permissions] Total permissions now in database: ${finalTotal}`);
 }

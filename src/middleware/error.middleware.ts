@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { ZodError } from 'zod';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
 
@@ -36,6 +37,28 @@ export const errorHandler = (
       'Access-Control-Allow-Headers',
       'Content-Type, Authorization, X-Requested-With, Accept, Origin, Access-Control-Request-Method, Access-Control-Request-Headers, X-Client-Version, X-Instance-ID'
     );
+  }
+
+  // Zod schema validation errors
+  if (err instanceof ZodError || err.name === 'ZodError') {
+    const zodErr = err as ZodError;
+    const issues = zodErr.issues || [];
+    const formattedIssues = issues.map((i) => ({
+      field: i.path.join('.'),
+      message: i.message,
+    }));
+    const message = issues
+      .map((i) => (i.path.length > 0 ? `${i.path.join('.')}: ${i.message}` : i.message))
+      .join('; ');
+    res.status(400).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: message || 'Validation failed for input data',
+        details: formattedIssues,
+      },
+    });
+    return;
   }
 
   // Known application errors

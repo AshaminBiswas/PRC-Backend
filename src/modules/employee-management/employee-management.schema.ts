@@ -18,18 +18,55 @@ export const LeaveTransactionTypeEnum = z.enum(['ACCRUAL', 'USAGE', 'ADJUSTMENT'
 export const CreateEmployeeSchema = z
   .object({
     name: z.string().min(2, 'Full name must be at least 2 characters'),
-    email: z.string().email('Valid email address is required for payslips'),
-    phone: z.string().min(10, 'Valid phone number is required'),
-    address: z.string().min(5, 'Full residential address is required'),
-    governmentIdType: GovernmentIdTypeEnum,
-    governmentIdNumber: z.string().min(4, 'Government ID number is required'),
+    email: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim().toLowerCase();
+        if (
+          !clean ||
+          clean === 'none' ||
+          clean === 'na' ||
+          clean === 'nil' ||
+          clean === 'null' ||
+          clean === 'pending' ||
+          clean === 'n/a'
+        ) {
+          return null;
+        }
+        return clean;
+      })
+      .refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), {
+        message: 'Please provide a valid email address or leave it blank',
+      }),
+    phone: z
+      .string()
+      .min(5, 'Valid phone number is required (min 5 digits)')
+      .transform((val) => val.replace(/[\s-]/g, '').trim()),
+    address: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => val?.trim() || 'N/A'),
+    governmentIdType: GovernmentIdTypeEnum.default('AADHAAR'),
+    governmentIdNumber: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => {
+        if (!val) return 'PENDING';
+        const clean = val.replace(/[\s-]/g, '').trim().toUpperCase();
+        return clean || 'PENDING';
+      }),
     bankAccountNumber: z
       .string()
       .optional()
       .nullable()
       .transform((val) => {
         if (!val) return null;
-        const clean = val.trim();
+        const clean = val.replace(/[\s-]/g, '').trim();
         return clean && clean.toUpperCase() !== 'N/A' && clean.toUpperCase() !== 'NA' ? clean : null;
       }),
     bankIfsc: z
@@ -38,10 +75,10 @@ export const CreateEmployeeSchema = z
       .nullable()
       .transform((val) => {
         if (!val) return null;
-        const clean = val.trim().toUpperCase();
+        const clean = val.replace(/[\s-]/g, '').trim().toUpperCase();
         return clean && clean !== 'N/A' && clean !== 'NA' && clean !== 'NONE' && clean !== 'NIL' ? clean : null;
       })
-      .refine((val) => !val || IFSC_REGEX.test(val), {
+      .refine((val) => !val || IFSC_REGEX.test(val) || val.length >= 4, {
         message: 'Invalid IFSC code format (e.g. SBIN0001234)',
       }),
     bankName: z
@@ -62,51 +99,85 @@ export const CreateEmployeeSchema = z
         const clean = val.trim();
         return clean && clean.toUpperCase() !== 'N/A' && clean.toUpperCase() !== 'NA' ? clean : null;
       }),
-    designation: z.string().min(2, 'Designation is required'),
-    department: z.string().min(2, 'Department is required'),
+    designation: z.string().min(2, 'Designation is required').default('Workers'),
+    department: z.string().min(2, 'Department is required').default('Operations'),
     responsibilities: z.string().optional().nullable(),
     monthlyCtc: z.coerce.number().min(0, 'Monthly CTC cannot be negative').optional().default(0),
     joiningDate: z.coerce.date({ invalid_type_error: 'Valid joining date is required' }),
     status: EmployeeStatusEnum.default('ACTIVE'),
   })
   .superRefine((data, ctx) => {
-    const cleanId = data.governmentIdNumber.trim().toUpperCase();
-    if (data.governmentIdType === 'AADHAAR' && !AADHAAR_REGEX.test(cleanId)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['governmentIdNumber'],
-        message: 'Aadhaar number must be exactly 12 numeric digits',
-      });
-    } else if (data.governmentIdType === 'PAN' && !PAN_REGEX.test(cleanId)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['governmentIdNumber'],
-        message: 'PAN must follow format: 5 letters, 4 numbers, 1 letter (e.g. ABCDE1234F)',
-      });
-    } else if (data.governmentIdType === 'VOTER_ID' && !VOTER_ID_REGEX.test(cleanId)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['governmentIdNumber'],
-        message: 'Voter ID must follow format: 3 letters followed by 7 numbers (e.g. ABC1234567)',
-      });
+    const cleanId = (data.governmentIdNumber || '').replace(/[\s-]/g, '').trim().toUpperCase();
+    const isPlaceholder =
+      !cleanId || cleanId === 'PENDING' || cleanId === 'NA' || cleanId === 'NONE' || cleanId === 'NIL';
+    if (!isPlaceholder) {
+      if (data.governmentIdType === 'AADHAAR' && !AADHAAR_REGEX.test(cleanId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['governmentIdNumber'],
+          message: 'Aadhaar number must be exactly 12 numeric digits (e.g. 123456789012)',
+        });
+      } else if (data.governmentIdType === 'PAN' && !PAN_REGEX.test(cleanId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['governmentIdNumber'],
+          message: 'PAN must follow format: 5 letters, 4 numbers, 1 letter (e.g. ABCDE1234F)',
+        });
+      } else if (data.governmentIdType === 'VOTER_ID' && !VOTER_ID_REGEX.test(cleanId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['governmentIdNumber'],
+          message: 'Voter ID must follow format: 3 letters followed by 7 numbers (e.g. ABC1234567)',
+        });
+      }
     }
   });
 
 export const UpdateEmployeeSchema = z
   .object({
     name: z.string().min(2).optional(),
-    email: z.string().email().optional(),
-    phone: z.string().min(10).optional(),
-    address: z.string().min(5).optional(),
+    email: z
+      .string()
+      .optional()
+      .nullable()
+      .transform((val) => {
+        if (!val) return null;
+        const clean = val.trim().toLowerCase();
+        if (
+          !clean ||
+          clean === 'none' ||
+          clean === 'na' ||
+          clean === 'nil' ||
+          clean === 'null' ||
+          clean === 'pending' ||
+          clean === 'n/a'
+        ) {
+          return null;
+        }
+        return clean;
+      })
+      .refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), {
+        message: 'Please provide a valid email address or leave it blank',
+      }),
+    phone: z
+      .string()
+      .min(5)
+      .optional()
+      .transform((val) => (val ? val.replace(/[\s-]/g, '').trim() : undefined)),
+    address: z.string().min(2).optional(),
     governmentIdType: GovernmentIdTypeEnum.optional(),
-    governmentIdNumber: z.string().min(4).optional(),
+    governmentIdNumber: z
+      .string()
+      .min(2)
+      .optional()
+      .transform((val) => (val ? val.replace(/[\s-]/g, '').trim().toUpperCase() : undefined)),
     bankAccountNumber: z
       .string()
       .optional()
       .nullable()
       .transform((val) => {
         if (!val) return null;
-        const clean = val.trim();
+        const clean = val.replace(/[\s-]/g, '').trim();
         return clean && clean.toUpperCase() !== 'N/A' && clean.toUpperCase() !== 'NA' ? clean : null;
       }),
     bankIfsc: z
@@ -115,10 +186,10 @@ export const UpdateEmployeeSchema = z
       .nullable()
       .transform((val) => {
         if (!val) return null;
-        const clean = val.trim().toUpperCase();
+        const clean = val.replace(/[\s-]/g, '').trim().toUpperCase();
         return clean && clean !== 'N/A' && clean !== 'NA' && clean !== 'NONE' && clean !== 'NIL' ? clean : null;
       })
-      .refine((val) => !val || IFSC_REGEX.test(val), {
+      .refine((val) => !val || IFSC_REGEX.test(val) || val.length >= 4, {
         message: 'Invalid IFSC code format (e.g. SBIN0001234)',
       }),
     bankName: z
@@ -142,31 +213,35 @@ export const UpdateEmployeeSchema = z
     designation: z.string().min(2).optional(),
     department: z.string().min(2).optional(),
     responsibilities: z.string().optional().nullable(),
-    monthlyCtc: z.coerce.number().positive().optional(),
+    monthlyCtc: z.coerce.number().min(0).optional(),
     joiningDate: z.coerce.date().optional(),
     status: EmployeeStatusEnum.optional(),
   })
   .superRefine((data, ctx) => {
     if (data.governmentIdType && data.governmentIdNumber) {
-      const cleanId = data.governmentIdNumber.trim().toUpperCase();
-      if (data.governmentIdType === 'AADHAAR' && !AADHAAR_REGEX.test(cleanId)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['governmentIdNumber'],
-          message: 'Aadhaar number must be exactly 12 numeric digits',
-        });
-      } else if (data.governmentIdType === 'PAN' && !PAN_REGEX.test(cleanId)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['governmentIdNumber'],
-          message: 'PAN must follow format: 5 letters, 4 numbers, 1 letter',
-        });
-      } else if (data.governmentIdType === 'VOTER_ID' && !VOTER_ID_REGEX.test(cleanId)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['governmentIdNumber'],
-          message: 'Voter ID must follow format: 3 letters followed by 7 numbers',
-        });
+      const cleanId = data.governmentIdNumber.replace(/[\s-]/g, '').trim().toUpperCase();
+      const isPlaceholder =
+        !cleanId || cleanId === 'PENDING' || cleanId === 'NA' || cleanId === 'NONE' || cleanId === 'NIL';
+      if (!isPlaceholder) {
+        if (data.governmentIdType === 'AADHAAR' && !AADHAAR_REGEX.test(cleanId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['governmentIdNumber'],
+            message: 'Aadhaar number must be exactly 12 numeric digits (e.g. 123456789012)',
+          });
+        } else if (data.governmentIdType === 'PAN' && !PAN_REGEX.test(cleanId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['governmentIdNumber'],
+            message: 'PAN must follow format: 5 letters, 4 numbers, 1 letter (e.g. ABCDE1234F)',
+          });
+        } else if (data.governmentIdType === 'VOTER_ID' && !VOTER_ID_REGEX.test(cleanId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['governmentIdNumber'],
+            message: 'Voter ID must follow format: 3 letters followed by 7 numbers (e.g. ABC1234567)',
+          });
+        }
       }
     }
   });
