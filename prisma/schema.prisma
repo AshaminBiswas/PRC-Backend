@@ -3169,3 +3169,128 @@ model UpCashDay {
   @@map("up_cash_days")
 }
 
+// ─── UP Factory Inventory & Floor Operations ──────────────────────────────────
+
+model UpBom {
+  id               String              @id @default(uuid())
+  name             String
+  productId        String              @map("product_id")
+  sku              String?
+  version          String              @default("1.0")
+  isActive         Boolean             @default(true) @map("is_active")
+  notes            String?
+  createdBy        String?             @map("created_by")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at")
+  items            UpBomItem[]
+  productionOrders UpProductionOrder[]
+
+  @@index([productId])
+  @@index([sku])
+  @@map("up_boms")
+}
+
+model UpBomItem {
+  id               String   @id @default(uuid())
+  bomId            String   @map("bom_id")
+  bom              UpBom    @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  rawMaterialId    String   @map("raw_material_id")
+  rawMaterialSku   String?  @map("raw_material_sku")
+  rawMaterialName  String?  @map("raw_material_name")
+  quantityRequired Decimal  @default(1) @map("quantity_required") @db.Decimal(12, 4)
+  unit             String   @default("pcs")
+  wastePercentage  Decimal  @default(0) @map("waste_percentage") @db.Decimal(5, 2)
+  notes            String?
+
+  @@index([bomId])
+  @@index([rawMaterialId])
+  @@map("up_bom_items")
+}
+
+model UpProductionOrder {
+  id               String       @id @default(uuid())
+  orderNumber      String       @unique @map("order_number")
+  bomId            String?      @map("bom_id")
+  bom              UpBom?       @relation(fields: [bomId], references: [id])
+  productId        String       @map("product_id")
+  branchId         String       @map("branch_id")
+  plannedQuantity  Int          @map("planned_quantity")
+  producedQuantity Int          @default(0) @map("produced_quantity")
+  rejectedQuantity Int          @default(0) @map("rejected_quantity")
+  status           String       @default("DRAFT") // DRAFT, IN_PROGRESS, COMPLETED, CANCELLED
+  startedAt        DateTime?    @map("started_at")
+  completedAt      DateTime?    @map("completed_at")
+  notes            String?
+  createdBy        String       @map("created_by")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @default(now()) @updatedAt @map("updated_at")
+  scrapLogs        UpScrapLog[]
+
+  @@index([orderNumber])
+  @@index([productId])
+  @@index([branchId])
+  @@index([status])
+  @@map("up_production_orders")
+}
+
+model UpDamagedStock {
+  id           String   @id @default(uuid())
+  ticketNumber String   @unique @map("ticket_number")
+  productId    String   @map("product_id")
+  branchId     String   @map("branch_id")
+  quantity     Int
+  reason       String
+  photoUrl     String?  @map("photo_url")
+  actionTaken  String   @default("WRITTEN_OFF") @map("action_taken")
+  status       String   @default("CONFIRMED")
+  reportedBy   String   @map("reported_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([ticketNumber])
+  @@index([productId])
+  @@index([branchId])
+  @@map("up_damaged_stock")
+}
+
+model UpScrapLog {
+  id                  String             @id @default(uuid())
+  scrapNumber         String             @unique @map("scrap_number")
+  productId           String?            @map("product_id")
+  materialName        String             @map("material_name")
+  productionOrderId   String?            @map("production_order_id")
+  productionOrder     UpProductionOrder? @relation(fields: [productionOrderId], references: [id])
+  branchId            String             @map("branch_id")
+  quantity            Decimal            @db.Decimal(12, 2)
+  unit                String             @default("kg")
+  reason              String
+  estimatedLossPaise  BigInt             @default(0) @map("estimated_loss_paise")
+  recoveredValuePaise BigInt             @default(0) @map("recovered_value_paise")
+  loggedBy            String             @map("logged_by")
+  createdAt           DateTime           @default(now()) @map("created_at")
+
+  @@index([scrapNumber])
+  @@index([productionOrderId])
+  @@index([branchId])
+  @@map("up_scrap_logs")
+}
+
+model UpPhysicalCount {
+  id                 String   @id @default(uuid())
+  countNumber        String   @unique @map("count_number")
+  branchId           String   @map("branch_id")
+  status             String   @default("COMPLETED")
+  itemsJson          Json     @default("[]") @map("items_json")
+  totalItemsCounted  Int      @default(0) @map("total_items_counted")
+  totalVarianceUnits Int      @default(0) @map("total_variance_units")
+  notes              String?
+  performedBy        String   @map("performed_by")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([countNumber])
+  @@index([branchId])
+  @@map("up_physical_counts")
+}
+
+

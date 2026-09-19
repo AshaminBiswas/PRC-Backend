@@ -70,4 +70,33 @@ router.post('/expenses/:id/receipt', requireUPAccess, upload.single('receipt'), 
 router.get('/expenses/:id/receipt-url', requireUPAccess, controller.getReceiptSignedUrl);
 router.delete('/expenses/:id/receipt', requireUPAccess, controller.deleteReceipt);
 
+// ─── 10. Factory Floor Inventory & Operations (UP Private Sub-System) ─────────
+router.get('/inventory/dashboard', requireUPAccess, controller.getInventoryDashboard);
+router.get('/inventory/search', requireUPAccess, controller.searchInventorySKU);
+router.get('/inventory/stock', requireUPAccess, controller.listInventoryStock);
+router.post('/inventory/receive', requireUPAccess, controller.receiveMaterial);
+router.post('/inventory/issue', requireUPAccess, controller.issueMaterial);
+router.post('/inventory/transfer', requireUPAccess, controller.transferStock);
+router.post('/inventory/damage', requireUPAccess, controller.recordDamage);
+router.post('/inventory/scrap', requireUPAccess, controller.recordScrap);
+
+// BOM Master
+router.get('/inventory/bom', requireUPAccess, controller.listBoms);
+router.get('/inventory/bom/:id', requireUPAccess, controller.getBomById);
+router.post('/inventory/bom', requireUPAccess, controller.createBom);
+
+// Production Work Orders & WIP
+router.get('/inventory/production', requireUPAccess, controller.listProductionOrders);
+router.post('/inventory/production', requireUPAccess, controller.createProductionOrder);
+router.post('/inventory/production/:id/start', requireUPAccess, controller.startProductionOrder);
+router.post('/inventory/production/:id/complete', requireUPAccess, controller.completeProductionOrder);
+
+// Physical Counts
+router.get('/inventory/physical-counts', requireUPAccess, controller.listPhysicalCounts);
+router.post('/inventory/physical-counts', requireUPAccess, controller.createPhysicalCount);
+
+// Inventory Reports
+router.get('/inventory/reports', requireUPAccess, controller.getInventoryReports);
+
 export default router;
+

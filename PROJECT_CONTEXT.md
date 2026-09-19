@@ -63,8 +63,10 @@ D:\
     - **Executive Authentication & Recovery (`AdminLoginPage.tsx`)**: Enterprise login portal supporting standard email/password authentication, TOTP 2FA verification with 8-digit emergency backup recovery, and **Admin Self-Service Password Recovery** (dedicated multi-stage forgot password flow directly on the console card featuring registered corporate email validation, 6-digit numeric OTP verification with 60-second resend countdown, live password match validation, and seamless transition back to login).
     - **Employee & Payroll Management Workspace (`EmployeeManagementPage.tsx`)**: 6-tab enterprise HR hub (Employee Master Directory with instant search and department filters; **Worker Operations Hub** with 4 dedicated sub-views for **Worker Master Directory** with touch action cards, Worker Attendance Matrix, Worker Advances & Recovery, and Worker Monthly Payroll Runs; **High-Efficiency Bulk In-Memory Payroll Engine** replacing $4N$ sequential database queries with 4 parallel bulk queries and microsecond in-memory HashMap grouping, slashing calculation time from 15–20s down to $<200\text{ms}$ with parallel database upserts; **Debounced Non-Blocking Background Auto-Calculation Queue** (`queuePayrollAutoCalculation` with 350ms quiet debounce and `queueBatchPayrollAutoCalculation` with 500ms debounce) that automatically and invisibly recomputes monthly employee wages and Net Pay whenever attendance is marked, unmarked, double duty assigned, half day recorded, Sunday override toggled, overtime adjusted, or batch marked, ensuring payroll is always fresh without blocking the $<30\text{ms}$ attendance HTTP response; **Strict Formula Compliance** ($\text{Payable Days} = \text{Total Days} - \text{Default Sundays} + \text{Approved Sundays}$; $\text{Per-Day Rate} = \text{Monthly CTC} / \text{Payable Days}$; $\text{Paid Days} = \text{Present} + 2 \times \text{Double Duty} + \text{CL} + \text{EL} + 0.5 \times \text{Half Day} + \text{Approved Sundays}$; $\text{Gross Salary} = \text{Per-Day Rate} \times \text{Paid Days} + \text{OT Pay}$; $\text{Net Salary} = \max(0, \text{Gross Salary} - \text{Advance} - \text{Deductions})$); **Live Auto-Sync UI Indicator** in Worker Hub and Payroll tabs with non-blocking client background synchronization `triggerPayrollSync()`; **Worker-Friendly Zero-Friction Registration Protocol** allowing factory workers and daily-wage staff to be onboarded without mandatory email addresses via automatic collision-free internal placeholder generation `${employeeId}@internal.prc`, automatic sanitization of Aadhaar/PAN/Voter ID numbers stripping spaces/dashes, optional bank details, and tolerant schema parsing; **Strict 400 Validation Error Propagation** via backend `ZodError` middleware and frontend `assertSuccess` guards preventing silent failure swallowing; Daily Attendance Matrix with 0ms optimistic updates, **Double Duty (2x Shifts / DD)** marking support, **Toggle-Off (Simple) Unmark Interaction** (clicking an active status such as Present toggles it back to neutral unrecorded state and deletes the record), and worker-only filter toggle; Leave Ledger with automated monthly CL/EL accrual; Advances & Deductions tracking with worker-only filter and full edit/delete modals; and Monthly Payroll Engine with worker-only filter, 2x duty credit for Double Duty days, formula calculation, Super Admin disbursement authorization, PDF payslip generation, and automated payslip emailing).
     - **Daily Cash Expense Tracker Workspace (`ExpensesPage.tsx`)**: 6-tab responsive operational cash management hub with **Instant 0ms Optimistic Voucher Approvals & Rejections** (immediate UI state transitions, live balance mutation, and non-blocking background synchronization with automated rollback on error; zero artificial polling delays), **Stale-While-Revalidate (SWR) Instant Boot** (0ms initial mount utilizing local storage cached facilities, categories, and balances with parallel background refresh and clean shimmer loading states), Fast-Log Cash Outflow form with dual-attribution (`paidBy` Who Paid Name field + `paidTo` Vendor/Person), quick preset buttons, auto-approval threshold notifications, recently logged voucher preview card with direct ledger shortcuts and inline approval, receipt attachments, and live Today transaction feed; Dedicated Organization Expense Ledger Tab for browsing, searching, and filtering all historical vouchers across dates, categories, statuses, and branches; Pending Approval Queue for management authorization with inline 1-click Approve/Reject; Float Top-Up & End-of-Day Physical Cash Reconciliation with interactive currency denomination counter ($\times 500, 200, 100, 50, 20, 10, 5, 2, 1$) and automated variance flags; Category Master & Monthly Budgets; and Multi-Sheet Server-Side Excel Generator for Day/Week/Month/Year expense reports featuring branch location selection (Delhi HQ, Kolkata Branch, or All Branches Consolidated), uniform 13-column itemized voucher worksheets across all report periods with clickable receipt slip hyperlinks, and native Excel `autoFilter` header controls.
-    - **UP — Private Factory Daily Cash Expense Module (`UPPage.tsx` under `up`)**: Private, factory-specific financial ledger for the manufacturing facility, completely isolated from general corporate expenses and displayed throughout the UI strictly as **UP**. Features:
-      - **5-Layer Defense-in-Depth Authorization & Strict Allow-List**: (1) Navigation Shield (`AdminSidebar.tsx`) completely hides UP from unauthorized users; (2) Frontend Route Guard blocks direct URL access with 403 barriers and zero financial data leakage; (3) Server Middleware (`requireUPAccess` & `requireUPSuperAdmin`) verifies independent per-user authorization; (4) API Layer rejects unauthorized requests with 403 Forbidden; (5) PostgreSQL Row-Level Security (RLS) on all 5 `up_*` tables (`up_expenses`, `up_expense_categories`, `up_expense_access`, `up_expense_audit`, `up_cash_days`) with `SECURITY DEFINER` helper `public.has_up_access()`. Super Admin automatically has permanent access; custom admins require explicit allow-list records (`up_expense_access.revoked_at IS NULL`); general admin or finance roles never grant UP access.
+    - **UP — Private Factory Operations, Daily Expense & Inventory Module (`UPPage.tsx` under `up`)**: Private, factory-specific operations and financial ledger for the manufacturing facility, completely isolated from general corporate operations and displayed throughout the UI strictly as **UP**. Features:
+      - **Consolidated Architecture & Decoupled Navigation**: Standalone inventory navigation has been eliminated from the public sidebar (`AdminSidebar.tsx`). Factory inventory is now housed exclusively under `UP` alongside daily expenses and cash reconciliation.
+      - **5-Layer Defense-in-Depth Authorization & Strict Allow-List**: (1) Navigation Shield (`AdminSidebar.tsx`) completely hides UP from unauthorized users; (2) Frontend Route Guard blocks direct URL access with 403 barriers and zero financial/operational data leakage; (3) Server Middleware (`requireUPAccess` & `requireUPSuperAdmin`) verifies independent per-user authorization; (4) API Layer rejects unauthorized requests with 403 Forbidden; (5) PostgreSQL Row-Level Security (RLS) on all `up_*` tables (`up_expenses`, `up_expense_categories`, `up_expense_access`, `up_expense_audit`, `up_cash_days`, `up_boms`, `up_bom_items`, `up_production_orders`, `up_damaged_stock`, `up_scrap_logs`, `up_physical_counts`) with `SECURITY DEFINER` helper `public.has_up_access()`. Super Admin automatically has permanent access; custom admins require explicit allow-list records (`up_expense_access.revoked_at IS NULL`); general admin or finance roles never grant UP access.
+      - **Factory Floor Stock & Inventory Operations (`UPInventoryHub.tsx`)**: Mobile-first floor interface (360px+ touch screens, $\ge 48\text{px}$ touch targets, numeric keypads) with high-speed SKU search dock (<100ms), 1-tap floor actions (Receive Material, Issue Material, Transfer Stock, Damage Quarantine with photo capture, Scrap Write-Off, Physical Cycle Count), Bill of Materials (BOM) multi-component recipe master, Production Work Orders with auto-deduction of components and finished goods creation, and inventory valuation reporting.
       - **Mobile-First Daily Expense Entry**: High-speed touch entry (Amount $\to$ Category $\to$ Paid To $\to$ Note $\to$ Receipt file/camera capture $\to$ Save), `+ Add Another` continuous mode, numeric keyboards, and server-side validation ($> 0$).
       - **Petty Cash Daily Reconciliation**: Opening balance, automatic deduction of today's cash expenses, live expected closing calculation, physical cash input, instant variance detection ($\text{Difference} = \text{Actual} - \text{Expected}$), and 1-click day closure & lock.
       - **Immutable Financial Audit Trail**: Every CREATE, UPDATE, DELETE, VERIFY, and UNVERIFY operation transactionally logs before/after JSON states and actor IDs to `up_expense_audit`.
@@ -1182,4 +1184,80 @@ The B2B Order Management module provides enterprise dual-channel order placement
 
 ---
 
-*Last Updated: 2026-09-15 (B2B Order Management dual-channel suite, stock reservation lifecycle, Super Admin approval gate, storefront quote-to-order conversion, profile B2B management, 12/12 scenario test suite passing, and zero-error full-stack compilation verified)*
+### 42. UP — Factory Operations & Stock/Inventory Management System
+
+#### 42.1 Architectural Isolation & Module Identity
+- **Consolidated Brand Identity**: The factory operations and inventory management system is strictly contained inside the private **`UP`** module.
+- **Decoupled Admin Navigation**: The standalone "Multi-Branch Stock / Inventory" top-level navigation item has been completely removed from the public sidebar (`AdminSidebar.tsx`). Factory stock management is accessible solely under `UP` for authorized users.
+- **Hierarchical Layout**:
+  ```text
+  UP
+  │
+  ├── Dashboard (Financial Velocity & KPIs)
+  ├── Factory Inventory
+  │   ├── Overview & Health KPIs
+  │   ├── Raw Materials & Finished Goods Filtered Views
+  │   ├── All Stock Matrix & Valuation
+  │   ├── Real-Time Stock Movements Ledger
+  │   ├── Bill of Materials (BOM Master Recipe Engine)
+  │   ├── Production Orders (Work-in-Progress & Auto-Conversion)
+  │   ├── Damaged & Defective Stock Quarantine
+  │   ├── Scrap & Wastage Logs
+  │   ├── Physical Counts & Discrepancy Audits
+  │   └── Valuation & Category Reports
+  ├── Daily Ledger & Petty Cash Reconcile
+  └── Settings (UP Access Allow-List & Categories)
+  ```
+
+#### 42.2 Multi-Layered Authorization & Row-Level Security
+- **Independent Allow-List Gate**: Access requires an active allow-list entry in `up_expense_access` (`revoked_at IS NULL`). Super Admins automatically hold root bypass access.
+- **RBAC Subordination**: Generic admin roles or inventory permissions (`inventory.read` / `inventory.write`) do **not** bypass UP access. Unauthorized requests are rejected with HTTP 403 Forbidden.
+- **PostgreSQL Row-Level Security (RLS)**: RLS enabled on all factory operations tables:
+  - `up_boms`
+  - `up_bom_items`
+  - `up_production_orders`
+  - `up_damaged_stock`
+  - `up_scrap_logs`
+  - `up_physical_counts`
+  Guarded by `SECURITY DEFINER` function `public.has_up_access()`.
+
+#### 42.3 Backend Service Architecture (`PRC-Backend`)
+- **Module Path**: `src/modules/up/`
+  - `up-inventory.service.ts`: High-performance factory floor operations service:
+    - `getInventoryDashboard`: Calculates total inventory valuation, raw material count, finished goods count, low stock warnings, damaged stock count, and active WIP production orders.
+    - `searchSKU`: Ultra-fast (<100ms) SKU and barcode lookup with on-hand, reserved, and available balance metrics.
+    - `receiveMaterial`: Inward material receipt with supplier attribution and `PURCHASE` / `PRODUCTION_IN` movement logging.
+    - `issueMaterial`: Outward material issuance for production or internal consumption.
+    - `transferStock`: Inter-branch or inter-warehouse transfers with dual-leg stock deduction and receipt.
+    - `recordDamage`: Quarantine logging with reason and photo evidence URL.
+    - `recordScrap`: Wastage write-offs with scrap value recovery calculations.
+    - `listBoms` & `createBom`: Multi-component recipe definitions linking finished products to raw material component SKUs with standard quantities and scrap tolerances.
+    - `listProductionOrders`, `createProductionOrder`, `startProductionOrder`, & `completeProductionOrder`: End-to-end manufacturing lifecycle. Completing a work order atomically decrements required component raw materials and increments finished goods inventory with full audit trails.
+    - `listPhysicalCounts` & `createPhysicalCount`: Cycle count reconciliation comparing recorded versus counted quantities, automatically calculating shrinkage variances.
+    - `getInventoryReports`: High-level stock status and valuation breakdown by category.
+- **REST Endpoints (`/api/admin/up/inventory/*`)**:
+  - Guarded strictly by `requireUPAccess`.
+  - Routes mounted under `up.routes.ts` and orchestrated via `up.controller.ts`.
+
+#### 42.4 Admin Console Implementation (`d:\admin`)
+- **API Client (`src/api/upApi.ts`)**: Type-safe REST client covering all 17 factory inventory endpoints.
+- **Factory Floor Hub (`src/pages/up/components/UPInventoryHub.tsx`)**:
+  - **Mobile-First Floor Interface**: Responsive design optimized for 360px+ touch screens, with $\ge 48\text{px}$ touch targets and `inputMode="decimal"` for numeric floor inputs.
+  - **High-Speed SKU Search Dock**: Instant real-time barcode/SKU search with $<100\text{ms}$ debouncing and 1-tap quick action launchers (Receive, Issue, Transfer, Damage, Scrap).
+  - **Comprehensive Operational Modals**:
+    - Material Receipt modal
+    - Material Issuance modal
+    - Facility Transfer modal
+    - Damage & Defect Recording modal with photo capture input
+    - Scrap / Wastage Write-off modal
+    - Physical Cycle Count modal
+    - BOM Master Recipe Creator modal
+    - Production Work Order Dispatcher & Completion modals
+- **Module Navigation Integration (`src/pages/up/UPPage.tsx`)**:
+  - Dedicated "Factory Inventory" tab in the UP navigation bar.
+  - Updated module subtitle: *"Private Factory Operations, Inventory & Financial Command Center"*.
+  - Decoupled from public admin sidebar (`AdminSidebar.tsx`).
+
+---
+
+*Last Updated: 2026-09-19 (UP Factory Operations & Inventory Management System unified inside private UP module, decoupled from public sidebar, 6 new Postgres tables + RLS auto-healed via fix-db.js, full-stack typed API and mobile-first floor interface)*

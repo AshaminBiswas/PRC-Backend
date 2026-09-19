@@ -3004,6 +3004,141 @@ const STATEMENTS = [
          FOR ALL USING (public.has_up_access());
      END IF;
    END $$;`,
+
+  // ─── UP Factory Inventory & Floor Operations Tables ─────────────────────────
+  `CREATE TABLE IF NOT EXISTS "up_boms" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "name" TEXT NOT NULL,
+    "product_id" TEXT NOT NULL,
+    "sku" TEXT,
+    "version" TEXT NOT NULL DEFAULT '1.0',
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "notes" TEXT,
+    "created_by" TEXT,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );`,
+
+  `CREATE TABLE IF NOT EXISTS "up_bom_items" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "bom_id" UUID NOT NULL REFERENCES "up_boms"("id") ON DELETE CASCADE,
+    "raw_material_id" TEXT NOT NULL,
+    "raw_material_sku" TEXT,
+    "raw_material_name" TEXT,
+    "quantity_required" NUMERIC(12, 4) NOT NULL DEFAULT 1,
+    "unit" TEXT NOT NULL DEFAULT 'pcs',
+    "waste_percentage" NUMERIC(5, 2) NOT NULL DEFAULT 0,
+    "notes" TEXT
+  );`,
+
+  `CREATE TABLE IF NOT EXISTS "up_production_orders" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "order_number" TEXT NOT NULL UNIQUE,
+    "bom_id" UUID REFERENCES "up_boms"("id"),
+    "product_id" TEXT NOT NULL,
+    "branch_id" TEXT NOT NULL,
+    "planned_quantity" INTEGER NOT NULL,
+    "produced_quantity" INTEGER NOT NULL DEFAULT 0,
+    "rejected_quantity" INTEGER NOT NULL DEFAULT 0,
+    "status" TEXT NOT NULL DEFAULT 'DRAFT',
+    "started_at" TIMESTAMPTZ,
+    "completed_at" TIMESTAMPTZ,
+    "notes" TEXT,
+    "created_by" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );`,
+
+  `CREATE TABLE IF NOT EXISTS "up_damaged_stock" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "ticket_number" TEXT NOT NULL UNIQUE,
+    "product_id" TEXT NOT NULL,
+    "branch_id" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    "reason" TEXT NOT NULL,
+    "photo_url" TEXT,
+    "action_taken" TEXT NOT NULL DEFAULT 'WRITTEN_OFF',
+    "status" TEXT NOT NULL DEFAULT 'CONFIRMED',
+    "reported_by" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );`,
+
+  `CREATE TABLE IF NOT EXISTS "up_scrap_logs" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "scrap_number" TEXT NOT NULL UNIQUE,
+    "product_id" TEXT,
+    "material_name" TEXT NOT NULL,
+    "production_order_id" UUID REFERENCES "up_production_orders"("id") ON DELETE SET NULL,
+    "branch_id" TEXT NOT NULL,
+    "quantity" NUMERIC(12, 2) NOT NULL,
+    "unit" TEXT NOT NULL DEFAULT 'kg',
+    "reason" TEXT NOT NULL,
+    "estimated_loss_paise" BIGINT NOT NULL DEFAULT 0,
+    "recovered_value_paise" BIGINT NOT NULL DEFAULT 0,
+    "logged_by" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );`,
+
+  `CREATE TABLE IF NOT EXISTS "up_physical_counts" (
+    "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    "count_number" TEXT NOT NULL UNIQUE,
+    "branch_id" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'COMPLETED',
+    "items_json" JSONB NOT NULL DEFAULT '[]'::jsonb,
+    "total_items_counted" INTEGER NOT NULL DEFAULT 0,
+    "total_variance_units" INTEGER NOT NULL DEFAULT 0,
+    "notes" TEXT,
+    "performed_by" TEXT NOT NULL,
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );`,
+
+  `CREATE INDEX IF NOT EXISTS "idx_up_boms_product" ON "up_boms"("product_id");`,
+  `CREATE INDEX IF NOT EXISTS "idx_up_boms_sku" ON "up_boms"("sku");`,
+  `CREATE INDEX IF NOT EXISTS "idx_up_bom_items_bom" ON "up_bom_items"("bom_id");`,
+  `CREATE INDEX IF NOT EXISTS "idx_up_production_orders_num" ON "up_production_orders"("order_number");`,
+  `CREATE INDEX IF NOT EXISTS "idx_up_production_orders_status" ON "up_production_orders"("status");`,
+  `CREATE INDEX IF NOT EXISTS "idx_up_damaged_stock_num" ON "up_damaged_stock"("ticket_number");`,
+  `CREATE INDEX IF NOT EXISTS "idx_up_scrap_logs_num" ON "up_scrap_logs"("scrap_number");`,
+  `CREATE INDEX IF NOT EXISTS "idx_up_physical_counts_num" ON "up_physical_counts"("count_number");`,
+
+  `DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'StockMovementType') THEN
+      ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'PRODUCTION_IN';
+      ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'PRODUCTION_OUT';
+      ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'SCRAP_OUT';
+      ALTER TYPE "StockMovementType" ADD VALUE IF NOT EXISTS 'PHYSICAL_COUNT_ADJUSTMENT';
+    END IF;
+  END $$;`,
+
+  `ALTER TABLE "up_boms" ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE "up_bom_items" ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE "up_production_orders" ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE "up_damaged_stock" ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE "up_scrap_logs" ENABLE ROW LEVEL SECURITY;`,
+  `ALTER TABLE "up_physical_counts" ENABLE ROW LEVEL SECURITY;`,
+
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'up_boms' AND policyname = 'up_boms_access_policy') THEN
+      CREATE POLICY up_boms_access_policy ON "up_boms" FOR ALL USING (public.has_up_access());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'up_bom_items' AND policyname = 'up_bom_items_access_policy') THEN
+      CREATE POLICY up_bom_items_access_policy ON "up_bom_items" FOR ALL USING (public.has_up_access());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'up_production_orders' AND policyname = 'up_production_orders_access_policy') THEN
+      CREATE POLICY up_production_orders_access_policy ON "up_production_orders" FOR ALL USING (public.has_up_access());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'up_damaged_stock' AND policyname = 'up_damaged_stock_access_policy') THEN
+      CREATE POLICY up_damaged_stock_access_policy ON "up_damaged_stock" FOR ALL USING (public.has_up_access());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'up_scrap_logs' AND policyname = 'up_scrap_logs_access_policy') THEN
+      CREATE POLICY up_scrap_logs_access_policy ON "up_scrap_logs" FOR ALL USING (public.has_up_access());
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'up_physical_counts' AND policyname = 'up_physical_counts_access_policy') THEN
+      CREATE POLICY up_physical_counts_access_policy ON "up_physical_counts" FOR ALL USING (public.has_up_access());
+    END IF;
+  END $$;`,
 ];
 
 async function run() {
