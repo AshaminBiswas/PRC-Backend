@@ -53,6 +53,7 @@ import installerPaymentsRoutes from './modules/installer-payments/installer-paym
 import employeeManagementRoutes from './modules/employee-management/employee-management.routes';
 import aiAgentRoutes from './modules/ai-agent/ai-agent.routes';
 import expensesRoutes from './modules/expenses/expenses.routes';
+import upRoutes from './modules/up/up.routes';
 import b2bOrdersRoutes from './modules/b2b-orders/b2b-orders.routes';
 import {
   branchesRouter,
@@ -394,6 +395,8 @@ app.use(`${prefix}/b2b-orders`, b2bOrdersRoutes);
 app.use(`${prefix}/installer-payments`, installerPaymentsRoutes);
 app.use(`${prefix}/employees`, employeeManagementRoutes);
 app.use(`${prefix}/expenses`, expensesRoutes);
+app.use('/api/admin/up', upRoutes);
+app.use(`${prefix}/up`, upRoutes);
 app.use(`${prefix}/ai-agent`, aiAgentRoutes);
 app.use(`${prefix}/events`, sseRoutes);
 

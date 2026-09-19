@@ -3084,3 +3084,88 @@ model ProductScanLifecycle {
   @@index([orderId])
   @@map("product_scan_lifecycles")
 }
+
+// ─── UP Daily Cash Expense Module (Factory-Specific Ledger) ───────────────────
+
+model UpExpenseCategory {
+  id        String      @id @default(uuid())
+  name      String      @unique
+  active    Boolean     @default(true)
+  sortOrder Int         @default(0) @map("sort_order")
+  createdBy String?     @map("created_by")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @default(now()) @updatedAt @map("updated_at")
+  expenses  UpExpense[]
+
+  @@map("up_expense_categories")
+}
+
+model UpExpense {
+  id          String            @id @default(uuid())
+  expenseDate DateTime          @map("expense_date") @db.Date
+  amount      Decimal           @db.Decimal(14, 2)
+  categoryId  String            @map("category_id")
+  category    UpExpenseCategory @relation(fields: [categoryId], references: [id])
+  paymentMode String            @default("cash") @map("payment_mode")
+  paidTo      String            @map("paid_to")
+  note        String?
+  receiptPath String?           @map("receipt_path")
+  verified    Boolean           @default(false)
+  verifiedBy  String?           @map("verified_by")
+  verifiedAt  DateTime?         @map("verified_at")
+  createdBy   String            @map("created_by")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at")
+  deletedAt   DateTime?         @map("deleted_at")
+
+  @@index([expenseDate])
+  @@index([categoryId])
+  @@index([createdBy])
+  @@index([expenseDate, categoryId])
+  @@index([verified])
+  @@index([deletedAt])
+  @@map("up_expenses")
+}
+
+model UpExpenseAccess {
+  id        String    @id @default(uuid())
+  adminId   String    @map("admin_id")
+  grantedBy String    @map("granted_by")
+  grantedAt DateTime  @default(now()) @map("granted_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  @@index([adminId])
+  @@map("up_expense_access")
+}
+
+model UpExpenseAudit {
+  id        String   @id @default(uuid())
+  expenseId String   @map("expense_id")
+  action    String
+  changedBy String   @map("changed_by")
+  beforeJson Json?   @map("before_json")
+  afterJson  Json?   @map("after_json")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([expenseId])
+  @@map("up_expense_audit")
+}
+
+model UpCashDay {
+  id                     String    @id @default(uuid())
+  cashDate               DateTime  @unique @map("cash_date") @db.Date
+  openingBalance         Decimal   @default(0) @map("opening_balance") @db.Decimal(14, 2)
+  closingBalance         Decimal?  @map("closing_balance") @db.Decimal(14, 2)
+  expectedClosingBalance Decimal?  @map("expected_closing_balance") @db.Decimal(14, 2)
+  difference             Decimal?  @db.Decimal(14, 2)
+  notes                  String?
+  closed                 Boolean   @default(false)
+  closedBy               String?   @map("closed_by")
+  closedAt               DateTime? @map("closed_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  @@index([cashDate])
+  @@map("up_cash_days")
+}
+
