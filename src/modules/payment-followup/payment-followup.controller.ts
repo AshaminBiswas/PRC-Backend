@@ -104,16 +104,45 @@ export class PaymentFollowupController {
     }
   };
 
+  public addBalanceEntry = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await paymentFollowupService.addBalanceEntry(req.user?.id, req.params.id, req.body);
+      sendSuccess(res, data, 'Balance entry recorded successfully', 201);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  public getLedger = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { fromDate, toDate } = req.query as { fromDate?: string; toDate?: string };
+      const data = await paymentFollowupService.getCustomerLedgerJson(req.params.id, fromDate, toDate);
+      sendSuccess(res, data, 'Customer ledger retrieved successfully');
+    } catch (err) {
+      next(err);
+    }
+  };
+
   public downloadLedgerPdf = async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const { fromDate, toDate } = req.query as { fromDate?: string; toDate?: string };
       const duesDetail = await paymentFollowupService.getCustomerDuesDetail(req.params.id);
-      const ledgerPdfInput = paymentFollowupService.buildLedgerPdfInput(duesDetail);
-      const pdfBuffer = await generateCustomerLedgerPdfBuffer(ledgerPdfInput);
+      const pdfBuffer = await paymentFollowupService.getCustomerLedgerPdf(req.params.id, fromDate, toDate);
 
-      const filename = `Statement-of-Account-${duesDetail.customer.name.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+      const safeName = duesDetail.customer.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `Statement-of-Account-${safeName}.pdf`;
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.send(pdfBuffer);
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  public sendCommunication = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await paymentFollowupService.sendCustomerCommunication(req.user?.id, req.params.id, req.body);
+      sendSuccess(res, data, 'Customer communication processed successfully');
     } catch (err) {
       next(err);
     }

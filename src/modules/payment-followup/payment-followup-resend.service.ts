@@ -30,6 +30,7 @@ export interface SendPaymentFollowupEmailOptions {
   };
   attachLedgerPdf?: boolean;
   ledgerInput?: CustomerLedgerPdfInput;
+  additionalAttachments?: Array<{ filename: string; content: Buffer }>;
   dispatchedById?: string;
 }
 
@@ -119,13 +120,26 @@ export class PaymentFollowupResendService {
           text: renderedBody,
         };
 
+        const attachmentsList: Array<{ filename: string; content: string }> = [];
+
         if (pdfBuffer && attachmentName) {
-          payload.attachments = [
-            {
-              filename: attachmentName,
-              content: pdfBuffer.toString('base64'),
-            },
-          ];
+          attachmentsList.push({
+            filename: attachmentName,
+            content: pdfBuffer.toString('base64'),
+          });
+        }
+
+        if (options.additionalAttachments && options.additionalAttachments.length > 0) {
+          for (const att of options.additionalAttachments) {
+            attachmentsList.push({
+              filename: att.filename,
+              content: att.content.toString('base64'),
+            });
+          }
+        }
+
+        if (attachmentsList.length > 0) {
+          payload.attachments = attachmentsList;
         }
 
         const resendRes = await this.resendClient.emails.send(payload);

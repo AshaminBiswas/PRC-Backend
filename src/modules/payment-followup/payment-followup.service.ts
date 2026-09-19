@@ -23,10 +23,18 @@ import {
   BulkActionPreviewResult,
   BulkActionResult,
   FollowupProfileStatus,
+  AddCustomerBalanceEntryInput,
+  SendCustomerCommunicationInput,
+  SelectableDocumentItem,
+  StatementLedgerRow,
 } from './payment-followup.types';
-import { CustomerLedgerPdfInput, StatementLedgerRow } from './customer-ledger-pdf.service';
+import { CustomerLedgerPdfInput, generateCustomerLedgerPdfBuffer } from './customer-ledger-pdf.service';
 import { paymentFollowupResendService } from './payment-followup-resend.service';
 import { smsReminderService } from './sms-reminder.service';
+import { paymentAllocationService } from './payment-allocation.service';
+import { generateProformaPdf } from '../proforma-invoices/proforma-invoice-pdf.service';
+import { generatePurchaseOrderPdfBuffer } from '../inventory/purchase-order-pdf.service';
+import { generateQuotationPdf } from '../quotes/quotation-pdf.service';
 
 export class PaymentFollowupService {
   /**
@@ -597,6 +605,27 @@ export class PaymentFollowupService {
       ? `${shippingAddr.addressLine1}, ${shippingAddr.city}, ${shippingAddr.state} - ${shippingAddr.postalCode}`
       : null;
 
+    const billingDetails = billingAddr
+      ? {
+          addressLine1: billingAddr.addressLine1,
+          addressLine2: billingAddr.addressLine2 || undefined,
+          city: billingAddr.city,
+          state: billingAddr.state,
+          postalCode: billingAddr.postalCode,
+          country: billingAddr.country || 'India',
+        }
+      : null;
+    const shippingDetails = shippingAddr
+      ? {
+          addressLine1: shippingAddr.addressLine1,
+          addressLine2: shippingAddr.addressLine2 || undefined,
+          city: shippingAddr.city,
+          state: shippingAddr.state,
+          postalCode: shippingAddr.postalCode,
+          country: shippingAddr.country || 'India',
+        }
+      : billingDetails;
+
     // Fetch active dues
     const openingBalances = await prisma.openingBalanceEntry.findMany({
       where: { customerId },
@@ -616,6 +645,29 @@ export class PaymentFollowupService {
     const proformas = await prisma.proformaInvoice.findMany({
       where: { customerId, deletedAt: null, status: { notIn: ['CANCELLED', 'EXPIRED'] } },
       orderBy: { createdAt: 'desc' },
+    });
+
+    const quotes = await prisma.quote.findMany({
+      where: {
+        OR: [
+          { userId: customerId },
+          ...(customer.email ? [{ email: customer.email }] : []),
+          ...(customer.companyName ? [{ companyName: { contains: customer.companyName, mode: 'insensitive' as const } }] : []),
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    });
+
+    const poSubmissions = await prisma.poSubmission.findMany({
+      where: {
+        OR: [
+          ...(customer.email ? [{ customerEmail: customer.email }] : []),
+          ...(customer.companyName ? [{ companyName: { contains: customer.companyName, mode: 'insensitive' as const } }] : []),
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
     });
 
     const now = new Date();
@@ -731,11 +783,113 @@ export class PaymentFollowupService {
       }
     }
 
+    // Financial totals
+    const totalBilledAmount = Math.round(
+      (openingBalances.reduce((sum, ob) => sum + Number(ob.openingAmount), 0) +
+        taxInvoices.reduce((sum, inv) => sum + Number(inv.grandTotal), 0) +
+        b2bOrders.reduce((sum: number, ord: any) => sum + Number(ord.grandTotal), 0) +
+        proformas.reduce((sum, pi) => sum + Number(pi.grandTotal), 0)) * 100
+    ) / 100;
+
+    const totalAdvancePaid = Math.round(
+      proformas.reduce((sum, pi) => sum + Number(pi.advanceAmount || 0), 0) * 100
+    ) / 100;
+
+    const totalPaymentsCollected = Math.round(
+      customer.paymentAllocations.reduce((sum, a) => sum + Number(a.allocatedAmount || 0), 0) * 100
+    ) / 100;
+
+    const netBalanceDue = totalOutstanding;
+
     // Aging breakdown
     const bucket0_30 = duesList.filter((d) => d.agingBucket === '0_30').reduce((sum, d) => sum + d.balanceDue, 0);
     const bucket31_60 = duesList.filter((d) => d.agingBucket === '31_60').reduce((sum, d) => sum + d.balanceDue, 0);
     const bucket61_90 = duesList.filter((d) => d.agingBucket === '61_90').reduce((sum, d) => sum + d.balanceDue, 0);
     const bucket90_plus = duesList.filter((d) => d.agingBucket === '90_PLUS').reduce((sum, d) => sum + d.balanceDue, 0);
+
+    // Build chronological ledger entries
+    const allEvents: Array<{
+      date: Date;
+      refNo: string;
+      description: string;
+      debit: number;
+      credit: number;
+    }> = [];
+
+    for (const d of duesList) {
+      allEvents.push({
+        date: new Date(d.referenceDate),
+        refNo: d.documentNumber,
+        description: d.sourceType === 'OPENING_BALANCE' ? 'Historical Opening Dues' : `${d.sourceType} Billing`,
+        debit: d.totalAmount,
+        credit: 0,
+      });
+    }
+
+    for (const a of customer.paymentAllocations) {
+      allEvents.push({
+        date: new Date(a.paymentDate),
+        refNo: a.transactionRef ? `REF-${a.transactionRef}` : 'PAYMENT',
+        description: `Payment via ${a.paymentMode} against ${a.targetDocumentNumber || a.targetType}`,
+        debit: 0,
+        credit: Number(a.allocatedAmount),
+      });
+    }
+
+    allEvents.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    let runningBal = 0;
+    const ledgerEntries: StatementLedgerRow[] = allEvents.map((ev) => {
+      runningBal += ev.debit - ev.credit;
+      return {
+        date: ev.date.toISOString(),
+        refNo: ev.refNo,
+        description: ev.description,
+        debit: ev.debit,
+        credit: ev.credit,
+        balance: Math.round(runningBal * 100) / 100,
+      };
+    });
+
+    const selectableDocuments = {
+      proformas: proformas.map((pi) => ({
+        id: pi.id,
+        type: 'PROFORMA_INVOICE' as const,
+        documentNumber: pi.piNumber,
+        date: pi.createdAt.toISOString(),
+        amount: Number(pi.grandTotal),
+        balanceDue: Number(pi.balanceDue || 0),
+        status: pi.status,
+        viewUrl: `/proforma-invoices/view/${pi.id}`,
+      })),
+      purchaseOrders: poSubmissions.map((po) => ({
+        id: po.id,
+        type: 'PURCHASE_ORDER' as const,
+        documentNumber: po.customerPoNumber || po.poSubmissionId || `PO-${po.id.slice(0, 8)}`,
+        date: po.createdAt.toISOString(),
+        amount: 0,
+        status: po.status,
+        viewUrl: `/po-management/${po.id}`,
+      })),
+      quotations: quotes.map((q) => ({
+        id: q.id,
+        type: 'QUOTATION' as const,
+        documentNumber: q.quoteNumber,
+        date: q.createdAt.toISOString(),
+        amount: Number(q.grandTotal || q.subtotal || 0),
+        status: q.status,
+        viewUrl: `/quotes/${q.id}`,
+      })),
+      invoices: taxInvoices.map((inv) => ({
+        id: inv.id,
+        type: 'TAX_INVOICE' as const,
+        documentNumber: inv.invoiceNumber,
+        date: inv.createdAt.toISOString(),
+        amount: Number(inv.grandTotal),
+        balanceDue: inv.status === 'PAID' ? 0 : Number(inv.grandTotal),
+        status: inv.status,
+      })),
+    };
 
     const profile = customer.paymentFollowupProfile;
 
@@ -750,6 +904,8 @@ export class PaymentFollowupService {
         source: customer.source || 'ORGANIC',
         billingAddress: billingStr,
         shippingAddress: shippingStr,
+        billingAddressDetails: billingDetails,
+        shippingAddressDetails: shippingDetails,
         missingEmail: !customer.email || isPlaceholderEmail,
         missingPhone: !customer.phone || customer.phone.length < 10,
         missingGstin: !customer.gstin || customer.gstin.length < 15,
@@ -767,6 +923,10 @@ export class PaymentFollowupService {
         followupStatus: (profile?.status as FollowupProfileStatus) || (maxDaysOverdue > 0 ? 'OVERDUE' : 'ACTIVE'),
         declineReason: profile?.declineReason,
         declinedAt: profile?.declinedAt ? profile.declinedAt.toISOString() : null,
+        totalBilledAmount,
+        totalAdvancePaid,
+        totalPaymentsCollected,
+        netBalanceDue,
       },
       agingBreakdown: {
         bucket0_30: Math.round(bucket0_30 * 100) / 100,
@@ -801,6 +961,8 @@ export class PaymentFollowupService {
         performedByName: e.performedByName,
         createdAt: e.createdAt.toISOString(),
       })),
+      ledgerEntries,
+      selectableDocuments,
       emailLogs: customer.paymentFollowupEmailLogs.map((l) => ({
         id: l.id,
         recipientEmail: l.recipientEmail,
@@ -960,7 +1122,11 @@ export class PaymentFollowupService {
   /**
    * Helper to record reminder dispatch touchpoints.
    */
-  public async recordReminderTouchpoint(customerId: string, channel: 'EMAIL' | 'SMS', note: string) {
+  public async recordReminderTouchpoint(
+    customerId: string,
+    channel: 'EMAIL' | 'SMS' | 'WHATSAPP' | 'CALL' | 'NOTE',
+    note: string
+  ) {
     await prisma.paymentFollowupProfile.upsert({
       where: { customerId },
       update: {
@@ -975,10 +1141,12 @@ export class PaymentFollowupService {
       },
     });
 
+    const followupType = channel === 'EMAIL' ? 'LEDGER_EMAIL' : channel === 'WHATSAPP' ? 'OTHER' : channel;
+
     await prisma.paymentFollowupEntry.create({
       data: {
         customerId,
-        followupType: channel === 'EMAIL' ? 'LEDGER_EMAIL' : 'SMS',
+        followupType,
         outcome: 'CALL_MADE',
         notes: note,
         performedById: 'system',
@@ -1294,6 +1462,354 @@ export class PaymentFollowupService {
       failed,
       skipped,
       details,
+    };
+  }
+
+  /**
+   * Adds an opening dues balance (Debit) or records a past payment (Credit) with custom date.
+   */
+  public async addBalanceEntry(
+    userId: string | undefined,
+    customerId: string,
+    input: AddCustomerBalanceEntryInput
+  ) {
+    const amount = Number(input.amount);
+    if (!amount || amount <= 0) {
+      throw new AppError('BAD_REQUEST', 'Amount must be greater than zero', 400);
+    }
+
+    const customer = await prisma.user.findUnique({
+      where: { id: customerId, deletedAt: null },
+    });
+    if (!customer) {
+      throw new AppError('NOT_FOUND', 'Customer account not found', 404);
+    }
+
+    if (input.entryType === 'CREDIT') {
+      const allocResult = await paymentAllocationService.recordAndAllocatePayment(userId, {
+        customerId,
+        amount,
+        paymentDate: input.referenceDate || new Date().toISOString().split('T')[0],
+        paymentMode: input.paymentMode || 'BANK_TRANSFER',
+        transactionRef: input.referenceNumber,
+        allocationMode: 'OLDEST_DUE_FIRST',
+        notes: input.notes || 'Historical payment entry (Credit)',
+      });
+
+      return {
+        success: true,
+        message: `Payment entry of ₹${amount.toLocaleString('en-IN')} recorded and allocated successfully.`,
+        allocResult,
+      };
+    }
+
+    // DEBIT: Add opening dues balance
+    const refDate = input.referenceDate ? new Date(input.referenceDate) : new Date();
+    const entry = await prisma.openingBalanceEntry.create({
+      data: {
+        customerId,
+        customerName: `${customer.firstName} ${customer.lastName}`.trim(),
+        companyName: customer.companyName || null,
+        openingAmount: amount,
+        paidAmount: 0,
+        remainingBalance: amount,
+        referenceDate: refDate,
+        referenceNote: input.referenceNumber
+          ? `Ref #${input.referenceNumber}: ${input.notes || 'Past balance addition (Debit)'}`
+          : input.notes || 'Historical balance addition (Debit)',
+        status: 'PARTIAL',
+        createdById: userId,
+      },
+    });
+
+    // Ensure customer followup profile is ACTIVE
+    await prisma.paymentFollowupProfile.upsert({
+      where: { customerId },
+      update: { status: 'ACTIVE' },
+      create: {
+        customerId,
+        status: 'ACTIVE',
+      },
+    });
+
+    // Timeline entry
+    await prisma.paymentFollowupEntry.create({
+      data: {
+        customerId,
+        performedById: userId || 'system',
+        performedByName: 'Collections Officer',
+        followupType: 'NOTE',
+        outcome: 'NOTE_ADDED',
+        notes: `Added past dues balance: ₹${amount.toLocaleString('en-IN')} (Ref: ${input.referenceNumber || 'N/A'}, Date: ${input.referenceDate}). ${input.notes || ''}`.trim(),
+      },
+    });
+
+    return {
+      success: true,
+      message: `Debit balance entry of ₹${amount.toLocaleString('en-IN')} added successfully.`,
+      entry,
+    };
+  }
+
+  /**
+   * Retrieves structured ledger / Statement of Account data with optional date range filtering.
+   */
+  public async getCustomerLedgerJson(
+    customerId: string,
+    fromDate?: string,
+    toDate?: string
+  ) {
+    const detail = await this.getCustomerDuesDetail(customerId);
+    let rows = detail.ledgerEntries || [];
+
+    if (fromDate) {
+      const fromTime = new Date(fromDate).getTime();
+      rows = rows.filter((r) => new Date(r.date).getTime() >= fromTime);
+    }
+    if (toDate) {
+      const toTime = new Date(toDate).getTime() + (24 * 60 * 60 * 1000 - 1);
+      rows = rows.filter((r) => new Date(r.date).getTime() <= toTime);
+    }
+
+    const totalDebit = Math.round(rows.reduce((sum, r) => sum + r.debit, 0) * 100) / 100;
+    const totalCredit = Math.round(rows.reduce((sum, r) => sum + r.credit, 0) * 100) / 100;
+    const closingBalance = Math.round((detail.summary.totalOutstanding || (totalDebit - totalCredit)) * 100) / 100;
+
+    const billingStr = detail.customer.billingAddressDetails
+      ? `${detail.customer.billingAddressDetails.addressLine1}${detail.customer.billingAddressDetails.addressLine2 ? ', ' + detail.customer.billingAddressDetails.addressLine2 : ''}, ${detail.customer.billingAddressDetails.city}, ${detail.customer.billingAddressDetails.state} - ${detail.customer.billingAddressDetails.postalCode}`
+      : detail.customer.billingAddress || null;
+
+    return {
+      customer: {
+        name: detail.customer.name,
+        companyName: detail.customer.companyName,
+        phone: detail.customer.phone,
+        email: detail.customer.email,
+        gstin: detail.customer.gstin,
+        billingAddress: billingStr,
+      },
+      statementDate: new Date().toISOString(),
+      periodStart: fromDate,
+      periodEnd: toDate,
+      openingBalance: 0,
+      transactions: rows,
+      totalDebit,
+      totalCredit,
+      closingBalance,
+      agingBreakdown: detail.agingBreakdown,
+    };
+  }
+
+  /**
+   * Compiles and renders the strict monochrome Statement of Account vector PDF buffer.
+   */
+  public async getCustomerLedgerPdf(
+    customerId: string,
+    fromDate?: string,
+    toDate?: string
+  ): Promise<Buffer> {
+    const ledgerData = await this.getCustomerLedgerJson(customerId, fromDate, toDate);
+
+    return await generateCustomerLedgerPdfBuffer({
+      customer: ledgerData.customer,
+      statementDate: ledgerData.statementDate,
+      periodStart: ledgerData.periodStart,
+      periodEnd: ledgerData.periodEnd,
+      openingBalance: ledgerData.openingBalance,
+      transactions: ledgerData.transactions,
+      totalDebit: ledgerData.totalDebit,
+      totalCredit: ledgerData.totalCredit,
+      closingBalance: ledgerData.closingBalance,
+      agingBreakdown: ledgerData.agingBreakdown,
+    });
+  }
+
+  /**
+   * Dispatches unified customer communication across Email, SMS, and/or WhatsApp
+   * with dynamic multi-attachment support (Ledger PDF, PIs, Quotes, POs).
+   */
+  public async sendCustomerCommunication(
+    userId: string | undefined,
+    customerId: string,
+    input: SendCustomerCommunicationInput
+  ) {
+    const customer = await prisma.user.findUnique({
+      where: { id: customerId, deletedAt: null },
+    });
+    if (!customer) {
+      throw new AppError('NOT_FOUND', 'Customer not found', 404);
+    }
+
+    const detail = await this.getCustomerDuesDetail(customerId);
+    const attachments: Array<{ filename: string; content: Buffer }> = [];
+    const docSummaries: string[] = [];
+
+    // 1. Generate Ledger PDF if requested
+    if (input.attachLedgerPdf) {
+      try {
+        const ledgerBuffer = await this.getCustomerLedgerPdf(customerId);
+        const safeName = (customer.companyName || customer.firstName || 'Customer').replace(/[^a-zA-Z0-9_-]/g, '_');
+        attachments.push({
+          filename: `Statement-of-Account-${safeName}.pdf`,
+          content: ledgerBuffer,
+        });
+        docSummaries.push('Statement of Account (Ledger PDF)');
+      } catch (err) {
+        console.error('[sendCustomerCommunication] Failed to generate Ledger PDF:', err);
+      }
+    }
+
+    // 2. Load & Generate attachments for selectedDocumentIds
+    if (input.selectedDocumentIds && input.selectedDocumentIds.length > 0) {
+      for (const doc of input.selectedDocumentIds) {
+        const docId = doc.id;
+        // Check Proforma Invoice
+        const pi = await prisma.proformaInvoice.findUnique({
+          where: { id: docId },
+          include: { items: true },
+        });
+        if (pi) {
+          try {
+            const piBuffer = await generateProformaPdf(pi as any);
+            attachments.push({
+              filename: `${pi.piNumber}.pdf`,
+              content: piBuffer,
+            });
+            docSummaries.push(`Proforma Invoice ${pi.piNumber}`);
+            continue;
+          } catch (err) {
+            console.error(`[sendCustomerCommunication] Failed to generate PI PDF for ${pi.piNumber}:`, err);
+          }
+        }
+
+        // Check Quotation
+        const quote = await prisma.quote.findUnique({
+          where: { id: docId },
+          include: { items: true },
+        });
+        if (quote) {
+          try {
+            const quoteBuffer = await generateQuotationPdf(quote as any);
+            attachments.push({
+              filename: `Quote-${quote.quoteNumber}.pdf`,
+              content: quoteBuffer,
+            });
+            docSummaries.push(`Quotation #${quote.quoteNumber}`);
+            continue;
+          } catch (err) {
+            console.error(`[sendCustomerCommunication] Failed to generate Quote PDF for ${quote.quoteNumber}:`, err);
+          }
+        }
+
+        // Check PO Submission
+        const po = await prisma.poSubmission.findUnique({
+          where: { id: docId },
+        });
+        if (po) {
+          docSummaries.push(`Purchase Order #${po.customerPoNumber || po.poSubmissionId || docId.slice(0, 8)}`);
+        }
+      }
+    }
+
+    let emailSent = false;
+    let smsSent = false;
+    let whatsappUrl: string | undefined;
+
+    // 3. Email Channel
+    if (input.channels.includes('EMAIL')) {
+      const rawEmail = (customer.email || '').trim();
+      const isPlaceholder = rawEmail.includes('@internal.prc') || rawEmail.startsWith('legacy_');
+      if (!rawEmail || isPlaceholder) {
+        throw new AppError('BAD_REQUEST', 'Customer does not have a valid email address on file', 400);
+      }
+
+      const emailRes = await paymentFollowupResendService.sendFollowupEmail({
+        customerId,
+        recipientEmail: rawEmail,
+        subjectTemplate: input.emailSubject || 'Outstanding Commercial Statement — {{customer_name}} [₹{{outstanding_amount}}]',
+        bodyTemplate:
+          input.emailBody ||
+          'Dear {{customer_name}},\n\nPlease find attached the official Statement of Account and commercial documents.\n\nRegards,\nCommercial Accounts Desk\nPacific Products & Solutions',
+        outstandingAmount: detail.summary.totalOutstanding,
+        templateVariables: {
+          customer_name: detail.customer.name,
+          company_name: detail.customer.companyName || detail.customer.name,
+          outstanding_amount: detail.summary.totalOutstanding.toLocaleString('en-IN'),
+          statement_date: new Date().toLocaleDateString('en-IN'),
+        },
+        dispatchedById: userId,
+        attachLedgerPdf: false,
+        additionalAttachments: attachments,
+      });
+
+      if (emailRes.success) {
+        emailSent = true;
+        const docNote = docSummaries.length > 0 ? ` with docs: ${docSummaries.join(', ')}` : '';
+        await this.recordReminderTouchpoint(customerId, 'EMAIL', `Communication email sent${docNote}.`);
+      } else {
+        throw new AppError('INTERNAL_SERVER_ERROR', `Failed to send email: ${emailRes.error}`, 500);
+      }
+    }
+
+    // 4. SMS Channel
+    if (input.channels.includes('SMS')) {
+      const phone = (customer.phone || '').trim();
+      if (!phone || phone.length < 10) {
+        throw new AppError('BAD_REQUEST', 'Customer does not have a valid phone number on file', 400);
+      }
+
+      const defaultSms =
+        input.smsMessage ||
+        'Dear {{customer_name}}, your outstanding balance of ₹{{outstanding_amount}} is pending with PRC Hardware. Please arrange payment at the earliest. — Pacific Products';
+      const smsRes = await smsReminderService.sendSmsReminder({
+        customerId,
+        phoneNumber: phone,
+        template: defaultSms,
+        templateVariables: {
+          customer_name: detail.customer.name,
+          outstanding_amount: detail.summary.totalOutstanding.toLocaleString('en-IN'),
+        },
+        outstandingAmount: detail.summary.totalOutstanding,
+        templateName: 'CUSTOM_COMMUNICATION',
+        dispatchedById: userId || 'system',
+      });
+
+      if (smsRes.success) {
+        smsSent = true;
+        await this.recordReminderTouchpoint(customerId, 'SMS', 'Custom SMS communication sent.');
+      } else {
+        throw new AppError('INTERNAL_SERVER_ERROR', `Failed to send SMS: ${smsRes.error}`, 500);
+      }
+    }
+
+    // 5. WhatsApp Channel
+    if (input.channels.includes('WHATSAPP')) {
+      const rawPhone = (customer.phone || '').trim().replace(/[^0-9]/g, '');
+      const cleanPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+
+      const defaultMsg =
+        input.whatsappMessage ||
+        `Hello ${customer.firstName || 'Customer'},\n\nThis is a follow-up from *PRC Hardware (Pacific Products & Solutions)* regarding your account.\n\n*Total Outstanding Balance:* \u20B9${detail.summary.totalOutstanding.toLocaleString('en-IN')}\n${
+          docSummaries.length > 0 ? `*Referenced Documents:* ${docSummaries.join(', ')}\n` : ''
+        }\n*Bank Details for RTGS/NEFT/UPI:*\nBank: HDFC Bank Ltd.\nA/C: 50200088991122\nIFSC: HDFC0001234\nUPI: prchardware@hdfcbank\n\nPlease find the documents/statement attached or contact our accounts team for any queries.\nThank you!`;
+
+      whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(defaultMsg)}`;
+
+      await this.recordReminderTouchpoint(
+        customerId,
+        'WHATSAPP',
+        `Prepared WhatsApp communication with ${docSummaries.length} document references.`
+      );
+    }
+
+    return {
+      success: true,
+      emailSent,
+      smsSent,
+      whatsappUrl,
+      whatsappMessage: input.whatsappMessage,
+      attachmentsCount: attachments.length,
+      message: 'Customer communication processed successfully.',
     };
   }
 }

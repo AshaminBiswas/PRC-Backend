@@ -53,11 +53,22 @@ paymentFollowupRouter.post(
   paymentFollowupController.recordPaymentAllocation
 );
 
-// ─── 5. Follow-up Touchpoints & Notes ────────────────────────────────────────
 paymentFollowupRouter.post(
   '/customers/:id/touchpoint',
   authorize('payment_followup.manage', 'payment_followup.view_history'),
   paymentFollowupController.logFollowupTouchpoint
+);
+paymentFollowupRouter.post(
+  '/customers/:id/touchpoints',
+  authorize('payment_followup.manage', 'payment_followup.view_history'),
+  paymentFollowupController.logFollowupTouchpoint
+);
+
+// ─── 5b. Add Historical Balance Entry (Debit / Credit) ─────────────────────
+paymentFollowupRouter.post(
+  '/customers/:id/balance-entry',
+  authorize('payment_followup.manage'),
+  paymentFollowupController.addBalanceEntry
 );
 
 // ─── 6. Decline / Dispute & Resume ──────────────────────────────────────────
@@ -73,11 +84,23 @@ paymentFollowupRouter.post(
   paymentFollowupController.resumeFollowup
 );
 
-// ─── 7. Statement of Account PDF & Resend / SMS Dispatches ───────────────────
+// ─── 7. Statement of Account & Multi-Channel Communications ─────────────────
+paymentFollowupRouter.get(
+  '/customers/:id/ledger',
+  authorize('payment_followup.view', 'invoices.read'),
+  paymentFollowupController.getLedger
+);
+
 paymentFollowupRouter.get(
   '/customers/:id/ledger-pdf',
   authorize('payment_followup.view', 'invoices.read'),
   paymentFollowupController.downloadLedgerPdf
+);
+
+paymentFollowupRouter.post(
+  '/customers/:id/send-communication',
+  authorize('payment_followup.send'),
+  paymentFollowupController.sendCommunication
 );
 
 paymentFollowupRouter.post(
