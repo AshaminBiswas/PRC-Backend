@@ -197,7 +197,7 @@ export const getStockList = async (params: {
   branchId?: string;
   category?: string;
   stockStatus?: string;
-  itemType?: string; // 'ALL' | 'RAW_MATERIAL' | 'FINISHED_GOOD'
+  itemType?: string; // 'ALL' | 'RAW_MATERIAL' | 'SEMI_FINISHED_GOOD' | 'FINISHED_GOOD'
 }) => {
   const page = Math.max(1, Number(params.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(params.limit) || 25));
@@ -240,6 +240,7 @@ export const getStockList = async (params: {
         p.finish,
         p.colour,
         p.dimensions,
+        p."up_item_type" as "upItemType",
         c.name as "categoryName",
         b.id as "bomId",
         COALESCE(i.quantity, p.stock, 0)::int as "onHand",
@@ -273,9 +274,14 @@ export const getStockList = async (params: {
       if (available <= 0) status = 'OUT_OF_STOCK';
       else if (available <= reorder) status = 'LOW_STOCK';
 
-      // Item type classification: if it has a BOM, it is a Finished Good; otherwise Raw Material or Part
-      const isFinishedGood = Boolean(r.bomId);
-      const itemType = isFinishedGood ? 'FINISHED_GOOD' : 'RAW_MATERIAL';
+      // Item type: explicit up_item_type column takes priority (set when product was created via UP Factory).
+      // Fall back to BOM-detection for products that pre-date the column.
+      let itemType: string;
+      if (r.upItemType && r.upItemType !== '') {
+        itemType = r.upItemType;
+      } else {
+        itemType = Boolean(r.bomId) ? 'FINISHED_GOOD' : 'RAW_MATERIAL';
+      }
 
       return {
         ...r,
@@ -1143,7 +1149,7 @@ export const createFactoryProduct = async (
     name: string;
     sku: string;
     barcode?: string;
-    productType?: 'FINISHED_GOOD' | 'RAW_MATERIAL';
+    productType?: 'FINISHED_GOOD' | 'SEMI_FINISHED_GOOD' | 'RAW_MATERIAL';
     categoryName?: string;
     finish?: string;
     colour?: string;
@@ -1177,7 +1183,7 @@ export const createFactoryProduct = async (
     }
 
     // 2. Resolve Category
-    const categoryNameToFind = (data.categoryName || (productType === 'RAW_MATERIAL' ? 'Raw Materials' : 'Factory Hardware')).trim();
+    const categoryNameToFind = (data.categoryName || (productType === 'RAW_MATERIAL' ? 'Raw Materials' : productType === 'SEMI_FINISHED_GOOD' ? 'Semi-Finished Goods' : 'Factory Hardware')).trim();
     let categoryRow = await tx.$queryRawUnsafe<any[]>(`
       SELECT id FROM "categories" WHERE LOWER(name) = LOWER($1) LIMIT 1;
     `, categoryNameToFind);
@@ -1207,10 +1213,12 @@ export const createFactoryProduct = async (
       INSERT INTO "products" (
         id, name, sku, slug, barcode, price, "salesPrice", stock,
         "categoryId", finish, colour, dimensions, description, status, "isVisible",
+        "up_item_type",
         "createdAt", "updatedAt"
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, 'ACTIVE', true,
+        $14,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       );
     `,
@@ -1226,7 +1234,8 @@ export const createFactoryProduct = async (
       data.finish || null,
       data.colour || null,
       data.dimensions || null,
-      data.description || (productType === 'RAW_MATERIAL' ? 'Factory Raw Material / Component' : 'Manufactured by UP Factory for PRC Hardware')
+      data.description || (productType === 'RAW_MATERIAL' ? 'Factory Raw Material / Component' : productType === 'SEMI_FINISHED_GOOD' ? 'Semi-Finished Good — intermediate assembly by UP Factory' : 'Manufactured by UP Factory for PRC Hardware'),
+      productType               // up_item_type
     );
 
     // 5. Default Branch & Inventory allocation

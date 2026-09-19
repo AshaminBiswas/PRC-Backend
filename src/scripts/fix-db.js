@@ -3172,6 +3172,10 @@ const STATEMENTS = [
       CREATE POLICY up_prc_dispatches_access_policy ON "up_prc_dispatches" FOR ALL USING (public.has_up_access());
     END IF;
   END $$;`,
+
+  // ─── UP FACTORY ITEM TYPE COLUMN (SFG — Semi-Finished Good support) ────────
+  `ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "up_item_type" TEXT;`,
+  `COMMENT ON COLUMN "products"."up_item_type" IS 'UP Factory classification: FINISHED_GOOD | SEMI_FINISHED_GOOD | RAW_MATERIAL. NULL means PRC catalog product.';`,
 ];
 
 async function run() {
