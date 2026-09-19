@@ -126,7 +126,7 @@ export class BarcodeService {
   /**
    * Generates a crisp Code-128 barcode PNG buffer using bwip-js
    */
-  static async generateBarcodePng(sku: string): Promise<Buffer> {
+  static async generateBarcodePng(sku: string, includeText = false): Promise<Buffer> {
     if (!sku || !sku.trim()) {
       throw new AppError('SKU_REQUIRED', 'SKU is required for barcode generation', 400);
     }
@@ -139,7 +139,7 @@ export class BarcodeService {
           text: cleanSku,
           scale: 3,
           height: 12,
-          includetext: true,
+          includetext: includeText,
           textxalign: 'center',
           textsize: 10,
           backgroundcolor: 'FFFFFF',
@@ -175,7 +175,8 @@ export class BarcodeService {
   }
 
   /**
-   * Generates a production thermal barcode sticker PDF (standard 58mm x 40mm)
+   * Generates a production thermal barcode sticker PDF (standard 58mm x 40mm or 80mm x 40mm)
+   * Streamlined: Company header + prominent SKU + tall Code-128 barcode (no QR, no text below barcode)
    */
   static async generateLabelPdf(
     sku: string,
@@ -201,47 +202,32 @@ export class BarcodeService {
     const pageWidth = size === '80x40' ? 226.7 : 164.4;
     const pageHeight = 113.4;
 
-    // Generate Barcode PNG base64
-    const barcodePng = await this.generateBarcodePng(cleanSku);
+    // Generate Barcode PNG base64 without text below barcode
+    const barcodePng = await this.generateBarcodePng(cleanSku, false);
     const barcodeBase64 = `data:image/png;base64,${barcodePng.toString('base64')}`;
-
-    // Generate QR Code
-    const qrUrl = `https://pacificrestroomcubicles.com/product/${product.slug || cleanSku}`;
-    const qrPng = await this.generateQrPng(qrUrl);
-    const qrBase64 = `data:image/png;base64,${qrPng.toString('base64')}`;
 
     const docDefinition: any = {
       pageSize: { width: pageWidth, height: pageHeight },
       pageMargins: [8, 6, 8, 6],
       content: [
         {
-          columns: [
+          stack: [
+            { text: companyName, fontSize: 8, bold: true, color: '#1F2937', characterSpacing: 0.5, alignment: 'center' },
             {
-              width: '*',
-              stack: [
-                { text: companyName, fontSize: 8, bold: true, color: '#1F2937', characterSpacing: 0.5 },
-                {
-                  text: `SKU: ${cleanSku}`,
-                  fontSize: 13,
-                  bold: true,
-                  color: '#000000',
-                  margin: [0, 3, 0, 0],
-                },
-              ],
-            },
-            {
-              width: 36,
-              image: qrBase64,
-              fit: [34, 34],
-              alignment: 'right',
+              text: `SKU: ${cleanSku}`,
+              fontSize: 14,
+              bold: true,
+              color: '#000000',
+              margin: [0, 3, 0, 0],
+              alignment: 'center',
             },
           ],
         },
         {
           image: barcodeBase64,
-          fit: [pageWidth - 16, 56],
+          fit: [pageWidth - 16, 64],
           alignment: 'center',
-          margin: [0, 5, 0, 0],
+          margin: [0, 6, 0, 0],
         },
       ],
       defaultStyle: {

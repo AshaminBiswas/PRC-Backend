@@ -9,7 +9,8 @@ export class BarcodeController {
   static async getBarcodeImage(req: Request, res: Response, next: NextFunction) {
     try {
       const { sku } = req.params;
-      const pngBuffer = await BarcodeService.generateBarcodePng(sku);
+      const includeText = req.query.includeText === 'true';
+      const pngBuffer = await BarcodeService.generateBarcodePng(sku, includeText);
 
       res.setHeader('Content-Type', 'image/png');
       res.setHeader('Cache-Control', 'public, max-age=86400');
