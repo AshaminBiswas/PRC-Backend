@@ -98,5 +98,10 @@ router.post('/inventory/physical-counts', requireUPAccess, controller.createPhys
 // Inventory Reports
 router.get('/inventory/reports', requireUPAccess, controller.getInventoryReports);
 
+// Factory Products & PRC Supply Operations
+router.post('/inventory/products', requireUPAccess, controller.createFactoryProduct);
+router.post('/inventory/supply-prc', requireUPAccess, controller.supplyToPrc);
+router.get('/inventory/dispatches', requireUPAccess, controller.listPrcDispatches);
+
 export default router;
 

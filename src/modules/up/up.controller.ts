@@ -394,3 +394,31 @@ export const getInventoryReports = async (req: Request, res: Response, next: Nex
   }
 };
 
+export const createFactoryProduct = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await upInventoryService.createFactoryProduct(req.user!.id, req.body);
+    sendSuccess(res, data, 'Factory product created successfully', 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const supplyToPrc = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await upInventoryService.supplyToPrc(req.user!.id, req.body);
+    sendSuccess(res, data, 'Stock dispatched and supplied to PRC Hardware successfully', 201);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const listPrcDispatches = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await upInventoryService.listPrcDispatches(req.query as any);
+    sendSuccess(res, data, 'PRC supply dispatches retrieved successfully');
+  } catch (err) {
+    next(err);
+  }
+};
+
+

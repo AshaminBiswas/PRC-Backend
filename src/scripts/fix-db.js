@@ -3142,6 +3142,36 @@ const STATEMENTS = [
       CREATE POLICY up_physical_counts_access_policy ON "up_physical_counts" FOR ALL USING (public.has_up_access());
     END IF;
   END $$;`,
+
+  `CREATE TABLE IF NOT EXISTS "up_prc_dispatches" (
+    "id" TEXT NOT NULL,
+    "challan_number" TEXT NOT NULL,
+    "destination_branch_id" TEXT,
+    "destination_branch_name" TEXT,
+    "items" JSONB NOT NULL DEFAULT '[]'::jsonb,
+    "total_items" INTEGER NOT NULL DEFAULT 0,
+    "total_units" INTEGER NOT NULL DEFAULT 0,
+    "total_transfer_value" NUMERIC(12,2) DEFAULT 0,
+    "status" TEXT NOT NULL DEFAULT 'DISPATCHED',
+    "transport_mode" TEXT,
+    "vehicle_number" TEXT,
+    "driver_name" TEXT,
+    "driver_phone" TEXT,
+    "dispatched_by" TEXT,
+    "notes" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "up_prc_dispatches_pkey" PRIMARY KEY ("id")
+  );`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "idx_up_prc_dispatches_challan" ON "up_prc_dispatches"("challan_number");`,
+  `CREATE INDEX IF NOT EXISTS "idx_up_prc_dispatches_branch" ON "up_prc_dispatches"("destination_branch_id");`,
+  `CREATE INDEX IF NOT EXISTS "idx_up_prc_dispatches_created" ON "up_prc_dispatches"("created_at");`,
+  `ALTER TABLE "up_prc_dispatches" ENABLE ROW LEVEL SECURITY;`,
+  `DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'up_prc_dispatches' AND policyname = 'up_prc_dispatches_access_policy') THEN
+      CREATE POLICY up_prc_dispatches_access_policy ON "up_prc_dispatches" FOR ALL USING (public.has_up_access());
+    END IF;
+  END $$;`,
 ];
 
 async function run() {

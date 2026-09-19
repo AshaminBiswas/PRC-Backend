@@ -1134,3 +1134,341 @@ export const getInventoryReports = async (params: {
     })),
   };
 };
+
+// ─── 9. UP Factory Product Creation (Finished Goods & Raw Materials) ────────
+
+export const createFactoryProduct = async (
+  userId: string,
+  data: {
+    name: string;
+    sku: string;
+    barcode?: string;
+    productType?: 'FINISHED_GOOD' | 'RAW_MATERIAL';
+    categoryName?: string;
+    finish?: string;
+    colour?: string;
+    dimensions?: string;
+    unitOfMeasure?: string;
+    unitCost?: number;
+    transferPrice?: number;
+    initialStock?: number;
+    reorderLevel?: number;
+    description?: string;
+  }
+) => {
+  const cleanName = (data.name || '').trim();
+  const cleanSku = (data.sku || '').trim().toUpperCase();
+  if (!cleanName) throw new AppError('BAD_REQUEST', 'Product name is required', 400);
+  if (!cleanSku) throw new AppError('BAD_REQUEST', 'SKU is required', 400);
+
+  const initialStock = Math.max(0, Math.floor(Number(data.initialStock) || 0));
+  const unitCost = Math.max(0, Number(data.unitCost) || 0);
+  const transferPrice = Math.max(0, Number(data.transferPrice || data.unitCost) || 0);
+  const reorderLevel = Math.max(1, Math.floor(Number(data.reorderLevel) || 10));
+  const productType = data.productType || 'FINISHED_GOOD';
+
+  return await prisma.$transaction(async (tx) => {
+    // 1. Check duplicate SKU
+    const existingSku = await tx.$queryRawUnsafe<any[]>(`
+      SELECT id FROM "products" WHERE UPPER(sku) = $1 AND ("deletedAt" IS NULL AND "deleted_at" IS NULL) LIMIT 1;
+    `, cleanSku);
+    if (existingSku.length > 0) {
+      throw new AppError('CONFLICT', `A product with SKU "${cleanSku}" already exists.`, 409);
+    }
+
+    // 2. Resolve Category
+    const categoryNameToFind = (data.categoryName || (productType === 'RAW_MATERIAL' ? 'Raw Materials' : 'Factory Hardware')).trim();
+    let categoryRow = await tx.$queryRawUnsafe<any[]>(`
+      SELECT id FROM "categories" WHERE LOWER(name) = LOWER($1) LIMIT 1;
+    `, categoryNameToFind);
+
+    let categoryId: string;
+    if (categoryRow.length > 0) {
+      categoryId = categoryRow[0].id;
+    } else {
+      const newCatId = `cat-${Math.random().toString(36).substring(2, 9)}`;
+      const catSlug = `${categoryNameToFind.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Math.floor(100 + Math.random() * 900)}`;
+      await tx.$executeRawUnsafe(`
+        INSERT INTO "categories" (id, name, slug, description, "status", "createdAt", "updatedAt")
+        VALUES ($1, $2, $3, $4, 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (id) DO NOTHING;
+      `, newCatId, categoryNameToFind, catSlug, `Factory generated category for ${categoryNameToFind}`);
+      categoryId = newCatId;
+    }
+
+    // 3. Generate Slug & Barcode
+    const slugBase = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const slug = `${slugBase}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const barcode = data.barcode?.trim() || cleanSku;
+    const productId = `prod-${Math.random().toString(36).substring(2, 10)}`;
+
+    // 4. Insert into products table
+    await tx.$executeRawUnsafe(`
+      INSERT INTO "products" (
+        id, name, sku, slug, barcode, price, "salesPrice", stock,
+        "categoryId", finish, colour, dimensions, description, status, "isVisible",
+        "createdAt", "updatedAt"
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, 'ACTIVE', true,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      );
+    `,
+      productId,
+      cleanName,
+      cleanSku,
+      slug,
+      barcode,
+      transferPrice || unitCost, // Price
+      unitCost,                 // Sales/Cost price
+      initialStock,
+      categoryId,
+      data.finish || null,
+      data.colour || null,
+      data.dimensions || null,
+      data.description || (productType === 'RAW_MATERIAL' ? 'Factory Raw Material / Component' : 'Manufactured by UP Factory for PRC Hardware')
+    );
+
+    // 5. Default Branch & Inventory allocation
+    const defaultBranch = await tx.$queryRawUnsafe<any[]>(
+      `SELECT id FROM "branches" WHERE "isActive" = true OR "is_active" = true ORDER BY "createdAt" ASC LIMIT 1;`
+    );
+    const branchId = defaultBranch[0]?.id || 'branch-del-01';
+
+    await tx.$executeRawUnsafe(`
+      INSERT INTO "inventories" (
+        id, "productId", "product_id", "branchId", "branch_id", quantity,
+        "reservedQuantity", "reserved_quantity", "reorderLevel", "reorder_level",
+        "updatedAt", "updated_at"
+      ) VALUES (
+        gen_random_uuid(), $1, $1, $2, $2, $3,
+        0, 0, $4, $4,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      );
+    `, productId, branchId, initialStock, reorderLevel);
+
+    // 6. Log Initial Stock Movement
+    if (initialStock > 0) {
+      await tx.$executeRawUnsafe(`
+        INSERT INTO "stock_movements" (
+          id, "productId", "product_id", "branchId", "branch_id", type, quantity,
+          "previousQty", "previous_qty", "newQty", "new_qty",
+          "referenceType", "reference_type", "referenceId", "reference_id",
+          notes, "performedById", "performed_by_id", "createdAt", "created_at"
+        ) VALUES (
+          gen_random_uuid(), $1, $1, $2, $2, 'PRODUCTION_IN', $3,
+          0, 0, $3, $3,
+          'UP_INITIAL_STOCK', 'UP_INITIAL_STOCK', $1, $1,
+          'Initial UP Factory stock registered upon creation', $4, $4,
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        );
+      `, productId, branchId, initialStock, userId);
+    }
+
+    return {
+      id: productId,
+      name: cleanName,
+      sku: cleanSku,
+      productType,
+      stock: initialStock,
+      unitCost,
+      transferPrice,
+      categoryId,
+    };
+  });
+};
+
+// ─── 10. Dispatch / Supply to PRC Hardware ───────────────────────────────────
+
+export const supplyToPrc = async (
+  userId: string,
+  data: {
+    destinationBranchId?: string;
+    destinationBranchName?: string;
+    items: Array<{
+      productId: string;
+      sku: string;
+      name: string;
+      quantity: number;
+      transferPrice?: number;
+    }>;
+    transportMode?: string;
+    vehicleNumber?: string;
+    driverName?: string;
+    driverPhone?: string;
+    notes?: string;
+  }
+) => {
+  if (!data.items || !Array.isArray(data.items) || data.items.length === 0) {
+    throw new AppError('BAD_REQUEST', 'At least one item is required for dispatch', 400);
+  }
+
+  const challanNumber = `UP-PRC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+  const dispatchId = `disp-${Math.random().toString(36).substring(2, 10)}`;
+
+  return await prisma.$transaction(async (tx) => {
+    // Default origin branch
+    const defaultBranches = await tx.$queryRawUnsafe<any[]>(
+      `SELECT id, name FROM "branches" WHERE "isActive" = true OR "is_active" = true ORDER BY "createdAt" ASC;`
+    );
+    const factoryBranchId = defaultBranches[0]?.id || 'branch-del-01';
+
+    // Target PRC Hardware branch
+    let destBranchId = data.destinationBranchId;
+    let destBranchName = data.destinationBranchName;
+    if (!destBranchId && defaultBranches.length > 0) {
+      destBranchId = defaultBranches[0].id;
+      destBranchName = defaultBranches[0].name;
+    }
+
+    let totalUnits = 0;
+    let totalTransferValue = 0;
+
+    for (const item of data.items) {
+      const qty = Math.floor(Number(item.quantity) || 0);
+      if (qty <= 0) continue;
+
+      totalUnits += qty;
+      const rate = Number(item.transferPrice) || 0;
+      totalTransferValue += qty * rate;
+
+      // 1. Fetch current product stock
+      const prodRows = await tx.$queryRawUnsafe<any[]>(`
+        SELECT id, name, sku, stock FROM "products" WHERE id = $1 LIMIT 1;
+      `, item.productId);
+      const currentStock = Number(prodRows[0]?.stock || 0);
+
+      // 2. Check if destination inventory row exists
+      if (destBranchId) {
+        const destInv = await tx.$queryRawUnsafe<any[]>(`
+          SELECT id, quantity FROM "inventories" 
+          WHERE ("productId" = $1 OR "product_id" = $1)
+            AND ("branchId" = $2 OR "branch_id" = $2)
+          LIMIT 1;
+        `, item.productId, destBranchId);
+
+        if (destInv.length > 0) {
+          const destQty = Number(destInv[0].quantity || 0) + qty;
+          await tx.$executeRawUnsafe(`
+            UPDATE "inventories" SET quantity = $1, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $2;
+          `, destQty, destInv[0].id);
+        } else {
+          await tx.$executeRawUnsafe(`
+            INSERT INTO "inventories" (
+              id, "productId", "product_id", "branchId", "branch_id", quantity,
+              "reservedQuantity", "reserved_quantity", "reorderLevel", "reorder_level"
+            ) VALUES (
+              gen_random_uuid(), $1, $1, $2, $2, $3, 0, 0, 10, 10
+            );
+          `, item.productId, destBranchId, qty);
+        }
+      }
+
+      // 3. Log Stock Movement for PRC Receipt
+      await tx.$executeRawUnsafe(`
+        INSERT INTO "stock_movements" (
+          id, "productId", "product_id", "branchId", "branch_id", type, quantity,
+          "previousQty", "previous_qty", "newQty", "new_qty",
+          "referenceType", "reference_type", "referenceId", "reference_id",
+          notes, "performedById", "performed_by_id", "createdAt", "created_at"
+        ) VALUES (
+          gen_random_uuid(), $1, $1, $2, $2, 'PURCHASE_IN', $3,
+          $4, $4, $5, $5,
+          'UP_SUPPLY_CHALLAN', 'UP_SUPPLY_CHALLAN', $6, $6,
+          $7, $8, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        );
+      `,
+        item.productId,
+        destBranchId || factoryBranchId,
+        qty,
+        currentStock,
+        currentStock + qty,
+        challanNumber,
+        `Supplied from UP Factory under Challan #${challanNumber}. Transport: ${data.transportMode || 'Standard Dispatch'}.`,
+        userId
+      );
+    }
+
+    // 4. Save dispatch record to up_prc_dispatches
+    await tx.$executeRawUnsafe(`
+      INSERT INTO "up_prc_dispatches" (
+        id, challan_number, destination_branch_id, destination_branch_name,
+        items, total_items, total_units, total_transfer_value, status,
+        transport_mode, vehicle_number, driver_name, driver_phone,
+        dispatched_by, notes, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4,
+        $5::jsonb, $6, $7, $8, 'DISPATCHED',
+        $9, $10, $11, $12,
+        $13, $14, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      );
+    `,
+      dispatchId,
+      challanNumber,
+      destBranchId,
+      destBranchName || 'PRC Central Depot',
+      JSON.stringify(data.items),
+      data.items.length,
+      totalUnits,
+      totalTransferValue,
+      data.transportMode || 'DIRECT_LOGISTICS',
+      data.vehicleNumber || null,
+      data.driverName || null,
+      data.driverPhone || null,
+      userId,
+      data.notes || null
+    );
+
+    return {
+      success: true,
+      dispatchId,
+      challanNumber,
+      destinationBranchName: destBranchName || 'PRC Central Depot',
+      totalUnits,
+      totalTransferValue,
+      itemsCount: data.items.length,
+    };
+  });
+};
+
+// ─── 11. List PRC Supply Dispatches ──────────────────────────────────────────
+
+export const listPrcDispatches = async (params: { page?: number; limit?: number }) => {
+  const page = Math.max(1, Number(params.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(params.limit) || 25));
+  const offset = (page - 1) * limit;
+
+  const [countRes] = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT COUNT(id)::int as total FROM "up_prc_dispatches";
+  `).catch(() => [{ total: 0 }]);
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT 
+      id,
+      challan_number as "challanNumber",
+      destination_branch_id as "destinationBranchId",
+      destination_branch_name as "destinationBranchName",
+      items,
+      total_items as "totalItems",
+      total_units as "totalUnits",
+      total_transfer_value as "totalTransferValue",
+      status,
+      transport_mode as "transportMode",
+      vehicle_number as "vehicleNumber",
+      driver_name as "driverName",
+      driver_phone as "driverPhone",
+      dispatched_by as "dispatchedBy",
+      notes,
+      created_at as "createdAt",
+      updated_at as "updatedAt"
+    FROM "up_prc_dispatches"
+    ORDER BY created_at DESC
+    LIMIT $1 OFFSET $2;
+  `, limit, offset).catch(() => []);
+
+  return {
+    data: rows,
+    pagination: buildPagination(page, limit, Number(countRes?.total || 0)),
+  };
+};
+
