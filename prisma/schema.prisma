@@ -305,6 +305,15 @@ model User {
   b2bOrdersApproved    B2bOrder[]           @relation("ApprovedB2bOrders")
   b2bOrdersCancelled   B2bOrder[]           @relation("CancelledB2bOrders")
 
+  // Payment Follow-up & Dues Recovery Relations
+  source                   String?                  @default("ORGANIC")
+  openingBalances          OpeningBalanceEntry[]
+  paymentAllocations       PaymentAllocation[]
+  paymentFollowupProfile   PaymentFollowupProfile?
+  paymentFollowupEntries   PaymentFollowupEntry[]
+  paymentFollowupEmailLogs PaymentFollowupEmailLog[]
+  paymentFollowupSmsLogs   PaymentFollowupSmsLog[]
+
   @@index([email])
   @@index([status])
   @@index([email, deletedAt])
@@ -3419,5 +3428,165 @@ model UpPhysicalCount {
   @@index([branchId])
   @@map("up_physical_counts")
 }
+
+// ─── Payment Follow-up & Dues Recovery Models ─────────────────────────────────
+
+model OpeningBalanceEntry {
+  id               String   @id @default(uuid())
+  customerId       String   @map("customer_id")
+  customerName     String   @map("customer_name") @db.VarChar(255)
+  companyName      String?  @map("company_name") @db.VarChar(255)
+  openingAmount    Decimal  @default(0) @map("opening_amount") @db.Decimal(14, 2)
+  paidAmount       Decimal  @default(0) @map("paid_amount") @db.Decimal(14, 2)
+  remainingBalance Decimal  @default(0) @map("remaining_balance") @db.Decimal(14, 2)
+  referenceDate    DateTime @map("reference_date")
+  referenceNote    String?  @map("reference_note")
+  sourceType       String   @default("OLD_CUSTOMER") @map("source_type") @db.VarChar(50)
+  status           String   @default("PENDING") @db.VarChar(50)
+  createdById      String?  @map("created_by_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId], map: "idx_opening_bal_customer_id")
+  @@index([status], map: "idx_opening_bal_status")
+  @@map("opening_balance_entries")
+}
+
+model PaymentAllocation {
+  id                   String   @id @default(uuid())
+  customerId           String   @map("customer_id")
+  paymentAmount        Decimal  @default(0) @map("payment_amount") @db.Decimal(14, 2)
+  paymentDate          DateTime @default(now()) @map("payment_date")
+  paymentMode          String   @default("NEFT") @map("payment_mode") @db.VarChar(50)
+  transactionRef       String?  @map("transaction_ref") @db.VarChar(255)
+  allocationMode       String   @default("OLDEST_DUE_FIRST") @map("allocation_mode") @db.VarChar(50)
+  targetType           String   @map("target_type") @db.VarChar(50)
+  targetId             String   @map("target_id")
+  targetDocumentNumber String?  @map("target_document_number") @db.VarChar(255)
+  allocatedAmount      Decimal  @default(0) @map("allocated_amount") @db.Decimal(14, 2)
+  notes                String?
+  recordedById         String?  @map("recorded_by_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId], map: "idx_pay_alloc_customer_id")
+  @@index([targetType, targetId], map: "idx_pay_alloc_target")
+  @@map("payment_allocations")
+}
+
+model PaymentFollowupProfile {
+  id                 String    @id @default(uuid())
+  customerId         String    @unique @map("customer_id")
+  status             String    @default("ACTIVE") @db.VarChar(50)
+  declineReason      String?   @map("decline_reason")
+  declinedById       String?   @map("declined_by_id")
+  declinedAt         DateTime? @map("declined_at")
+  resumedById        String?   @map("resumed_by_id")
+  resumedAt          DateTime? @map("resumed_at")
+  nextActionDate     DateTime? @map("next_action_date")
+  ptpDate            DateTime? @map("ptp_date")
+  ptpAmount          Decimal?  @map("ptp_amount") @db.Decimal(14, 2)
+  lastFollowupAt     DateTime? @map("last_followup_at")
+  lastPaymentAt      DateTime? @map("last_payment_at")
+  totalRemindersSent Int       @default(0) @map("total_reminders_sent")
+  notes              String?
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId], map: "idx_pf_profiles_customer_id")
+  @@index([status], map: "idx_pf_profiles_status")
+  @@map("payment_followup_profiles")
+}
+
+model PaymentFollowupEntry {
+  id                   String    @id @default(uuid())
+  customerId           String    @map("customer_id")
+  targetDocumentId     String?   @map("target_document_id")
+  targetDocumentNumber String?   @map("target_document_number") @db.VarChar(255)
+  followupType         String    @default("CALL") @map("followup_type") @db.VarChar(50)
+  outcome              String    @default("CALL_MADE") @db.VarChar(50)
+  notes                String
+  ptpDate              DateTime? @map("ptp_date")
+  ptpAmount            Decimal?  @map("ptp_amount") @db.Decimal(14, 2)
+  nextActionDate       DateTime? @map("next_action_date")
+  performedById        String?   @map("performed_by_id")
+  performedByName      String?   @map("performed_by_name") @db.VarChar(255)
+  metadata             Json?
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId], map: "idx_pf_entries_customer_id")
+  @@index([createdAt], map: "idx_pf_entries_created_at")
+  @@map("payment_followup_entries")
+}
+
+model PaymentFollowupRule {
+  id                 String   @id @default(uuid())
+  name               String   @db.VarChar(255)
+  isEnabled          Boolean  @default(true) @map("is_enabled")
+  agingThresholdDays Int      @default(7) @map("aging_threshold_days")
+  repeatIntervalDays Int      @default(7) @map("repeat_interval_days")
+  communicationType  String   @default("EMAIL_LEDGER") @map("communication_type") @db.VarChar(50)
+  maxReminders       Int      @default(5) @map("max_reminders")
+  templateSubject    String?  @map("template_subject")
+  templateBody       String   @map("template_body")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("payment_followup_rules")
+}
+
+model PaymentFollowupEmailLog {
+  id                 String   @id @default(uuid())
+  customerId         String   @map("customer_id")
+  recipientEmail     String   @map("recipient_email") @db.VarChar(255)
+  subject            String
+  body               String
+  attachmentName     String?  @map("attachment_name") @db.VarChar(255)
+  outstandingAmount  Decimal  @default(0) @map("outstanding_amount") @db.Decimal(14, 2)
+  status             String   @default("SENT") @db.VarChar(50)
+  providerMessageId  String?  @map("provider_message_id") @db.VarChar(255)
+  errorMessage       String?  @map("error_message")
+  dispatchedById     String?  @map("dispatched_by_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  // Relations
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId], map: "idx_pf_email_logs_customer_id")
+  @@map("payment_followup_email_logs")
+}
+
+model PaymentFollowupSmsLog {
+  id                String   @id @default(uuid())
+  customerId        String   @map("customer_id")
+  phoneNumber       String   @map("phone_number") @db.VarChar(50)
+  message           String
+  templateUsed      String?  @map("template_used") @db.VarChar(100)
+  outstandingAmount Decimal  @default(0) @map("outstanding_amount") @db.Decimal(14, 2)
+  status            String   @default("SENT") @db.VarChar(50)
+  providerResponse  String?  @map("provider_response")
+  errorMessage      String?  @map("error_message")
+  dispatchedById    String?  @map("dispatched_by_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  // Relations
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId], map: "idx_pf_sms_logs_customer_id")
+  @@map("payment_followup_sms_logs")
+}
+
 
 

@@ -106,6 +106,11 @@ const ALL_SYSTEM_PERMISSIONS = [
   // ─── 14. Payments & Shipping ───────────────────────────────────────────────
   { name: 'Read Payments', slug: 'payments.read', module: 'payments', description: 'View gateway transactions (Razorpay, PhonePe)' },
   { name: 'Refund Payments', slug: 'payments.refund', module: 'payments', description: 'Authorize and execute payment refunds' },
+  { name: 'View Payment Follow-up', slug: 'payment_followup.view', module: 'payments', description: 'View customer dues, aging buckets, and financial ledgers' },
+  { name: 'Manage Payment Follow-up', slug: 'payment_followup.manage', module: 'payments', description: 'Add old customers, record payments, allocate balances, and decline/dispute' },
+  { name: 'Send Payment Reminders', slug: 'payment_followup.send', module: 'payments', description: 'Dispatch ledger emails and SMS reminders (single & bulk)' },
+  { name: 'Manage Follow-up Rules', slug: 'payment_followup.manage_rules', module: 'payments', description: 'Configure automated follow-up rules, intervals, and message templates' },
+  { name: 'View Follow-up History', slug: 'payment_followup.view_history', module: 'payments', description: 'Access chronological touchpoint notes and call logs' },
   { name: 'Read Shipping', slug: 'shipping.read', module: 'shipping', description: 'View shipping rates, zones, and SLAs' },
   { name: 'Manage Shipping', slug: 'shipping.manage', module: 'shipping', description: 'Configure shipping zones, rates, and carrier partners' },
 

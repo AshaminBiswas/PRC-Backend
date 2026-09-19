@@ -67,6 +67,7 @@ import {
   purchaseOrdersRouter,
 } from './modules/inventory/inventory.routes';
 import barcodeRouter from './modules/barcode/barcode.routes';
+import { paymentFollowupRouter } from './modules/payment-followup/payment-followup.routes';
 
 import sseRoutes from './events/sse.routes';
 import { initEventBus } from './events/eventBus';
@@ -413,6 +414,8 @@ app.use(`${prefix}/stock-adjustments`, stockAdjustmentsRouter);
 app.use(`${prefix}/stock-movements`, stockMovementsRouter);
 app.use(`${prefix}/reports`, inventoryReportsRouter);
 app.use(`${prefix}/barcode`, barcodeRouter);
+app.use(`${prefix}/payment-followup`, paymentFollowupRouter);
+app.use(`${prefix}/dues-recovery`, paymentFollowupRouter);
 
 app.get(`${prefix}/test-email`, async (req, res) => {
   try {
