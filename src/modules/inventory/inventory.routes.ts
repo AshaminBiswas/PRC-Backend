@@ -387,3 +387,64 @@ inventoryReportsRouter.get(
   validate(InventoryReportQuerySchema, 'query'),
   controller.exportOrdersConsumptionReport
 );
+
+// ─── 9. Purchase Orders Router ──────────────────────────────────────────────
+import * as poController from './purchase-order.controller';
+
+export const purchaseOrdersRouter = Router();
+
+purchaseOrdersRouter.post(
+  '/',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.manage', 'purchases.create', 'po.create', 'admin'),
+  poController.createPurchaseOrder
+);
+
+purchaseOrdersRouter.get(
+  '/',
+  authenticate,
+  authorize('inventory.stock.read', 'inventory.view', 'purchases.read', 'po.read', 'admin'),
+  poController.listPurchaseOrders
+);
+
+purchaseOrdersRouter.get(
+  '/:id',
+  authenticate,
+  authorize('inventory.stock.read', 'inventory.view', 'purchases.read', 'po.read', 'admin'),
+  poController.getPurchaseOrderById
+);
+
+purchaseOrdersRouter.put(
+  '/:id',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.manage', 'purchases.edit', 'po.edit', 'admin'),
+  poController.updatePurchaseOrder
+);
+
+purchaseOrdersRouter.post(
+  '/:id/send-email',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.manage', 'purchases.create', 'po.send', 'admin'),
+  poController.sendPurchaseOrderEmail
+);
+
+purchaseOrdersRouter.post(
+  '/:id/receive',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.manage', 'purchases.create', 'inventory.receive', 'admin'),
+  poController.recordGoodsReceipt
+);
+
+purchaseOrdersRouter.patch(
+  '/:id/status',
+  authenticate,
+  authorize('inventory.stock.write', 'inventory.manage', 'purchases.edit', 'po.edit', 'admin'),
+  poController.updatePoStatus
+);
+
+purchaseOrdersRouter.get(
+  '/:id/pdf',
+  authenticate,
+  authorize('inventory.stock.read', 'inventory.view', 'purchases.read', 'po.read', 'admin'),
+  poController.downloadPurchaseOrderPdf
+);

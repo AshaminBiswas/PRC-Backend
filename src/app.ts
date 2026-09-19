@@ -64,6 +64,7 @@ import {
   stockAdjustmentsRouter,
   stockMovementsRouter,
   inventoryReportsRouter,
+  purchaseOrdersRouter,
 } from './modules/inventory/inventory.routes';
 import barcodeRouter from './modules/barcode/barcode.routes';
 
@@ -405,6 +406,8 @@ app.use(`${prefix}/branches`, branchesRouter);
 app.use(`${prefix}/suppliers`, suppliersRouter);
 app.use(`${prefix}/inventory`, inventoryRouter);
 app.use(`${prefix}/purchases`, purchasesRouter);
+app.use(`${prefix}/purchase-orders`, purchaseOrdersRouter);
+app.use(`${prefix}/inventory/purchase-orders`, purchaseOrdersRouter);
 app.use(`${prefix}/transfers`, transfersRouter);
 app.use(`${prefix}/stock-adjustments`, stockAdjustmentsRouter);
 app.use(`${prefix}/stock-movements`, stockMovementsRouter);

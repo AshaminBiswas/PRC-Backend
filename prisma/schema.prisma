@@ -2018,6 +2018,7 @@ model Branch {
   // B2B Orders Relations
   b2bOrders         B2bOrder[]
   stockReservations StockReservation[]
+  purchaseOrders    PurchaseOrder[]
 
   @@index([code])
   @@index([isActive])
@@ -2038,7 +2039,8 @@ model Supplier {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
 
-  purchases Purchase[]
+  purchases      Purchase[]
+  purchaseOrders PurchaseOrder[]
 
   @@index([name])
   @@index([isActive])
@@ -2099,6 +2101,127 @@ model PurchaseItem {
   @@index([purchaseId])
   @@index([productId])
   @@map("purchase_items")
+}
+
+model PurchaseOrder {
+  id                    String    @id @default(uuid())
+  poNumber              String    @unique @map("po_number")
+  revision              Int       @default(0)
+  financialYear         String    @map("financial_year")
+  sequenceNo            Int       @default(1) @map("sequence_no")
+  companyEntity         String    @default("PACIFIC_PRODUCTS") @map("company_entity")
+  companyLogo           String    @default("pacific") @map("company_logo")
+  supplierId            String    @map("supplier_id")
+  branchId              String    @map("branch_id")
+  status                String    @default("DRAFT")
+  issueDate             DateTime  @default(now()) @map("issue_date")
+  expectedDeliveryDate  DateTime? @map("expected_delivery_date")
+  paymentTerms          String?   @map("payment_terms")
+  deliveryTerms         String?   @map("delivery_terms")
+  termsAndConditions    String?   @map("terms_and_conditions")
+  subtotal              Decimal   @default(0) @db.Decimal(14, 2)
+  discountTotal         Decimal   @default(0) @map("discount_total") @db.Decimal(14, 2)
+  taxableAmount         Decimal   @default(0) @map("taxable_amount") @db.Decimal(14, 2)
+  cgstTotal             Decimal   @default(0) @map("cgst_total") @db.Decimal(14, 2)
+  sgstTotal             Decimal   @default(0) @map("sgst_total") @db.Decimal(14, 2)
+  igstTotal             Decimal   @default(0) @map("igst_total") @db.Decimal(14, 2)
+  grandTotal            Decimal   @default(0) @map("grand_total") @db.Decimal(14, 2)
+  totalInWords          String?   @map("total_in_words")
+  isInterState          Boolean   @default(false) @map("is_interstate")
+  notes                 String?
+  sentAt                DateTime? @map("sent_at")
+  sentById              String?   @map("sent_by_id")
+  sentToEmail           String?   @map("sent_to_email")
+  sentCc                String?   @map("sent_cc")
+  pdfUrl                String?   @map("pdf_url")
+  createdById           String    @map("created_by_id")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  supplier   Supplier                 @relation(fields: [supplierId], references: [id])
+  branch     Branch                   @relation(fields: [branchId], references: [id])
+  items      PurchaseOrderItem[]
+  events     PurchaseOrderEvent[]
+  dispatches PurchaseOrderDispatch[]
+
+  @@index([supplierId])
+  @@index([branchId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String   @id @default(uuid())
+  purchaseOrderId  String   @map("purchase_order_id")
+  productId        String?  @map("product_id")
+  itemSku          String   @map("item_sku")
+  itemName         String   @map("item_name")
+  description      String?
+  hsnCode          String?  @default("8302") @map("hsn_code")
+  quantity         Int      @default(1)
+  quantityReceived Int      @default(0) @map("quantity_received")
+  unit             String   @default("PCS")
+  unitRate         Decimal  @default(0) @map("unit_rate") @db.Decimal(14, 2)
+  discountPercent  Decimal  @default(0) @map("discount_percent") @db.Decimal(5, 2)
+  taxableAmount    Decimal  @default(0) @map("taxable_amount") @db.Decimal(14, 2)
+  gstRate          Decimal  @default(18) @map("gst_rate") @db.Decimal(5, 2)
+  cgstAmount       Decimal  @default(0) @map("cgst_amount") @db.Decimal(14, 2)
+  sgstAmount       Decimal  @default(0) @map("sgst_amount") @db.Decimal(14, 2)
+  igstAmount       Decimal  @default(0) @map("igst_amount") @db.Decimal(14, 2)
+  lineTotal        Decimal  @default(0) @map("line_total") @db.Decimal(14, 2)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@index([itemSku])
+  @@map("purchase_order_items")
+}
+
+model PurchaseOrderEvent {
+  id              String   @id @default(uuid())
+  purchaseOrderId String   @map("purchase_order_id")
+  status          String
+  note            String?
+  performedById   String?  @map("performed_by_id")
+  performedByName String?  @map("performed_by_name")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_events")
+}
+
+model PurchaseOrderDispatch {
+  id              String   @id @default(uuid())
+  purchaseOrderId String   @map("purchase_order_id")
+  recipientEmail  String   @map("recipient_email")
+  cc              String?
+  subject         String
+  body            String?
+  status          String   @default("SENT")
+  errorMessage    String?  @map("error_message")
+  dispatchedById  String?  @map("dispatched_by_id")
+  dispatchedByName String? @map("dispatched_by_name")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_dispatches")
+}
+
+model PurchaseOrderSequence {
+  id            String   @id @default(uuid())
+  financialYear String   @map("financial_year")
+  companyEntity String   @map("company_entity")
+  nextNumber    Int      @default(1) @map("next_number")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  @@unique([financialYear, companyEntity])
+  @@map("purchase_order_sequences")
 }
 
 model StockTransfer {
