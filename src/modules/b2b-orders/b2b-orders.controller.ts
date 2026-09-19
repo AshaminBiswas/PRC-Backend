@@ -164,3 +164,15 @@ export const checkStock = async (req: Request, res: Response, next: NextFunction
     next(err);
   }
 };
+
+// ─── Super Admin: Record Payment on B2B Order ──────────────────────────────────
+
+export const recordPayment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const result = await b2bOrdersService.recordB2bOrderPayment(req.user!, req.params.id, req.body);
+    sendSuccess(res, result, 'Payment recorded on B2B Order successfully', 200);
+  } catch (err) {
+    next(err);
+  }
+};
+

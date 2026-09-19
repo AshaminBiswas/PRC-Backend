@@ -1393,6 +1393,7 @@ model ProformaInvoice {
   customer               User?                 @relation(fields: [customerId], references: [id], onDelete: SetNull)
   items                  ProformaInvoiceItem[]
   history                ProformaInvoiceHistory[]
+  b2bOrders              B2bOrder[]
 
   @@index([piNumber])
   @@index([financialYear])
@@ -2951,6 +2952,7 @@ model B2bOrder {
   status             B2bOrderStatus @default(pending_approval)
   sourceQuotationId  String?        @map("source_quotation_id")
   sourcePoId         String?        @map("source_po_id")
+  sourcePiId         String?        @map("source_pi_id")
   paymentStatus      String         @default("pending") @map("payment_status")
   paymentMethod      String         @default("bank_transfer") @map("payment_method")
   paidAmount         Decimal        @default(0) @map("paid_amount") @db.Decimal(12, 2)
@@ -2979,6 +2981,7 @@ model B2bOrder {
   canceller       User?              @relation("CancelledB2bOrders", fields: [cancelledBy], references: [id])
   sourceQuotation Quote?             @relation(fields: [sourceQuotationId], references: [id], onDelete: SetNull)
   sourcePo        PoSubmission?      @relation(fields: [sourcePoId], references: [id], onDelete: SetNull)
+  sourcePi        ProformaInvoice?   @relation(fields: [sourcePiId], references: [id], onDelete: SetNull)
   items           B2bOrderItem[]
   reservations    StockReservation[]
 
@@ -2989,6 +2992,7 @@ model B2bOrder {
   @@index([orderNumber])
   @@index([createdAt])
   @@index([source])
+  @@index([sourcePiId])
   @@map("b2b_orders")
 }
 

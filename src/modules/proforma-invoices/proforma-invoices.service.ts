@@ -1737,6 +1737,32 @@ export const recordProformaPayment = async (
       },
     });
 
+    // Sync to linked B2B order if present
+    try {
+      const linkedB2bOrder = existing.orderId
+        ? await (tx as any).b2bOrder.findUnique({ where: { id: existing.orderId } })
+        : await (tx as any).b2bOrder.findFirst({ where: { sourcePiId: id } });
+
+      if (linkedB2bOrder) {
+        const curPaid = Number(linkedB2bOrder.paidAmount || 0);
+        const newPaid = Math.round((curPaid + Number(input.amountPaid)) * 100) / 100;
+        const b2bTotal = Number(linkedB2bOrder.grandTotal || 0);
+        const newDue = Math.max(0, Math.round((b2bTotal - newPaid) * 100) / 100);
+        const newB2bPayStatus = newDue <= 0 ? 'paid' : (newPaid > 0 ? 'partial' : 'pending');
+
+        await (tx as any).b2bOrder.update({
+          where: { id: linkedB2bOrder.id },
+          data: {
+            paidAmount: newPaid,
+            dueAmount: newDue,
+            paymentStatus: newB2bPayStatus,
+          },
+        });
+      }
+    } catch (syncErr) {
+      console.warn('[recordProformaPayment] Linked B2B order sync warning:', syncErr);
+    }
+
     return res;
   });
 

@@ -16,6 +16,7 @@ export const SubmitB2bOrderSchema = z.object({
   branchId: z.string().min(1, 'Fulfilment branch ID is required'),
   sourceQuotationId: z.string().optional().nullable(),
   sourcePoId: z.string().optional().nullable(),
+  sourcePiId: z.string().optional().nullable(),
   paymentMethod: z.string().optional().default('bank_transfer'),
   notes: z.string().optional(),
   items: z.array(B2bOrderItemInputSchema).min(1, 'At least one order line item is required'),
@@ -27,9 +28,18 @@ export const AdminCreateB2bOrderSchema = z.object({
   branchId: z.string().min(1, 'Fulfilment branch ID is required'),
   sourceQuotationId: z.string().optional().nullable(),
   sourcePoId: z.string().optional().nullable(),
+  sourcePiId: z.string().optional().nullable(),
   paymentMethod: z.string().optional().default('bank_transfer'),
   items: z.array(B2bOrderItemInputSchema).min(1, 'At least one order line item is required'),
   notes: z.string().optional(),
+});
+
+export const RecordB2bOrderPaymentSchema = z.object({
+  amountPaid: z.coerce.number().positive('Payment amount must be greater than 0'),
+  paymentMode: z.string().min(1, 'Payment mode is required'),
+  transactionRef: z.string().optional().nullable(),
+  paymentDate: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
 });
 
 export const RejectB2bOrderSchema = z.object({
@@ -79,3 +89,4 @@ export type EditB2bOrderInput = z.infer<typeof EditB2bOrderSchema>;
 export type CancelB2bOrderInput = z.infer<typeof CancelB2bOrderSchema>;
 export type UpdateB2bOrderStatusInput = z.infer<typeof UpdateB2bOrderStatusSchema>;
 export type ListB2bOrdersQuery = z.infer<typeof ListB2bOrdersQuerySchema>;
+export type RecordB2bOrderPaymentInput = z.infer<typeof RecordB2bOrderPaymentSchema>;

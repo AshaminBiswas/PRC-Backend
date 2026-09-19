@@ -10,6 +10,7 @@ import {
   CancelB2bOrderSchema,
   UpdateB2bOrderStatusSchema,
   ListB2bOrdersQuerySchema,
+  RecordB2bOrderPaymentSchema,
 } from './b2b-orders.schema';
 
 const router = Router();
@@ -100,6 +101,15 @@ router.patch(
   authenticate,
   validate(UpdateB2bOrderStatusSchema),
   controller.updateOrderStatus
+);
+
+// POST /api/v1/b2b-orders/:id/record-payment - Super Admin record payment & sync PI
+router.post(
+  '/:id/record-payment',
+  authenticate,
+  requireSuperAdmin,
+  validate(RecordB2bOrderPaymentSchema),
+  controller.recordPayment
 );
 
 // ─── General Read Endpoints ───────────────────────────────────────────────────

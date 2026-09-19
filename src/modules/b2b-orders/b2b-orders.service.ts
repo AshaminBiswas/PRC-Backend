@@ -8,6 +8,7 @@ import type {
   AdminCreateB2bOrderInput,
   EditB2bOrderInput,
   ListB2bOrdersQuery,
+  RecordB2bOrderPaymentInput,
 } from './b2b-orders.schema';
 
 interface UserContext {
@@ -38,6 +39,39 @@ export const formatB2bOrder = (order: any) => {
     status: order.status,
     sourceQuotationId: order.sourceQuotationId,
     sourcePoId: order.sourcePoId,
+    sourcePiId: order.sourcePiId,
+    sourceQuotation: order.sourceQuotation
+      ? {
+          id: order.sourceQuotation.id,
+          quoteNumber: order.sourceQuotation.quoteNumber,
+          referenceNo: order.sourceQuotation.referenceNo,
+          status: order.sourceQuotation.status,
+          grandTotal: Number(order.sourceQuotation.grandTotal || 0),
+          createdAt: order.sourceQuotation.createdAt,
+        }
+      : undefined,
+    sourcePo: order.sourcePo
+      ? {
+          id: order.sourcePo.id,
+          poNumber: order.sourcePo.customerPoNumber || order.sourcePo.poSubmissionId,
+          customerPoNumber: order.sourcePo.customerPoNumber,
+          poSubmissionId: order.sourcePo.poSubmissionId,
+          status: order.sourcePo.status,
+          subject: order.sourcePo.subject,
+          receivedAt: order.sourcePo.receivedAt,
+        }
+      : undefined,
+    sourcePi: order.sourcePi
+      ? {
+          id: order.sourcePi.id,
+          piNumber: order.sourcePi.piNumber,
+          status: order.sourcePi.status,
+          grandTotal: Number(order.sourcePi.grandTotal || 0),
+          advanceAmount: Number(order.sourcePi.advanceAmount || 0),
+          balanceDue: Number(order.sourcePi.balanceDue || 0),
+          createdAt: order.sourcePi.createdAt,
+        }
+      : undefined,
     paymentStatus: order.paymentStatus,
     paymentMethod: order.paymentMethod,
     paidAmount: Number(order.paidAmount || 0),
@@ -126,6 +160,9 @@ export const submitB2bOrder = async (user: UserContext, input: SubmitB2bOrderInp
       branch: true,
       items: { include: { product: true } },
       reservations: true,
+      sourceQuotation: true,
+      sourcePo: true,
+      sourcePi: true,
     },
   });
 
@@ -1086,6 +1123,10 @@ export const listB2bOrders = async (query: ListB2bOrdersQuery) => {
       { customer: { lastName: { contains: s, mode: 'insensitive' } } },
       { customer: { email: { contains: s, mode: 'insensitive' } } },
       { items: { some: { sku: { contains: s, mode: 'insensitive' } } } },
+      { sourceQuotation: { quoteNumber: { contains: s, mode: 'insensitive' } } },
+      { sourcePo: { customerPoNumber: { contains: s, mode: 'insensitive' } } },
+      { sourcePo: { poSubmissionId: { contains: s, mode: 'insensitive' } } },
+      { sourcePi: { piNumber: { contains: s, mode: 'insensitive' } } },
     ];
   }
 
@@ -1101,6 +1142,9 @@ export const listB2bOrders = async (query: ListB2bOrdersQuery) => {
         branch: true,
         items: { include: { product: true } },
         reservations: true,
+        sourceQuotation: true,
+        sourcePo: true,
+        sourcePi: true,
       },
     }),
     (prisma as any).b2bOrder.groupBy({
@@ -1160,6 +1204,9 @@ export const getB2bOrderById = async (orderId: string, user: UserContext, isAdmi
       branch: true,
       items: { include: { product: true } },
       reservations: true,
+      sourceQuotation: true,
+      sourcePo: true,
+      sourcePi: true,
     },
   });
 
@@ -1246,3 +1293,125 @@ export const checkProductStock = async (branchId: string, productIds: string[]) 
 
   return results;
 };
+
+// ─── 12. Record Payment on B2B Order & Sync Linked PI ─────────────────────────
+
+export const recordB2bOrderPayment = async (
+  adminUser: UserContext,
+  orderId: string,
+  input: RecordB2bOrderPaymentInput
+) => {
+  const order = await (prisma as any).b2bOrder.findUnique({
+    where: { id: orderId },
+    include: {
+      customer: true,
+      branch: true,
+      sourcePi: true,
+    },
+  });
+
+  if (!order) {
+    throw new AppError('ORDER_NOT_FOUND', 'B2B Order not found', 404);
+  }
+
+  const amountPaid = Number(input.amountPaid);
+  if (isNaN(amountPaid) || amountPaid <= 0) {
+    throw new AppError('INVALID_AMOUNT', 'Payment amount must be greater than 0', 400);
+  }
+
+  const newPaidAmount = Math.round((Number(order.paidAmount || 0) + amountPaid) * 100) / 100;
+  const grandTotal = Number(order.grandTotal || 0);
+  const newDueAmount = Math.max(0, Math.round((grandTotal - newPaidAmount) * 100) / 100);
+  const newPaymentStatus = newDueAmount <= 0 ? 'paid' : (newPaidAmount > 0 ? 'partial' : 'pending');
+
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    // 1. Update B2B Order
+    const updated = await (tx as any).b2bOrder.update({
+      where: { id: orderId },
+      data: {
+        paidAmount: newPaidAmount,
+        dueAmount: newDueAmount,
+        paymentStatus: newPaymentStatus,
+      },
+      include: {
+        customer: true,
+        branch: true,
+        items: { include: { product: true } },
+        reservations: true,
+        sourceQuotation: true,
+        sourcePo: true,
+        sourcePi: true,
+      },
+    });
+
+    // 2. If order has a linked PI (either order.sourcePiId or ProformaInvoice where orderId === orderId)
+    const piIdToSync = order.sourcePiId;
+    let linkedPi = piIdToSync
+      ? await tx.proformaInvoice.findUnique({ where: { id: piIdToSync } })
+      : await tx.proformaInvoice.findFirst({ where: { orderId } });
+
+    if (linkedPi) {
+      const payDateStr = input.paymentDate
+        ? new Date(input.paymentDate).toLocaleDateString('en-IN')
+        : new Date().toLocaleDateString('en-IN');
+      const paymentLog = `[B2B Order ${order.orderNumber} Payment - ${payDateStr}]: ₹${amountPaid.toLocaleString('en-IN')} via ${input.paymentMode}${input.transactionRef ? ` (Ref: ${input.transactionRef})` : ''}${input.notes ? ` - ${input.notes}` : ''}`;
+
+      const newPiStatus = newDueAmount <= 0 ? 'APPROVED' : 'ADVANCE_RECEIVED';
+      await tx.proformaInvoice.update({
+        where: { id: linkedPi.id },
+        data: {
+          status: newPiStatus as any,
+          notes: linkedPi.notes ? `${linkedPi.notes}\n${paymentLog}` : paymentLog,
+          updatedBy: adminUser.id,
+        },
+      });
+
+      await tx.proformaInvoiceHistory.create({
+        data: {
+          proformaInvoiceId: linkedPi.id,
+          action: 'PAYMENT_RECORDED',
+          performedBy: adminUser.email || adminUser.id || 'Accounts Desk',
+          details: `Payment of ₹${amountPaid.toLocaleString('en-IN')} recorded on B2B Order ${order.orderNumber} via ${input.paymentMode}. UTR/Ref: ${input.transactionRef || 'N/A'}.`,
+          metadata: {
+            orderId,
+            orderNumber: order.orderNumber,
+            amountPaid,
+            paymentMode: input.paymentMode,
+            transactionRef: input.transactionRef,
+            paymentDate: input.paymentDate || new Date().toISOString(),
+            notes: input.notes,
+          },
+        },
+      });
+    }
+
+    return updated;
+  });
+
+  // Log Audit Action
+  logAdminAction({
+    userId: adminUser.id,
+    adminEmail: adminUser.email,
+    adminName: `${adminUser.firstName || ''} ${adminUser.lastName || ''}`.trim() || 'Super Admin',
+    adminRole: adminUser.roleSlug || 'super_admin',
+    action: 'B2B_ORDER_PAYMENT_RECORDED',
+    entity: 'B2B_ORDER',
+    entityId: orderId,
+    entityName: order.orderNumber,
+    details: `Recorded payment of ₹${amountPaid.toLocaleString('en-IN')} via ${input.paymentMode} (Ref: ${input.transactionRef || 'N/A'}) on B2B Order ${order.orderNumber}. New paid: ₹${newPaidAmount}, due: ₹${newDueAmount}, status: ${newPaymentStatus}.`,
+    metadata: {
+      orderId,
+      orderNumber: order.orderNumber,
+      amountPaid,
+      paymentMode: input.paymentMode,
+      transactionRef: input.transactionRef,
+      paymentDate: input.paymentDate,
+      newPaidAmount,
+      newDueAmount,
+      newPaymentStatus,
+    },
+  });
+
+  return formatB2bOrder(updatedOrder);
+};
+
