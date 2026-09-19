@@ -2608,7 +2608,40 @@ const STATEMENTS = [
       FOR UPDATE;
 
       IF NOT FOUND THEN
-        RAISE EXCEPTION 'INSUFFICIENT_STOCK:%', v_sku USING ERRCODE = 'P0001';
+        -- Auto-initialize inventory row from catalog master stock if product exists
+        DECLARE
+          v_catalog_product RECORD;
+        BEGIN
+          SELECT id, stock, sku INTO v_catalog_product
+          FROM "products"
+          WHERE id = v_product_id AND "deletedAt" IS NULL;
+
+          IF NOT FOUND OR COALESCE(v_catalog_product.stock, 0) < v_qty THEN
+            RAISE EXCEPTION 'INSUFFICIENT_STOCK:%', v_sku USING ERRCODE = 'P0001';
+          END IF;
+
+          -- Auto-create the branch inventory row from catalog stock (both column aliases)
+          INSERT INTO "inventories" (
+            "id", "productId", "product_id", "branchId", "branch_id",
+            "quantity", "reservedQuantity", "reserved_quantity",
+            "reorderLevel", "reorder_level", "updatedAt", "updated_at"
+          ) VALUES (
+            gen_random_uuid()::text, v_product_id, v_product_id, v_branch_id, v_branch_id,
+            v_catalog_product.stock, 0, 0, 10, 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+          )
+          ON CONFLICT ("productId", "branchId") DO NOTHING;
+
+          -- Re-fetch the newly created inventory row with lock
+          SELECT id, quantity, "reservedQuantity" INTO v_inv
+          FROM "inventories"
+          WHERE ("productId" = v_product_id OR product_id = v_product_id)
+            AND ("branchId" = v_branch_id OR branch_id = v_branch_id)
+          FOR UPDATE;
+
+          IF NOT FOUND THEN
+            RAISE EXCEPTION 'INSUFFICIENT_STOCK:%', v_sku USING ERRCODE = 'P0001';
+          END IF;
+        END;
       END IF;
 
       IF (v_inv.quantity - COALESCE(v_inv."reservedQuantity", 0)) < v_qty THEN

@@ -1206,20 +1206,43 @@ export const checkProductStock = async (branchId: string, productIds: string[]) 
       branchId,
       productId: { in: productIds },
     },
-    include: { product: { select: { id: true, sku: true, name: true } } },
+    include: { product: { select: { id: true, sku: true, name: true, stock: true } } },
   });
 
-  return inventories.map((inv) => {
+  const foundProductIds = new Set(inventories.map((i) => i.productId));
+  const missingProductIds = productIds.filter((pid) => !foundProductIds.has(pid));
+
+  const results = inventories.map((inv) => {
     const stock = inv.quantity || 0;
     const reserved = inv.reservedQuantity || 0;
     const available = Math.max(0, stock - reserved);
     return {
       productId: inv.productId,
-      sku: inv.product?.sku,
-      name: inv.product?.name,
+      sku: inv.product?.sku || '',
+      name: inv.product?.name || '',
       physicalStock: stock,
       reservedStock: reserved,
       availableStock: available,
     };
   });
+
+  if (missingProductIds.length > 0) {
+    const missingProducts = await prisma.product.findMany({
+      where: { id: { in: missingProductIds }, deletedAt: null },
+      select: { id: true, sku: true, name: true, stock: true },
+    });
+
+    for (const p of missingProducts) {
+      results.push({
+        productId: p.id,
+        sku: p.sku || '',
+        name: p.name || '',
+        physicalStock: p.stock || 0,
+        reservedStock: 0,
+        availableStock: Math.max(0, p.stock || 0),
+      });
+    }
+  }
+
+  return results;
 };
