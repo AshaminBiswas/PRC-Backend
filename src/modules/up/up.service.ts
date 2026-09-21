@@ -557,37 +557,66 @@ export const getDashboard = async (range: string = 'month', customStart?: string
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
 
-  // Start & End of current month
+  // Current month reference
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
-  const startOfMonth = new Date(Date.UTC(currentYear, currentMonth, 1)).toISOString().split('T')[0];
-  const endOfMonth = new Date(Date.UTC(currentYear, currentMonth + 1, 0)).toISOString().split('T')[0];
+  const startOfCurrentMonth = new Date(Date.UTC(currentYear, currentMonth, 1)).toISOString().split('T')[0];
+  const endOfCurrentMonth = new Date(Date.UTC(currentYear, currentMonth + 1, 0)).toISOString().split('T')[0];
 
-  // Start & End of previous month
-  const startOfPrevMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1)).toISOString().split('T')[0];
-  const endOfPrevMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).toISOString().split('T')[0];
+  let rangeStart = startOfCurrentMonth;
+  let rangeEnd = endOfCurrentMonth;
+  let prevStart = '';
+  let prevEnd = '';
 
-  // Effective date range
-  let rangeStart = startOfMonth;
-  let rangeEnd = endOfMonth;
+  // Determine effective range bounds
+  if (customStart && customStart.length === 7 && customStart.includes('-') && (!customEnd || customEnd === customStart)) {
+    // YYYY-MM month selector format
+    const [yStr, mStr] = customStart.split('-');
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10);
+    rangeStart = new Date(Date.UTC(y, m - 1, 1)).toISOString().split('T')[0];
+    rangeEnd = new Date(Date.UTC(y, m, 0)).toISOString().split('T')[0];
 
-  if (range === 'year') {
+    prevStart = new Date(Date.UTC(y, m - 2, 1)).toISOString().split('T')[0];
+    prevEnd = new Date(Date.UTC(y, m - 1, 0)).toISOString().split('T')[0];
+  } else if (customStart && customEnd) {
+    rangeStart = customStart.slice(0, 10);
+    rangeEnd = customEnd.slice(0, 10);
+
+    const sTime = new Date(`${rangeStart}T00:00:00Z`).getTime();
+    const eTime = new Date(`${rangeEnd}T00:00:00Z`).getTime();
+    const durationMs = Math.max(86400000, eTime - sTime + 86400000);
+    prevEnd = new Date(sTime - 86400000).toISOString().split('T')[0];
+    prevStart = new Date(sTime - durationMs).toISOString().split('T')[0];
+  } else if (range === 'year') {
     rangeStart = `${currentYear}-01-01`;
     rangeEnd = `${currentYear}-12-31`;
+    prevStart = `${currentYear - 1}-01-01`;
+    prevEnd = `${currentYear - 1}-12-31`;
   } else if (range === 'today') {
     rangeStart = todayStr;
     rangeEnd = todayStr;
-  } else if (range === 'custom' && customStart && customEnd) {
-    rangeStart = customStart;
-    rangeEnd = customEnd;
+    const yDay = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
+    prevStart = yDay;
+    prevEnd = yDay;
+  } else {
+    // Default current month
+    rangeStart = startOfCurrentMonth;
+    rangeEnd = endOfCurrentMonth;
+    prevStart = new Date(Date.UTC(currentYear, currentMonth - 1, 1)).toISOString().split('T')[0];
+    prevEnd = new Date(Date.UTC(currentYear, currentMonth, 0)).toISOString().split('T')[0];
   }
+
+  const sDate = new Date(`${rangeStart}T00:00:00Z`);
+  const eDate = new Date(`${rangeEnd}T00:00:00Z`);
+  const diffDays = Math.max(1, Math.round((eDate.getTime() - sDate.getTime()) / 86400000) + 1);
 
   // 1. KPI Aggregations (Single round-trip)
   const kpis = await prisma.$queryRawUnsafe<any[]>(`
     SELECT
-      COALESCE(SUM(CASE WHEN expense_date >= '${startOfMonth}'::date AND expense_date <= '${endOfMonth}'::date THEN amount ELSE 0 END), 0)::numeric as "currentMonthTotal",
+      COALESCE(SUM(CASE WHEN expense_date >= '${startOfCurrentMonth}'::date AND expense_date <= '${endOfCurrentMonth}'::date THEN amount ELSE 0 END), 0)::numeric as "currentMonthTotal",
       COALESCE(SUM(CASE WHEN expense_date = '${todayStr}'::date THEN amount ELSE 0 END), 0)::numeric as "todayTotal",
-      COALESCE(SUM(CASE WHEN expense_date >= '${startOfPrevMonth}'::date AND expense_date <= '${endOfPrevMonth}'::date THEN amount ELSE 0 END), 0)::numeric as "previousMonthTotal",
+      COALESCE(SUM(CASE WHEN expense_date >= '${prevStart}'::date AND expense_date <= '${prevEnd}'::date THEN amount ELSE 0 END), 0)::numeric as "previousPeriodTotal",
       COALESCE(SUM(CASE WHEN expense_date >= '${rangeStart}'::date AND expense_date <= '${rangeEnd}'::date AND verified = true THEN amount ELSE 0 END), 0)::numeric as "verifiedTotal",
       COALESCE(SUM(CASE WHEN expense_date >= '${rangeStart}'::date AND expense_date <= '${rangeEnd}'::date AND verified = false THEN amount ELSE 0 END), 0)::numeric as "unverifiedTotal",
       COALESCE(SUM(CASE WHEN expense_date >= '${rangeStart}'::date AND expense_date <= '${rangeEnd}'::date THEN amount ELSE 0 END), 0)::numeric as "rangeTotal",
@@ -601,7 +630,25 @@ export const getDashboard = async (range: string = 'month', customStart?: string
   const rangeTotal = Number(kpiData.rangeTotal || 0);
   const rangeCount = Number(kpiData.rangeCount || 0);
 
-  // 2. Category Breakdown
+  // 2. Peak Expense Detail
+  const peakRows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT
+      e.amount,
+      e.expense_date as "date",
+      e.paid_to as "paidTo",
+      c.name as "categoryName"
+    FROM "up_expenses" e
+    LEFT JOIN "up_expense_categories" c ON c.id = e.category_id
+    WHERE e.deleted_at IS NULL
+      AND e.expense_date >= '${rangeStart}'::date
+      AND e.expense_date <= '${rangeEnd}'::date
+    ORDER BY e.amount DESC
+    LIMIT 1;
+  `);
+
+  const peakItem = peakRows[0] || null;
+
+  // 3. Category Breakdown
   const categoryRows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT
       c.id,
@@ -630,7 +677,7 @@ export const getDashboard = async (range: string = 'month', customStart?: string
     };
   });
 
-  // 3. 30-Day Trend
+  // 4. Trend Velocity Query
   const trendRows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT
       expense_date as "date",
@@ -638,35 +685,98 @@ export const getDashboard = async (range: string = 'month', customStart?: string
       COUNT(id)::int as count
     FROM "up_expenses"
     WHERE deleted_at IS NULL
-      AND expense_date >= (CURRENT_DATE - INTERVAL '30 days')
-      AND expense_date <= CURRENT_DATE
+      AND expense_date >= '${rangeStart}'::date
+      AND expense_date <= '${rangeEnd}'::date
     GROUP BY expense_date
     ORDER BY expense_date ASC;
   `);
+
+  const trendMap = new Map<string, { total: number; count: number }>();
+  for (const t of trendRows) {
+    const dStr = t.date instanceof Date ? t.date.toISOString().split('T')[0] : String(t.date).slice(0, 10);
+    trendMap.set(dStr, {
+      total: Number(t.total || 0),
+      count: Number(t.count || 0),
+    });
+  }
+
+  let trend: { date: string; total: number; count: number }[] = [];
+  if (diffDays <= 62) {
+    const iter = new Date(sDate);
+    while (iter <= eDate) {
+      const dStr = iter.toISOString().split('T')[0];
+      const match = trendMap.get(dStr);
+      trend.push({
+        date: dStr,
+        total: match ? match.total : 0,
+        count: match ? match.count : 0,
+      });
+      iter.setUTCDate(iter.getUTCDate() + 1);
+    }
+  } else {
+    trend = trendRows.map((t) => ({
+      date: t.date instanceof Date ? t.date.toISOString().split('T')[0] : String(t.date).slice(0, 10),
+      total: Number(t.total || 0),
+      count: Number(t.count || 0),
+    }));
+  }
+
+  // 5. Top 5 Largest Expenditures in Period (For Executive Presentation)
+  const topExpensesRows = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT
+      e.id,
+      e.amount,
+      e.expense_date as "expenseDate",
+      e.paid_to as "paidTo",
+      e.note,
+      e.payment_mode as "paymentMode",
+      e.verified,
+      c.name as "categoryName"
+    FROM "up_expenses" e
+    LEFT JOIN "up_expense_categories" c ON c.id = e.category_id
+    WHERE e.deleted_at IS NULL
+      AND e.expense_date >= '${rangeStart}'::date
+      AND e.expense_date <= '${rangeEnd}'::date
+    ORDER BY e.amount DESC
+    LIMIT 5;
+  `);
+
+  const topExpenses = topExpensesRows.map((e) => ({
+    id: e.id,
+    amount: Number(e.amount),
+    expenseDate: e.expenseDate instanceof Date ? e.expenseDate.toISOString().split('T')[0] : String(e.expenseDate).slice(0, 10),
+    paidTo: e.paidTo,
+    note: e.note || null,
+    paymentMode: e.paymentMode || 'cash',
+    verified: Boolean(e.verified),
+    categoryName: e.categoryName || 'General',
+  }));
 
   return {
     kpis: {
       currentMonthTotal: Number(kpiData.currentMonthTotal || 0),
       todayTotal: Number(kpiData.todayTotal || 0),
-      previousMonthTotal: Number(kpiData.previousMonthTotal || 0),
+      previousMonthTotal: Number(kpiData.previousPeriodTotal || 0),
+      previousPeriodTotal: Number(kpiData.previousPeriodTotal || 0),
       verifiedTotal: Number(kpiData.verifiedTotal || 0),
       unverifiedTotal: Number(kpiData.unverifiedTotal || 0),
       rangeTotal,
       transactionCount: rangeCount,
       highestExpense: Number(kpiData.highestExpense || 0),
-      averageDailyExpense: rangeCount > 0 ? Number((rangeTotal / Math.max(1, 30)).toFixed(2)) : 0,
+      highestExpenseDate: peakItem?.date ? (peakItem.date instanceof Date ? peakItem.date.toISOString().split('T')[0] : String(peakItem.date).slice(0, 10)) : null,
+      highestExpensePaidTo: peakItem?.paidTo || null,
+      highestExpenseCategory: peakItem?.categoryName || null,
+      averageDailyExpense: rangeCount > 0 ? Number((rangeTotal / diffDays).toFixed(2)) : 0,
       topCategory: categoryBreakdown[0]?.name || 'None',
     },
     categoryBreakdown,
-    trend: trendRows.map((t) => ({
-      date: t.date.toISOString().split('T')[0],
-      total: Number(t.total),
-      count: t.count,
-    })),
+    trend,
+    topExpenses,
     range: {
       type: range,
       startDate: rangeStart,
       endDate: rangeEnd,
+      diffDays,
     },
   };
 };

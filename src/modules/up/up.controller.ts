@@ -49,7 +49,7 @@ export const revokeAccess = async (req: Request, res: Response, next: NextFuncti
 export const getDashboard = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const range = (req.query.range as string) || 'month';
-    const startDate = req.query.startDate as string;
+    const startDate = (req.query.startDate as string) || (req.query.month as string);
     const endDate = req.query.endDate as string;
     const data = await upService.getDashboard(range, startDate, endDate);
     sendSuccess(res, data, 'UP dashboard metrics retrieved successfully');
