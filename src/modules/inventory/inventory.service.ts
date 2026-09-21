@@ -369,51 +369,6 @@ export const listInventory = async (query: ListInventoryQuery) => {
     console.warn('[listInventory] DB inventory query warning:', err?.message || err);
   }
 
-  // If inventory table has no records or fewer records than products, fetch from products catalog
-  if (rawInventory.length === 0) {
-    try {
-      const prodWhere: Prisma.ProductWhereInput = {
-        deletedAt: null,
-        ...(query.categoryId ? { categoryId: query.categoryId } : {}),
-        ...(query.search
-          ? {
-              OR: [
-                { name: { contains: query.search, mode: 'insensitive' } },
-                { sku: { contains: query.search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      };
-
-      const [products, prodCount] = await Promise.all([
-        readPrisma.product.findMany({
-          where: prodWhere,
-          skip,
-          take: limit,
-          orderBy: { updatedAt: 'desc' },
-          include: { category: { select: { id: true, name: true } } },
-        }),
-        readPrisma.product.count({ where: prodWhere }),
-      ]);
-
-      const defaultBranch = { id: 'branch-del-01', name: 'Delhi Central Depot', code: 'DEL', city: 'New Delhi' };
-
-      rawInventory = products.map((p) => ({
-        id: `inv-${p.id}`,
-        productId: p.id,
-        branchId: defaultBranch.id,
-        quantity: p.stock || 0,
-        reservedQuantity: 0,
-        reorderLevel: p.reorderLevel || 10,
-        product: p,
-        branch: defaultBranch,
-      }));
-      total = prodCount;
-    } catch (prodErr: any) {
-      console.warn('[listInventory] Product catalog fallback warning:', prodErr?.message || prodErr);
-    }
-  }
-
   // Enrich with on-hand vs available and shared stock status
   const enriched = rawInventory.map((item) => {
     const onHand = item.quantity || 0;
@@ -678,76 +633,81 @@ export const deleteInventoryItem = async (id: string, userId: string = 'system')
       throw new AppError('NOT_FOUND', 'Product not found', 404);
     }
 
-    // 5. Write off all warehouse inventory units and record audit trail
-    const existingInvs = targetProduct.inventories || [];
-    for (const inv of existingInvs) {
-      if (inv.quantity > 0) {
-        await tx.stockMovement.create({
-          data: {
-            productId: targetProduct.id,
-            branchId: inv.branchId,
-            type: StockMovementType.ADJUSTMENT_OUT,
-            quantity: inv.quantity,
-            previousQty: inv.quantity,
-            newQty: 0,
-            referenceType: 'FACILITY_DEALLOCATION',
-            referenceId: inv.id,
-            notes: `Auto write-off: SKU '${targetProduct.sku}' deleted from stock list & catalog`,
-            performedById: userId,
-          },
-        });
-      }
-    }
-
-    // If product had standalone stock with no inventory rows
-    if (existingInvs.length === 0 && targetProduct.stock > 0) {
-      const defaultBranch = await tx.branch.findFirst({ where: { deletedAt: null, isActive: true } });
-      if (defaultBranch) {
-        await tx.stockMovement.create({
-          data: {
-            productId: targetProduct.id,
-            branchId: defaultBranch.id,
-            type: StockMovementType.ADJUSTMENT_OUT,
-            quantity: targetProduct.stock,
-            previousQty: targetProduct.stock,
-            newQty: 0,
-            referenceType: 'FACILITY_DEALLOCATION',
-            referenceId: targetProduct.id,
-            notes: `Auto write-off: SKU '${targetProduct.sku}' standalone stock cleared`,
-            performedById: userId,
-          },
-        });
-      }
-    }
-
-    // 6. Delete all warehouse inventory allocation rows for this product
+    // 5. Clean up all multi-stock and relational dependencies for this product
     await tx.inventory.deleteMany({
       where: { productId: targetProduct.id },
     });
 
-    // 7. Soft-delete the product from the catalog so it auto-deletes from the product listing page
-    const updatedProduct = await tx.product.update({
-      where: { id: targetProduct.id },
-      data: {
-        deletedAt: new Date(),
-        status: 'INACTIVE',
-        isVisible: false,
-        stock: 0,
-      },
+    await tx.stockMovement.deleteMany({
+      where: { productId: targetProduct.id },
     });
 
-    // 8. Mark any variants as inactive and out of stock
-    await tx.productVariant.updateMany({
+    await tx.stockReservation.deleteMany({
       where: { productId: targetProduct.id },
-      data: {
-        isAvailable: false,
-        stock: 0,
-      },
     });
+
+    await tx.stockTransferItem.deleteMany({
+      where: { productId: targetProduct.id },
+    });
+
+    await tx.purchaseItem.deleteMany({
+      where: { productId: targetProduct.id },
+    });
+
+    await tx.productVariant.deleteMany({
+      where: { productId: targetProduct.id },
+    });
+
+    await tx.cartItem.deleteMany({
+      where: { productId: targetProduct.id },
+    });
+
+    await tx.wishlistItem.deleteMany({
+      where: { productId: targetProduct.id },
+    });
+
+    await tx.review.deleteMany({
+      where: { productId: targetProduct.id },
+    });
+
+    await tx.b2BCustomerPrice.deleteMany({
+      where: { productId: targetProduct.id },
+    });
+
+    // 6. Check for historical legal dependencies (Order / Invoice records)
+    const [orderItemCount, invoiceItemCount] = await Promise.all([
+      tx.orderItem.count({ where: { productId: targetProduct.id } }),
+      tx.invoiceItem.count({ where: { productId: targetProduct.id } }),
+    ]);
+
+    let isHardDeleted = false;
+    let updatedProduct: any = null;
+
+    if (orderItemCount === 0 && invoiceItemCount === 0) {
+      // Complete, permanent hard delete from PostgreSQL database
+      await tx.product.delete({
+        where: { id: targetProduct.id },
+      });
+      isHardDeleted = true;
+    } else {
+      // Historical financial records exist — soft-delete and zero out all inventory
+      updatedProduct = await tx.product.update({
+        where: { id: targetProduct.id },
+        data: {
+          deletedAt: new Date(),
+          status: 'INACTIVE',
+          isVisible: false,
+          stock: 0,
+        },
+      });
+    }
 
     return {
       success: true,
-      message: `SKU '${targetProduct.sku}' deleted from stock and product catalog`,
+      permanentlyDeleted: isHardDeleted,
+      message: isHardDeleted
+        ? `SKU '${targetProduct.sku}' permanently deleted from database and stock list`
+        : `SKU '${targetProduct.sku}' deallocated from stock and archived`,
       id,
       productId: targetProduct.id,
       product: updatedProduct,
