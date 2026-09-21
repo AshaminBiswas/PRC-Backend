@@ -29,6 +29,7 @@ export const ListUpExpensesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(25),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  month: z.string().optional(),
   categoryId: z.string().optional(),
   paymentMode: z.string().optional(),
   verified: z.string().optional(), // 'true', 'false', 'all'

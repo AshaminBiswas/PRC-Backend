@@ -3,6 +3,7 @@ import { sendSuccess } from '../../utils/response';
 import * as upService from './up.service';
 import * as upInventoryService from './up-inventory.service';
 import { exportExpensesToExcel } from './up-export.service';
+import { generateCategoryExpensePdf } from './up-category-pdf.service';
 
 // ─── 1. Access & Allow-List Controllers ───────────────────────────────────────
 
@@ -221,6 +222,14 @@ export const deleteReceipt = async (req: Request, res: Response, next: NextFunct
 export const exportExpenses = async (req: Request, res: Response, next: NextFunction) => {
   try {
     await exportExpensesToExcel(req.query as any, res);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const exportCategoryPdf = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await generateCategoryExpensePdf(req.query as any, res);
   } catch (err) {
     next(err);
   }

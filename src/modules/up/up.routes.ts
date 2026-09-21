@@ -47,9 +47,10 @@ router.get('/cash/status', requireUPAccess, controller.getCashStatus);
 router.get('/cash', requireUPAccess, controller.listCashDays);
 router.post('/cash/reconcile', requireUPAccess, validate(ReconcileCashSchema), controller.reconcileCash);
 
-// ─── 5. Reports & Excel Export ────────────────────────────────────────────────
+// ─── 5. Reports & Excel/PDF Export ────────────────────────────────────────────
 router.get('/reports', requireUPAccess, validate(ListUpExpensesQuerySchema, 'query'), controller.listExpenses);
 router.get('/reports/export', requireUPAccess, validate(ListUpExpensesQuerySchema, 'query'), controller.exportExpenses);
+router.get('/reports/category-pdf', requireUPAccess, validate(ListUpExpensesQuerySchema, 'query'), controller.exportCategoryPdf);
 
 // ─── 6. Expenses CRUD ─────────────────────────────────────────────────────────
 router.get('/expenses', requireUPAccess, validate(ListUpExpensesQuerySchema, 'query'), controller.listExpenses);
