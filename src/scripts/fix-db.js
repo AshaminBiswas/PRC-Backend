@@ -1739,11 +1739,12 @@ const STATEMENTS = [
   `ALTER TABLE "stock_movements" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`,
   `CREATE INDEX IF NOT EXISTS "stock_movements_product_branch_idx" ON "stock_movements"("productId", "branchId")`,
 
-  // Seed Default Branches (Delhi HQ & Kolkata)
+  // Seed Default Branches (Delhi HQ, Kolkata & UP Factory)
   `INSERT INTO "branches" ("id", "name", "code", "address", "city", "state", "isActive", "is_active", "createdAt", "created_at", "updatedAt", "updated_at")
    VALUES
      ('b1000000-0000-0000-0000-000000000001', 'Delhi HQ', 'DEL', 'Pacific Hardware HQ, Mayapuri Industrial Area Phase II', 'New Delhi', 'Delhi', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-     ('b2000000-0000-0000-0000-000000000002', 'Kolkata Branch', 'KOL', 'PRC Hardware Depot, Topsia Road', 'Kolkata', 'West Bengal', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ('b2000000-0000-0000-0000-000000000002', 'Kolkata Branch', 'KOL', 'PRC Hardware Depot, Topsia Road', 'Kolkata', 'West Bengal', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+     ('b3000000-0000-0000-0000-000000000003', 'UP Factory', 'UP', 'PRC Manufacturing Unit, Uttar Pradesh', 'Kanpur', 'Uttar Pradesh', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
    ON CONFLICT ("code") DO UPDATE SET
      "name" = EXCLUDED."name",
      "address" = EXCLUDED."address",
@@ -3429,6 +3430,14 @@ const STATEMENTS = [
     CONSTRAINT "fk_pf_sms_logs_customer" FOREIGN KEY ("customer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE
   );`,
   `CREATE INDEX IF NOT EXISTS "idx_pf_sms_logs_customer_id" ON "payment_followup_sms_logs"("customer_id");`,
+
+  // Ensure UP Factory branch exists and initial cash balance record is ready
+  `INSERT INTO "branches" ("id", "name", "code", "address", "city", "state", "isActive", "is_active", "createdAt", "created_at", "updatedAt", "updated_at")
+   VALUES ('b3000000-0000-0000-0000-000000000003', 'UP Factory', 'UP', 'PRC Manufacturing Unit, Uttar Pradesh', 'Kanpur', 'Uttar Pradesh', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+   ON CONFLICT ("code") DO UPDATE SET "name" = EXCLUDED."name", "isActive" = true, "is_active" = true;`,
+  `INSERT INTO "branch_cash_balances" ("id", "branchId", "branch_id", "currentBalance", "current_balance", "createdAt", "created_at", "updatedAt", "updated_at")
+   VALUES ('bcb-up-factory-001', 'b3000000-0000-0000-0000-000000000003', 'b3000000-0000-0000-0000-000000000003', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+   ON CONFLICT ("branchId") DO NOTHING;`,
 ];
 
 async function run() {

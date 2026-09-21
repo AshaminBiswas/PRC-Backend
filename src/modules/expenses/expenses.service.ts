@@ -262,7 +262,7 @@ export class ExpensesService {
       }
     }
 
-    if (branchId) where.branchId = branchId;
+    if (branchId && branchId !== 'ALL') where.branchId = branchId;
     if (categoryId) where.categoryId = categoryId;
     if (addedById) where.addedById = addedById;
     if (employeeId) where.employeeId = employeeId;
@@ -1037,7 +1037,7 @@ export class ExpensesService {
     const { branchId, startDate, endDate, limit = 50, cursor } = query;
 
     const where: Prisma.ExpenseFloatTopUpWhereInput = {};
-    if (branchId) where.branchId = branchId;
+    if (branchId && branchId !== 'ALL') where.branchId = branchId;
     if (startDate || endDate) {
       where.date = {};
       if (startDate) where.date.gte = parseDateOnly(startDate);

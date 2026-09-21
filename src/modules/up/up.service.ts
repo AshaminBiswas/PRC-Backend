@@ -685,7 +685,17 @@ export const getCashStatus = async (dateStr: string) => {
   );
   const cashExpenses = Number(expRes[0]?.cashExpenses || 0);
 
-  // 2. Fetch cash day record for date
+  // 2. Query any cash float top-ups allocated to UP Factory on this date (convert paise -> rupees)
+  const floatRes = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT COALESCE(SUM(amount), 0)::numeric as "floatPaise"
+     FROM "expense_float_top_ups"
+     WHERE date = $1::date
+       AND "branchId" = 'b3000000-0000-0000-0000-000000000003';`,
+    dateStr
+  );
+  const floatReceived = Number(floatRes[0]?.floatPaise || 0) / 100.0;
+
+  // 3. Fetch cash day record for date
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `SELECT
        cd.*,
@@ -701,7 +711,7 @@ export const getCashStatus = async (dateStr: string) => {
   if (rows.length > 0) {
     const cd = rows[0];
     const opening = Number(cd.opening_balance || 0);
-    const expected = Number(opening - cashExpenses);
+    const expected = Number(opening + floatReceived - cashExpenses);
     const actual = cd.closing_balance !== null ? Number(cd.closing_balance) : null;
     const diff = actual !== null ? Number(actual - expected) : null;
 
@@ -709,6 +719,7 @@ export const getCashStatus = async (dateStr: string) => {
       cashDate: dateStr,
       openingBalance: opening,
       cashExpenses,
+      floatReceived,
       expectedClosingBalance: expected,
       actualClosing: actual,
       closingBalance: actual,
@@ -720,7 +731,7 @@ export const getCashStatus = async (dateStr: string) => {
     };
   }
 
-  // 3. If no record yet, grab previous closed day's closing balance as default opening
+  // 4. If no record yet, grab previous closed day's closing balance as default opening
   const prevClosed = await prisma.$queryRawUnsafe<any[]>(
     `SELECT closing_balance
      FROM "up_cash_days"
@@ -731,12 +742,13 @@ export const getCashStatus = async (dateStr: string) => {
   );
 
   const suggestedOpening = prevClosed.length > 0 ? Number(prevClosed[0].closing_balance) : 0;
-  const expected = Number(suggestedOpening - cashExpenses);
+  const expected = Number(suggestedOpening + floatReceived - cashExpenses);
 
   return {
     cashDate: dateStr,
     openingBalance: suggestedOpening,
     cashExpenses,
+    floatReceived,
     expectedClosingBalance: expected,
     actualClosing: null,
     closingBalance: null,
@@ -757,7 +769,8 @@ export const reconcileCash = async (userId: string, input: ReconcileCashInput) =
 
   const opening = input.openingBalance !== undefined ? Number(input.openingBalance) : current.openingBalance;
   const actual = input.actualClosing !== undefined && input.actualClosing !== null ? Number(input.actualClosing) : current.actualClosing;
-  const expected = Number(opening - current.cashExpenses);
+  const floatReceived = Number(current.floatReceived || 0);
+  const expected = Number(opening + floatReceived - current.cashExpenses);
   const diff = actual !== null ? Number(actual - expected) : null;
   const isClosing = Boolean(input.closed);
 
@@ -808,6 +821,12 @@ export const listCashDays = async (limit: number = 30) => {
            AND e.payment_mode = 'cash'
            AND e.deleted_at IS NULL
        ), 0)::numeric as "cash_expenses",
+       COALESCE((
+         SELECT SUM(ft.amount)
+         FROM "expense_float_top_ups" ft
+         WHERE ft.date = cd.cash_date
+           AND ft."branchId" = 'b3000000-0000-0000-0000-000000000003'
+       ), 0)::numeric / 100.0 as "float_received",
        u."firstName" as "closedByFirstName",
        u."lastName" as "closedByLastName"
      FROM "up_cash_days" cd
@@ -820,9 +839,10 @@ export const listCashDays = async (limit: number = 30) => {
   return days.map((d) => {
     const opening = Number(d.opening_balance || 0);
     const expenses = Number(d.cash_expenses || 0);
+    const floatReceived = Number(d.float_received || 0);
     const expected = d.expected_closing_balance !== null
       ? Number(d.expected_closing_balance)
-      : (opening - expenses);
+      : (opening + floatReceived - expenses);
     const actual = d.closing_balance !== null ? Number(d.closing_balance) : null;
     const diff = d.difference !== null
       ? Number(d.difference)
@@ -833,6 +853,7 @@ export const listCashDays = async (limit: number = 30) => {
       cashDate: d.cash_date ? (typeof d.cash_date.toISOString === 'function' ? d.cash_date.toISOString().split('T')[0] : String(d.cash_date).split('T')[0]) : '',
       openingBalance: opening,
       cashExpenses: expenses,
+      floatReceived,
       closingBalance: actual,
       actualClosing: actual,
       expectedClosingBalance: expected,

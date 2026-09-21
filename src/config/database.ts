@@ -1031,7 +1031,8 @@ const PO_AUTO_HEAL_STATEMENTS = [
   `INSERT INTO "branches" ("id", "name", "code", "address", "city", "state", "isActive", "is_active", "createdAt", "created_at", "updatedAt", "updated_at")
    VALUES
      ('b1000000-0000-0000-0000-000000000001', 'Delhi HQ', 'DEL', 'Pacific Hardware HQ, Mayapuri Industrial Area Phase II', 'New Delhi', 'Delhi', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-     ('b2000000-0000-0000-0000-000000000002', 'Kolkata Branch', 'KOL', 'PRC Hardware Depot, Topsia Road', 'Kolkata', 'West Bengal', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+     ('b2000000-0000-0000-0000-000000000002', 'Kolkata Branch', 'KOL', 'PRC Hardware Depot, Topsia Road', 'Kolkata', 'West Bengal', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+     ('b3000000-0000-0000-0000-000000000003', 'UP Factory', 'UP', 'PRC Manufacturing Unit, Uttar Pradesh', 'Kanpur', 'Uttar Pradesh', true, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
    ON CONFLICT ("code") DO UPDATE SET
      "name" = EXCLUDED."name",
      "address" = EXCLUDED."address",
@@ -1039,6 +1040,10 @@ const PO_AUTO_HEAL_STATEMENTS = [
      "state" = EXCLUDED."state",
      "isActive" = true,
      "is_active" = true`,
+
+  `INSERT INTO "branch_cash_balances" ("id", "branchId", "branch_id", "currentBalance", "current_balance", "createdAt", "created_at", "updatedAt", "updated_at")
+   VALUES ('bcb-up-factory-001', 'b3000000-0000-0000-0000-000000000003', 'b3000000-0000-0000-0000-000000000003', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+   ON CONFLICT ("branchId") DO NOTHING;`,
 ];
 
 export const autoHealDatabaseSchema = async () => {
