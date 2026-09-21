@@ -9,13 +9,16 @@
 
 ## 1. System Ecosystem Overview
 
-The PRC Hardware platform consists of three core sub-projects located under `D:\`:
+The PRC Hardware platform consists of six primary sub-projects located under `D:\`:
 
 ```
 D:\
-├── PRC-Backend/    # Express + TypeScript + Prisma REST API Backend (Port 5000)
-├── admin/          # React + Vite + Tailwind Admin Console Dashboard (Port 5173/5174)
-└── frontend/       # React + Vite + Tailwind Customer E-Commerce Storefront (Port 5175/3000)
+├── PRC-Backend/              # Express + TypeScript + Prisma REST API Backend (Port 5000)
+├── admin/                    # React + Vite + Tailwind Enterprise ERP & Operations Dashboard (Port 5174)
+├── frontend/                 # React + Vite + Tailwind Customer E-Commerce Storefront (Port 5175/3000)
+├── PACIFIC RESTROOM CUBICLE/ # Corporate Website, 3D Configurator, CAD Studio & CMS (Port 5173)
+├── PACIFIC-Backend/          # Express + TypeScript + Prisma REST API for Pacific Restroom Cubicle (Port 5001)
+└── PACIFIC-Admin/            # React + Vite + Tailwind Admin Console for Pacific Restroom Cubicle (Port 5176)
 ```
 
 ---
@@ -168,6 +171,25 @@ D:\
   - **Dynamic Banner Loading (`HeroSlider.tsx` & `UpcomingSlider.tsx`)**: Zero hardcoded image flashing on refresh; skeleton shimmer placeholders during live database banner retrieval.
 - **State & Services**: Custom React contexts (`AuthContext`, `CartContext`, etc.), modular API services in `src/services/`.
 - **Features**: Product catalog with dynamic filters, category browsing, instant search, persistent cart, multi-step checkout, B2B quotation request, installation appointment booking, customer order tracking, reviews & ratings, wishlist.
+
+### 2.4 Pacific Products & Solutions — Corporate & 3D Cubicle Platform (`D:\PACIFIC RESTROOM CUBICLE`)
+- **Framework**: React 18, Vite 6, React Router v7, TypeScript, Tailwind CSS v4, Lucide React.
+- **3D Graphics & Configurator Engines**: Three.js (`0.184.0`), `@react-three/fiber` (`8.17.10`), `@react-three/drei` (`9.121.4`), Zustand (`5.0.14`).
+- **Interactive 3D Configurator (`/configure-cubicle`)**:
+  - Parametric 3D cubicle viewport (`CubicleViewer.tsx`, `CubicleModel.tsx`) supporting Toilet Cubicles, Toilet Partitions, and Locker Systems.
+  - Real-time dimension adjustments (Width, Depth, Height in mm), material selection (HPL vs Phenolic Plywood), hardware finish options (`SS`, `Chrome`, `Brass`, `Black`), and accessories (indicator locks, coat hooks, LED backlighting, support legs, wall bracket clamps).
+  - Dynamic cost estimator (`getEstimatedPriceRange()`), deep URL query param configuration sharing, and client-side vector PDF quote generation via `jspdf`.
+- **AutoCAD-Style 3D Design Studio (`/design-studio`)**:
+  - CAD modeling suite featuring ribbon toolbar (`AutoCADRibbon.tsx`), interactive command line (`AutoCADCommandLine.tsx`), 3D canvas (`DesignCanvas3D.tsx`), layers, dimension overlays, snapping, undo/redo history, and JSON layout serialization.
+- **AI Chatbot ("Aria")**:
+  - Local intent parser and NVIDIA NIM LLM completion proxy (`api/nvidia.ts` on Vercel Edge Runtime) keeping API keys server-side.
+- **Headless CMS & Database (`/admin/dashboard`)**:
+  - Supabase integration (PostgreSQL, Supabase Auth, Supabase Storage with WebP image compression).
+  - Full CRUD dashboards for Products, Blogs, Solutions, Gallery Images, Hero Sliders, Core Services, Page Banners, Catalogs, Contact Queries, Feedback, FAQs, and Configurator Leads.
+  - Resilient offline fallback (`isSupabaseConfigured()`) ensuring full functionality via `demo-data.ts` even without active cloud database connections.
+- **Development & Verification**:
+  - Dedicated agent skill: `prc-cubicle-dev` (`.agents/skills/prc-cubicle-dev/SKILL.md`).
+  - Validation: `npx tsc --noEmit`, `npm run build`, `npm test`.
 
 ---
 
