@@ -1320,7 +1320,11 @@ The B2B Order Management module provides enterprise dual-channel order placement
   - Dedicated "Factory Inventory" tab in the UP navigation bar.
   - Updated module subtitle: *"Private Factory Operations, Inventory & Financial Command Center"*.
   - Decoupled from public admin sidebar (`AdminSidebar.tsx`).
+- **Petty Cash Data Contract & Frontend Resilience (`src/modules/up/up.service.ts`, `src/pages/up/UPPage.tsx`, `UPInventoryHub.tsx`)**:
+  - Backend `listCashDays` enhanced with correlated subquery to dynamically calculate and return `cashExpenses`, `actualClosing` along with `closingBalance`, and default non-null expected closing balances, aligning perfectly with frontend `UPCashDay` interface.
+  - Defensive `formatInr` currency and number formatter applied across all financial KPIs, tables, and modal dialogs in `UPPage.tsx` and `UPInventoryHub.tsx`, eliminating `TypeError: Cannot read properties of undefined (reading 'toLocaleString')` runtime exceptions.
+  - CORS preflight OPTIONS requests hardened in `app.ts` with explicit 204 short-circuit and expanded headers (`Cache-Control`, `Pragma`, `Expires`, `If-Modified-Since`, `X-Refresh-Token`), paired with multi-stage cold-start retries (up to 2 attempts with 4s and 7s backoff) in `adminApi.ts` to seamlessly withstand Render free-tier container spin-ups without client-facing network dropouts.
 
 ---
 
-*Last Updated: 2026-09-19 (UP Factory Operations & Inventory Management System unified inside private UP module, decoupled from public sidebar, 6 new Postgres tables + RLS auto-healed via fix-db.js, full-stack typed API and mobile-first floor interface)*
+*Last Updated: 2026-09-21 (Hardened UP petty cash data contract & frontend formatting against undefined properties, strengthened CORS preflight OPTIONS handling in Express app, and implemented multi-stage cold-start retries in Admin API)*

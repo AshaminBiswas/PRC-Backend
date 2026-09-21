@@ -711,6 +711,7 @@ export const getCashStatus = async (dateStr: string) => {
       cashExpenses,
       expectedClosingBalance: expected,
       actualClosing: actual,
+      closingBalance: actual,
       difference: diff,
       notes: cd.notes,
       closed: Boolean(cd.closed),
@@ -738,6 +739,7 @@ export const getCashStatus = async (dateStr: string) => {
     cashExpenses,
     expectedClosingBalance: expected,
     actualClosing: null,
+    closingBalance: null,
     difference: null,
     notes: null,
     closed: false,
@@ -799,6 +801,13 @@ export const listCashDays = async (limit: number = 30) => {
   const days = await prisma.$queryRawUnsafe<any[]>(
     `SELECT
        cd.*,
+       COALESCE((
+         SELECT SUM(e.amount)
+         FROM "up_expenses" e
+         WHERE e.expense_date = cd.cash_date
+           AND e.payment_mode = 'cash'
+           AND e.deleted_at IS NULL
+       ), 0)::numeric as "cash_expenses",
        u."firstName" as "closedByFirstName",
        u."lastName" as "closedByLastName"
      FROM "up_cash_days" cd
@@ -808,18 +817,32 @@ export const listCashDays = async (limit: number = 30) => {
     limit
   );
 
-  return days.map((d) => ({
-    id: d.id,
-    cashDate: d.cash_date.toISOString().split('T')[0],
-    openingBalance: Number(d.opening_balance || 0),
-    closingBalance: d.closing_balance !== null ? Number(d.closing_balance) : null,
-    expectedClosingBalance: d.expected_closing_balance !== null ? Number(d.expected_closing_balance) : null,
-    difference: d.difference !== null ? Number(d.difference) : null,
-    notes: d.notes,
-    closed: Boolean(d.closed),
-    closedByName: d.closedByFirstName ? `${d.closedByFirstName} ${d.closedByLastName || ''}`.trim() : null,
-    closedAt: d.closed_at,
-  }));
+  return days.map((d) => {
+    const opening = Number(d.opening_balance || 0);
+    const expenses = Number(d.cash_expenses || 0);
+    const expected = d.expected_closing_balance !== null
+      ? Number(d.expected_closing_balance)
+      : (opening - expenses);
+    const actual = d.closing_balance !== null ? Number(d.closing_balance) : null;
+    const diff = d.difference !== null
+      ? Number(d.difference)
+      : (actual !== null ? (actual - expected) : null);
+
+    return {
+      id: d.id,
+      cashDate: d.cash_date ? (typeof d.cash_date.toISOString === 'function' ? d.cash_date.toISOString().split('T')[0] : String(d.cash_date).split('T')[0]) : '',
+      openingBalance: opening,
+      cashExpenses: expenses,
+      closingBalance: actual,
+      actualClosing: actual,
+      expectedClosingBalance: expected,
+      difference: diff,
+      notes: d.notes,
+      closed: Boolean(d.closed),
+      closedByName: d.closedByFirstName ? `${d.closedByFirstName} ${d.closedByLastName || ''}`.trim() : null,
+      closedAt: d.closed_at,
+    };
+  });
 };
 
 // ─── 6. Receipt Storage & Signed URLs ─────────────────────────────────────────

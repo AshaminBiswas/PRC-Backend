@@ -156,6 +156,11 @@ const corsOptions: cors.CorsOptions = {
     'Access-Control-Request-Headers',
     'X-Client-Version',
     'X-Instance-ID',
+    'Cache-Control',
+    'Pragma',
+    'Expires',
+    'If-Modified-Since',
+    'X-Refresh-Token',
   ],
   exposedHeaders: ['X-Instance-ID', 'Content-Range', 'X-Total-Count'],
   optionsSuccessStatus: 204,
@@ -171,6 +176,14 @@ app.use((req, res, next) => {
   if (origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD');
+    if (req.headers['access-control-request-headers']) {
+      res.setHeader('Access-Control-Allow-Headers', req.headers['access-control-request-headers']);
+    }
+  }
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
   }
   next();
 });
