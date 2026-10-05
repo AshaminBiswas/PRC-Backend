@@ -27,10 +27,10 @@ D:\
 
 ### 2.1 Backend (`PRC-Backend`)
 - **Runtime & Language**: Node.js (>= 18), TypeScript (Strict mode), Express.js.
-- **ORM & Database**: Prisma Client `v5.22.0`, PostgreSQL (Hosted on Supabase project `cavtwoqjixujgwqfxbpe`, region `ap-south-1`). Migrated from legacy project `lqukuaaonjaeqaxvfsfg` on Oct 5, 2026 with 100% data preservation (5,323 rows across 79 tables).
+- **ORM & Database**: Prisma Client `v5.22.0`, PostgreSQL (Hosted on Supabase project `ktfsxsllbyyjgplitvfe`, region `ap-south-1`). Migrated with 100% data preservation (5,323 rows across 79 tables).
 - **Database Connection Architecture**:
-  - `DATABASE_URL`: Supabase Transaction Pooler via PgBouncer on port `6543` (`postgresql://postgres.cavtwoqjixujgwqfxbpe:***@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true`). Used for application queries.
-  - `DIRECT_URL`: Supabase Direct Session Pooler on port `5432` (`postgresql://postgres.cavtwoqjixujgwqfxbpe:***@aws-0-ap-south-1.pooler.supabase.com:5432/postgres`). Required for DDL migrations and schema changes.
+  - `DATABASE_URL`: Supabase Transaction Pooler via PgBouncer on port `6543` (`postgresql://postgres.ktfsxsllbyyjgplitvfe:***@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true`). Used for application queries.
+  - `DIRECT_URL`: Supabase Direct Session Pooler on port `5432` (`postgresql://postgres.ktfsxsllbyyjgplitvfe:***@aws-0-ap-south-1.pooler.supabase.com:5432/postgres`). Required for DDL migrations and schema changes.
 - **Database Self-Healing & Instant Boot**: `src/scripts/fix-db.js` and `src/config/database.ts` use SHA256 hash tracking against `_applied_schema_patches` to complete schema verification in <20ms on boot (skipping redundant DDL statements). `seed-all-permissions.js` performs single-query diffing and bulk inserts, dropping startup overhead from 50s down to <1s.
 - **Sleep Prevention & Keep-Alive**: `src/jobs/keepAlive.ts` pings `https://prc-backend-6sw7.onrender.com/health` every 4 minutes externally, preventing Render free-tier inactivity timeouts. Zero-overhead `/ping` and `/api/v1/ping` endpoints allow instant health monitoring.
 - **Caching & KV**: Upstash Redis (REST HTTP client) and `ioredis`.
