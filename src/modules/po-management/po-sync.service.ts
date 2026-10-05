@@ -104,7 +104,6 @@ export async function parseRawEmail(rawSource: string | Buffer): Promise<Inbound
 }
 
 let isSyncing = false;
-let autoSyncTimer: NodeJS.Timeout | null = null;
 
 /**
  * Synchronize inbound emails from the configured IMAP Mailbox (e.g. Gmail / Outlook / Exchange)
@@ -335,52 +334,5 @@ export async function syncInboundEmails() {
     throw new Error(`IMAP mailbox synchronization failed: ${err?.message || err}`);
   } finally {
     isSyncing = false;
-  }
-}
-
-/**
- * Starts automatic background IMAP email polling service (every 60 seconds)
- */
-export function startPoAutoSync(intervalMs = 60000): void {
-  if (autoSyncTimer) return;
-
-  const imapHost = env.imap.host;
-  const imapUser = env.imap.user;
-  const imapPass = env.imap.pass;
-
-  if (!imapHost || !imapUser || !imapPass) {
-    logger.info('[PO Auto-Sync] IMAP credentials not configured. Auto-sync is inactive until credentials are provided.');
-    return;
-  }
-
-  logger.info(`[PO Auto-Sync] Starting background IMAP email polling every ${Math.round(intervalMs / 1000)}s for ${imapUser}...`);
-
-  // Initial trigger after 5 seconds to let server boot
-  setTimeout(async () => {
-    try {
-      await syncInboundEmails();
-    } catch (err: any) {
-      logger.warn('[PO Auto-Sync] Initial sync pass notice:', err?.message || err);
-    }
-  }, 5000);
-
-  // Periodic recurring background sync
-  autoSyncTimer = setInterval(async () => {
-    try {
-      await syncInboundEmails();
-    } catch (err: any) {
-      logger.warn('[PO Auto-Sync] Periodic sync pass notice:', err?.message || err);
-    }
-  }, intervalMs);
-}
-
-/**
- * Stops the automatic background IMAP email polling service
- */
-export function stopPoAutoSync(): void {
-  if (autoSyncTimer) {
-    clearInterval(autoSyncTimer);
-    autoSyncTimer = null;
-    logger.info('[PO Auto-Sync] Background IMAP polling stopped.');
   }
 }
