@@ -284,6 +284,14 @@ export const ListAttendanceQuerySchema = z.object({
   employeeId: z.string().uuid().optional(),
 });
 
+export const MonthlyAttendanceReportPdfQuerySchema = z.object({
+  month: z.coerce.number().int().min(1).max(12),
+  year: z.coerce.number().int().min(2020).max(2100),
+  workerOnly: z.preprocess((val) => val === 'true' || val === true, z.boolean()).optional(),
+  department: z.string().optional(),
+});
+export type MonthlyAttendanceReportPdfQuery = z.infer<typeof MonthlyAttendanceReportPdfQuerySchema>;
+
 // ─── Leave Ledger Schemas ─────────────────────────────────────────────────────
 export const AdjustLeaveSchema = z.object({
   leaveType: LeaveTypeEnum,

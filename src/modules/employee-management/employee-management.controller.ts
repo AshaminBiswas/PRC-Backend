@@ -7,6 +7,7 @@ import {
   RecordAttendanceItemSchema,
   BatchAttendanceSchema,
   ListAttendanceQuerySchema,
+  MonthlyAttendanceReportPdfQuerySchema,
   AccrueMonthlyLeaveSchema,
   AdjustLeaveSchema,
   CreateAdvanceSchema,
@@ -123,6 +124,27 @@ export const deleteAttendanceHandler = async (req: Request, res: Response, next:
     const deletedById = req.user?.id;
     const result = await employeeService.deleteAttendance(employeeId, date, deletedById);
     sendSuccess(res, result, 'Attendance record cleared successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const downloadMonthlyAttendanceReportPdfHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = MonthlyAttendanceReportPdfQuerySchema.parse(req.query);
+    const generatedByName = (req.user as any)?.name || (req.user as any)?.email || 'HR Administrator';
+    const { buffer, filename } = await employeeService.getMonthlyAttendanceReportPdfBuffer({
+      month: query.month,
+      year: query.year,
+      workerOnly: query.workerOnly,
+      department: query.department,
+      generatedByName,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
   } catch (error) {
     next(error);
   }

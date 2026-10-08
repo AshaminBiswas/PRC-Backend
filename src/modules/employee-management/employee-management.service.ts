@@ -3,6 +3,10 @@ import { logger } from '../../config/logger';
 import { sendMail } from '../../utils/email.utils';
 import { generateEmployeePayslipPdf } from './employee-payslip-pdf.service';
 import {
+  generateMonthlyAttendanceReportPdf,
+  MonthlyAttendanceReportEmployeeItem,
+} from './employee-attendance-report-pdf.service';
+import {
   CreateEmployeeInput,
   UpdateEmployeeInput,
   ListEmployeesQuery,
@@ -1752,3 +1756,195 @@ export async function dispatchPayslipEmail(payrollRunId: string, recipientEmail?
     return false;
   }
 }
+
+/**
+ * Generates an executive A4 Landscape Monthly Attendance & Payroll Master Register PDF.
+ */
+export async function getMonthlyAttendanceReportPdfBuffer(params: {
+  month: number;
+  year: number;
+  workerOnly?: boolean;
+  department?: string;
+  generatedByName?: string;
+}): Promise<{ buffer: Buffer; filename: string }> {
+  const { month, year, workerOnly, department, generatedByName } = params;
+  const totalCalendarDays = getDaysInMonth(year, month);
+  const sundaysCount = countSundaysInMonth(year, month);
+  const workingDays = Math.max(0, totalCalendarDays - sundaysCount);
+  const startDate = new Date(year, month - 1, 1);
+  const endDate = new Date(year, month - 1, totalCalendarDays);
+
+  // Fetch active employees
+  const whereEmp: Prisma.EmployeeWhereInput = { status: 'ACTIVE' };
+  if (department) {
+    whereEmp.department = { contains: department, mode: 'insensitive' };
+  }
+
+  let employees = await prisma.employee.findMany({
+    where: whereEmp,
+    orderBy: [{ department: 'asc' }, { employeeId: 'asc' }],
+  });
+
+  if (workerOnly) {
+    employees = employees.filter((e) => {
+      const des = (e.designation || '').toLowerCase();
+      const dept = (e.department || '').toLowerCase();
+      return (
+        des === 'worker' ||
+        des === 'workers' ||
+        des.includes('worker') ||
+        des.includes('installer') ||
+        des.includes('fabricator') ||
+        des.includes('carpenter') ||
+        des.includes('helper') ||
+        des.includes('technician') ||
+        des.includes('welder') ||
+        des.includes('packer') ||
+        des.includes('driver') ||
+        des.includes('labor') ||
+        des.includes('labour') ||
+        des.includes('electrician') ||
+        des.includes('fitter') ||
+        des.includes('loader') ||
+        des.includes('support') ||
+        dept.includes('operations') ||
+        dept.includes('installation') ||
+        dept.includes('workshop') ||
+        dept.includes('factory') ||
+        dept.includes('production') ||
+        dept.includes('site')
+      );
+    });
+  }
+
+  const empIds = employees.map((e) => e.id);
+
+  // 4 Parallel Batch Queries
+  const [allAttendances, allAdvances, allDeductions, existingRuns] = await Promise.all([
+    prisma.employeeAttendance.findMany({
+      where: {
+        employeeId: { in: empIds },
+        date: { gte: startDate, lte: endDate },
+      },
+    }),
+    prisma.employeeAdvance.findMany({
+      where: {
+        employeeId: { in: empIds },
+        recoveryMonth: month,
+        recoveryYear: year,
+      },
+    }),
+    prisma.employeeDeduction.findMany({
+      where: {
+        employeeId: { in: empIds },
+        applyMonth: month,
+        applyYear: year,
+      },
+    }),
+    prisma.employeePayrollRun.findMany({
+      where: {
+        employeeId: { in: empIds },
+        month,
+        year,
+      },
+    }),
+  ]);
+
+  // Group by employeeId
+  const attendanceMap = new Map<string, any[]>();
+  for (const att of allAttendances) {
+    let list = attendanceMap.get(att.employeeId);
+    if (!list) {
+      list = [];
+      attendanceMap.set(att.employeeId, list);
+    }
+    list.push(att);
+  }
+
+  const advanceMap = new Map<string, any[]>();
+  for (const adv of allAdvances) {
+    let list = advanceMap.get(adv.employeeId);
+    if (!list) {
+      list = [];
+      advanceMap.set(adv.employeeId, list);
+    }
+    list.push(adv);
+  }
+
+  const deductionMap = new Map<string, any[]>();
+  for (const ded of allDeductions) {
+    let list = deductionMap.get(ded.employeeId);
+    if (!list) {
+      list = [];
+      deductionMap.set(ded.employeeId, list);
+    }
+    list.push(ded);
+  }
+
+  const existingRunMap = new Map<string, any>();
+  for (const run of existingRuns) {
+    existingRunMap.set(run.employeeId, run);
+  }
+
+  // Build report employee items
+  const items: MonthlyAttendanceReportEmployeeItem[] = employees.map((emp) => {
+    const empAtts = attendanceMap.get(emp.id) || [];
+    const empAdvs = advanceMap.get(emp.id) || [];
+    const empDeds = deductionMap.get(emp.id) || [];
+    const run = existingRunMap.get(emp.id);
+
+    // Compute fresh breakdown in memory (<1 microsecond)
+    const breakdown = computePayrollBreakdown(emp, month, year, empAtts, empAdvs, empDeds);
+
+    const advanceTotal = empAdvs.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+    const deductionTotal = empDeds.reduce((sum, d) => sum + Number(d.amount || 0), 0);
+
+    return {
+      employeeId: emp.employeeId,
+      name: emp.name,
+      department: emp.department,
+      designation: emp.designation,
+      monthlyCtc: Number(emp.monthlyCtc || 0),
+      presentDays: Math.max(0, breakdown.presentDays - (breakdown.doubleDutyDays * 2)),
+      doubleDutyDays: breakdown.doubleDutyDays,
+      halfDays: breakdown.halfDays,
+      holidayDays: breakdown.holidayDays,
+      paidLeaveDays: breakdown.clDays + breakdown.elDays,
+      unpaidDays: breakdown.unpaidDays,
+      approvedSundays: breakdown.approvedSundays,
+      paidDays: breakdown.paidDays,
+      overtimeHours: breakdown.overtimeHours,
+      overtimePay: breakdown.overtimePay,
+      advanceAmount: advanceTotal,
+      deductionAmount: deductionTotal,
+      grossSalary: run ? Number(run.grossSalary) : breakdown.grossSalary,
+      netSalary: run ? Number(run.netSalary) : breakdown.netSalary,
+    };
+  });
+
+  const filterLabel = workerOnly
+    ? 'FACTORY / ONSITE WORKERS ONLY'
+    : department
+    ? `DEPARTMENT: ${department.toUpperCase()}`
+    : 'ALL ACTIVE EMPLOYEES';
+
+  const buffer = await generateMonthlyAttendanceReportPdf({
+    month,
+    year,
+    totalCalendarDays,
+    sundaysCount,
+    workingDays,
+    filterLabel,
+    generatedAt: new Date(),
+    generatedByName,
+    items,
+  });
+
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthAbbr = monthNames[month - 1] || `Month-${month}`;
+  const scopeSuffix = workerOnly ? '_Workers' : '';
+  const filename = `PRC_Attendance_Register_${monthAbbr}_${year}${scopeSuffix}.pdf`;
+
+  return { buffer, filename };
+}
+

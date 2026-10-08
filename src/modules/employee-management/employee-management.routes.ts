@@ -11,6 +11,7 @@ import {
   batchRecordAttendanceHandler,
   listAttendanceHandler,
   deleteAttendanceHandler,
+  downloadMonthlyAttendanceReportPdfHandler,
   accrueMonthlyLeaveHandler,
   adjustLeaveHandler,
   getLeaveLedgerHandler,
@@ -115,6 +116,7 @@ router.delete('/detail/:id', authorize('employees.delete'), deactivateEmployeeHa
 
 // ─── Attendance Management ────────────────────────────────────────────────────
 router.get('/attendance', authorize('attendance.read'), listAttendanceHandler);
+router.get('/attendance/monthly-report-pdf', authorize('attendance.read'), downloadMonthlyAttendanceReportPdfHandler);
 router.post('/attendance', authorize('attendance.mark', 'attendance.update'), recordAttendanceHandler);
 router.post('/attendance/batch', authorize('attendance.batch', 'attendance.mark'), batchRecordAttendanceHandler);
 router.delete('/attendance', authorize('attendance.mark', 'attendance.update'), deleteAttendanceHandler);
