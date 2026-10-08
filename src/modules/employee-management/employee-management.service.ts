@@ -5,6 +5,7 @@ import { generateEmployeePayslipPdf } from './employee-payslip-pdf.service';
 import {
   generateMonthlyAttendanceReportPdf,
   MonthlyAttendanceReportEmployeeItem,
+  DailyAttendanceStatus,
 } from './employee-attendance-report-pdf.service';
 import {
   CreateEmployeeInput,
@@ -1893,6 +1894,74 @@ export async function getMonthlyAttendanceReportPdfBuffer(params: {
     const empDeds = deductionMap.get(emp.id) || [];
     const run = existingRunMap.get(emp.id);
 
+    // Compute day-by-day attendance status for every calendar day
+    const dailyAttendance: DailyAttendanceStatus[] = [];
+    for (let d = 1; d <= totalCalendarDays; d++) {
+      const dateObj = new Date(year, month - 1, d);
+      const isSunday = dateObj.getDay() === 0;
+
+      const att = empAtts.find((a) => {
+        const ad = new Date(a.date);
+        return (
+          (ad.getUTCFullYear() === year && ad.getUTCMonth() + 1 === month && ad.getUTCDate() === d) ||
+          (ad.getFullYear() === year && ad.getMonth() + 1 === month && ad.getDate() === d) ||
+          ad.toISOString().slice(0, 10) === `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+        );
+      });
+
+      let code = '-';
+      if (att) {
+        if (isSunday) {
+          if (att.isSundayOverride) {
+            code = 'SW';
+          } else {
+            code = 'WO';
+          }
+        } else {
+          switch (att.status) {
+            case 'PRESENT':
+              code = 'P';
+              break;
+            case 'DOUBLE_DUTY':
+              code = 'DD';
+              break;
+            case 'HALF_DAY':
+              code = 'HD';
+              break;
+            case 'HOLIDAY':
+              code = 'H';
+              break;
+            case 'CL':
+              code = 'CL';
+              break;
+            case 'EL':
+              code = 'EL';
+              break;
+            case 'UL':
+            case 'LEAVE':
+              code = 'A';
+              break;
+            default:
+              code = '-';
+          }
+        }
+      } else {
+        if (isSunday) {
+          code = 'WO';
+        } else {
+          code = '-';
+        }
+      }
+
+      dailyAttendance.push({
+        day: d,
+        code,
+        isSunday,
+        isSundayOverride: att?.isSundayOverride,
+        overtimeHours: att?.overtimeHours ? Number(att.overtimeHours) : 0,
+      });
+    }
+
     // Compute fresh breakdown in memory (<1 microsecond)
     const breakdown = computePayrollBreakdown(emp, month, year, empAtts, empAdvs, empDeds);
 
@@ -1905,6 +1974,7 @@ export async function getMonthlyAttendanceReportPdfBuffer(params: {
       department: emp.department,
       designation: emp.designation,
       monthlyCtc: Number(emp.monthlyCtc || 0),
+      dailyAttendance,
       presentDays: Math.max(0, breakdown.presentDays - (breakdown.doubleDutyDays * 2)),
       doubleDutyDays: breakdown.doubleDutyDays,
       halfDays: breakdown.halfDays,
