@@ -215,6 +215,7 @@ enum AttendanceStatus {
   UL
   HALF_DAY
   LEAVE
+  HOLIDAY
 }
 
 enum PayrollStatus {
@@ -2802,6 +2803,7 @@ model EmployeePayrollRun {
   elDays            Decimal             @map("el_days") @db.Decimal(6, 2)
   halfDays          Decimal             @map("half_days") @db.Decimal(6, 2)
   unpaidDays        Decimal             @map("unpaid_days") @db.Decimal(6, 2)
+  holidayDays       Decimal             @default(0) @map("holiday_days") @db.Decimal(6, 2)
   paidDays          Decimal             @map("paid_days") @db.Decimal(6, 2)
   overtimeHours     Decimal             @default(0) @map("overtime_hours") @db.Decimal(6, 2)
   overtimeRate      Decimal             @default(0) @map("overtime_rate") @db.Decimal(10, 2)

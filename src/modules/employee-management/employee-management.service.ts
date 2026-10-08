@@ -888,6 +888,7 @@ export interface ComputedPayrollBreakdown {
   elDays: number;
   halfDays: number;
   unpaidDays: number;
+  holidayDays: number;
   paidDays: number;
   overtimeHours: number;
   overtimeRate: number;
@@ -923,6 +924,7 @@ export function computePayrollBreakdown(
   let elDays = 0;
   let halfDays = 0;
   let unpaidDays = 0;
+  let holidayDays = 0;
   let approvedSundays = 0;
   let overtimeHours = 0;
 
@@ -954,6 +956,9 @@ export function computePayrollBreakdown(
       case 'HALF_DAY':
         halfDays += 1;
         break;
+      case 'HOLIDAY':
+        holidayDays += 1;
+        break;
       case 'UL':
       case 'LEAVE':
         unpaidDays += 1;
@@ -966,8 +971,8 @@ export function computePayrollBreakdown(
   const monthlyCtc = Number(employee.monthlyCtc || 0);
   const perDayRate = monthlyCtc / payableDays;
 
-  // Paid Days = Present + Double Duty (2x) + CL + EL + 0.5 * HalfDay + ApprovedSundays
-  const paidDays = presentDays + clDays + elDays + 0.5 * halfDays + approvedSundays;
+  // Paid Days = Present + Double Duty (2x) + CL + EL + Holiday + 0.5 * HalfDay + ApprovedSundays
+  const paidDays = presentDays + clDays + elDays + holidayDays + 0.5 * halfDays + approvedSundays;
 
   const standardHours = 8;
   const overtimeRate = perDayRate / standardHours;
@@ -997,6 +1002,7 @@ export function computePayrollBreakdown(
     elDays,
     halfDays,
     unpaidDays,
+    holidayDays,
     paidDays: Number(paidDays.toFixed(2)),
     overtimeHours: Number(overtimeHours.toFixed(2)),
     overtimeRate: Number(overtimeRate.toFixed(2)),
@@ -1113,6 +1119,7 @@ export async function calculateEmployeeMonthlyPayroll(
       elDays: new Prisma.Decimal(breakdown.elDays),
       halfDays: new Prisma.Decimal(breakdown.halfDays),
       unpaidDays: new Prisma.Decimal(breakdown.unpaidDays),
+      holidayDays: new Prisma.Decimal(breakdown.holidayDays),
       paidDays: new Prisma.Decimal(breakdown.paidDays),
       overtimeHours: new Prisma.Decimal(breakdown.overtimeHours),
       overtimeRate: new Prisma.Decimal(breakdown.overtimeRate),
@@ -1137,6 +1144,7 @@ export async function calculateEmployeeMonthlyPayroll(
       elDays: new Prisma.Decimal(breakdown.elDays),
       halfDays: new Prisma.Decimal(breakdown.halfDays),
       unpaidDays: new Prisma.Decimal(breakdown.unpaidDays),
+      holidayDays: new Prisma.Decimal(breakdown.holidayDays),
       paidDays: new Prisma.Decimal(breakdown.paidDays),
       overtimeHours: new Prisma.Decimal(breakdown.overtimeHours),
       overtimeRate: new Prisma.Decimal(breakdown.overtimeRate),
@@ -1307,6 +1315,7 @@ export async function calculatePayroll(input: CalculatePayrollInput, calculatedB
         elDays: new Prisma.Decimal(breakdown.elDays),
         halfDays: new Prisma.Decimal(breakdown.halfDays),
         unpaidDays: new Prisma.Decimal(breakdown.unpaidDays),
+        holidayDays: new Prisma.Decimal(breakdown.holidayDays),
         paidDays: new Prisma.Decimal(breakdown.paidDays),
         overtimeHours: new Prisma.Decimal(breakdown.overtimeHours),
         overtimeRate: new Prisma.Decimal(breakdown.overtimeRate),
@@ -1331,6 +1340,7 @@ export async function calculatePayroll(input: CalculatePayrollInput, calculatedB
         elDays: new Prisma.Decimal(breakdown.elDays),
         halfDays: new Prisma.Decimal(breakdown.halfDays),
         unpaidDays: new Prisma.Decimal(breakdown.unpaidDays),
+        holidayDays: new Prisma.Decimal(breakdown.holidayDays),
         paidDays: new Prisma.Decimal(breakdown.paidDays),
         overtimeHours: new Prisma.Decimal(breakdown.overtimeHours),
         overtimeRate: new Prisma.Decimal(breakdown.overtimeRate),
@@ -1590,6 +1600,7 @@ export async function getPayslipPdfBuffer(payrollRunId: string): Promise<{ buffe
       elDays: run.elDays.toString(),
       halfDays: run.halfDays.toString(),
       unpaidDays: run.unpaidDays.toString(),
+      holidayDays: (run.holidayDays ?? 0).toString(),
       paidDays: run.paidDays.toString(),
       overtimeHours: run.overtimeHours.toString(),
       overtimeRate: run.overtimeRate.toString(),

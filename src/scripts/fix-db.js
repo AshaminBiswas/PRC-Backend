@@ -3438,6 +3438,10 @@ const STATEMENTS = [
   `INSERT INTO "branch_cash_balances" ("id", "branchId", "branch_id", "currentBalance", "current_balance", "createdAt", "created_at", "updatedAt", "updated_at")
    VALUES ('bcb-up-factory-001', 'b3000000-0000-0000-0000-000000000003', 'b3000000-0000-0000-0000-000000000003', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
    ON CONFLICT ("branchId") DO NOTHING;`,
+
+  // Add HOLIDAY to AttendanceStatus enum and holiday_days to employee_payroll_runs
+  `ALTER TYPE "AttendanceStatus" ADD VALUE IF NOT EXISTS 'HOLIDAY';`,
+  `ALTER TABLE "employee_payroll_runs" ADD COLUMN IF NOT EXISTS "holiday_days" DECIMAL(6, 2) DEFAULT 0;`,
 ];
 
 async function run() {

@@ -95,6 +95,7 @@ export interface EmployeePayslipPdfData {
     elDays: number | string;
     halfDays: number | string;
     unpaidDays: number | string;
+    holidayDays?: number | string;
     paidDays: number | string;
     overtimeHours: number | string;
     overtimeRate: number | string;
