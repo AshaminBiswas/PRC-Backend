@@ -1974,6 +1974,7 @@ export async function getMonthlyAttendanceReportPdfBuffer(params: {
       department: emp.department,
       designation: emp.designation,
       monthlyCtc: Number(emp.monthlyCtc || 0),
+      perDayRate: breakdown.perDayRate,
       dailyAttendance,
       presentDays: Math.max(0, breakdown.presentDays - (breakdown.doubleDutyDays * 2)),
       doubleDutyDays: breakdown.doubleDutyDays,

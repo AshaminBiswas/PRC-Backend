@@ -47,6 +47,7 @@ export interface MonthlyAttendanceReportEmployeeItem {
   department: string;
   designation: string;
   monthlyCtc: number;
+  perDayRate?: number;
   dailyAttendance: DailyAttendanceStatus[];
   presentDays: number;
   doubleDutyDays: number;
@@ -118,7 +119,7 @@ function makeCell(
     color: options.color || DARK_GRAY,
     fillColor: options.fillColor,
     fontSize: options.fontSize || 6.5,
-    margin: options.margin || [1, 2, 1, 2],
+    margin: options.margin || [1.5, 2, 1.5, 2],
     colSpan: options.colSpan,
   };
 }
@@ -152,8 +153,9 @@ function getDailyStatusCodeInfo(code: string): {
 }
 
 /**
- * Generates an executive A4 Landscape Monthly Muster Roll & Payroll Master Register PDF
- * featuring day-by-day attendance status (Days 1 to 28/29/30/31) alongside monthly payroll totals.
+ * Generates an executive A4 Landscape Monthly Register PDF cleanly split across 2 dedicated parts:
+ *   - PAGE 1: Part I — Daily Attendance Muster Roll (All calendar days 1 to 28/29/30/31 + Duty totals)
+ *   - PAGE 2: Part II — Monthly Wages, Advances & Net Compensation Register (Employee identity repeated + Financial breakdown)
  */
 export async function generateMonthlyAttendanceReportPdf(
   data: MonthlyAttendanceReportData
@@ -171,6 +173,7 @@ export async function generateMonthlyAttendanceReportPdf(
   let totSundays = 0;
   let totPaidDays = 0;
   let totOtHours = 0;
+  let totOtPay = 0;
   let totAdvances = 0;
   let totDeductions = 0;
   let totGross = 0;
@@ -186,28 +189,32 @@ export async function generateMonthlyAttendanceReportPdf(
     totSundays += Number(item.approvedSundays || 0);
     totPaidDays += Number(item.paidDays || 0);
     totOtHours += Number(item.overtimeHours || 0);
+    totOtPay += Number(item.overtimePay || 0);
     totAdvances += Number(item.advanceAmount || 0);
     totDeductions += Number(item.deductionAmount || 0);
     totGross += Number(item.grossSalary || 0);
     totNet += Number(item.netSalary || 0);
   }
 
-  // Build Master Table rows
-  const tableBody: TableCell[][] = [];
+  // ═════════════════════════════════════════════════════════════════════════════
+  // PART I: DAILY ATTENDANCE MUSTER ROLL TABLE (PAGES 1+)
+  // ═════════════════════════════════════════════════════════════════════════════
+  const musterTableBody: TableCell[][] = [];
 
-  // 1. Table Header
+  // Table 1 Header
   const dayOfWeekNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-  const headerRow: TableCell[] = [
+  const musterHeaderRow: TableCell[] = [
     makeCell('#', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
     makeCell('EMP ID', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
     makeCell('EMPLOYEE NAME', { bold: true, align: 'left', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
+    makeCell('DEPT / ROLE', { bold: true, align: 'left', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
   ];
 
   for (let d = 1; d <= data.totalCalendarDays; d++) {
     const dObj = new Date(data.year, data.month - 1, d);
     const isSun = dObj.getDay() === 0;
     const dayName = dayOfWeekNames[dObj.getDay()];
-    headerRow.push(
+    musterHeaderRow.push(
       makeCell(`${d}\n${dayName}`, {
         bold: true,
         align: 'center',
@@ -219,36 +226,26 @@ export async function generateMonthlyAttendanceReportPdf(
     );
   }
 
-  headerRow.push(
-    makeCell('P\n(FULL)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 5.5 }),
-    makeCell('DD\n(2X)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 5.5 }),
-    makeCell('HD\n(HALF)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 5.5 }),
-    makeCell('H\n(HOL)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 5.5 }),
-    makeCell('A\n(ABS)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 5.5 }),
-    makeCell('PAID\nDAYS', { bold: true, align: 'center', fillColor: NAVY_DARK, color: '#38bdf8', fontSize: 6 }),
-    makeCell('OT\nHRS', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 5.5 }),
-    makeCell('ADV\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
-    makeCell('DED\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
-    makeCell('GROSS\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
-    makeCell('NET PAY\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY_DARK, color: '#4ade80', fontSize: 6.5 })
+  musterHeaderRow.push(
+    makeCell('PRESENT\n(P)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('DOUBLE\nDUTY', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('HALF\nDAY', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('HOLIDAY\n(H)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('ABSENT\n(A)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('TOTAL PAID\nDAYS', { bold: true, align: 'center', fillColor: NAVY_DARK, color: '#38bdf8', fontSize: 6.5 })
   );
-  tableBody.push(headerRow);
+  musterTableBody.push(musterHeaderRow);
 
-  // 2. Data Rows
+  // Table 1 Data Rows
   data.items.forEach((emp, idx) => {
     const isEven = idx % 2 === 0;
     const rowBg = isEven ? '#ffffff' : LIGHT_BG;
 
     const row: TableCell[] = [
-      makeCell(`${idx + 1}`, { align: 'center', fillColor: rowBg, fontSize: 6 }),
-      makeCell(emp.employeeId, { bold: true, align: 'center', color: NAVY, fillColor: rowBg, fontSize: 6 }),
-      makeCell(
-        [
-          { text: emp.name, bold: true, fontSize: 6.5, color: DARK_GRAY },
-          { text: emp.designation ? `\n${emp.designation}` : '', fontSize: 5, color: GRAY },
-        ],
-        { align: 'left', fillColor: rowBg, margin: [1, 1.5, 1, 1.5] }
-      ),
+      makeCell(`${idx + 1}`, { align: 'center', fillColor: rowBg, fontSize: 6.5 }),
+      makeCell(emp.employeeId, { bold: true, align: 'center', color: NAVY, fillColor: rowBg, fontSize: 6.5 }),
+      makeCell(emp.name, { bold: true, fillColor: rowBg, fontSize: 6.5, color: DARK_GRAY }),
+      makeCell(`${emp.designation || '-'}\n(${emp.department || '-'})`, { color: GRAY, fillColor: rowBg, fontSize: 5.5 }),
     ];
 
     // Day-by-day attendance status cells
@@ -263,81 +260,52 @@ export async function generateMonthlyAttendanceReportPdf(
           bold: styling.bold,
           color: styling.color,
           fillColor: styling.fillColor || rowBg,
-          fontSize: 5.5,
+          fontSize: 6,
           margin: [0.5, 2, 0.5, 2],
         })
       );
     }
 
-    // Monthly Summary & Compensation columns
+    // Attendance summary columns
     row.push(
-      makeCell(`${emp.presentDays}`, { align: 'center', bold: true, color: EMERALD, fillColor: rowBg, fontSize: 6.5 }),
+      makeCell(`${emp.presentDays}`, { align: 'center', bold: true, color: EMERALD, fillColor: rowBg, fontSize: 7 }),
       makeCell(emp.doubleDutyDays > 0 ? `${emp.doubleDutyDays}` : '-', {
         align: 'center',
         bold: emp.doubleDutyDays > 0,
         color: emp.doubleDutyDays > 0 ? BLUE : GRAY,
         fillColor: rowBg,
-        fontSize: 6.5,
+        fontSize: 7,
       }),
       makeCell(emp.halfDays > 0 ? `${emp.halfDays}` : '-', {
         align: 'center',
         color: emp.halfDays > 0 ? AMBER : GRAY,
         fillColor: rowBg,
-        fontSize: 6.5,
+        fontSize: 7,
       }),
       makeCell(emp.holidayDays > 0 ? `${emp.holidayDays}` : '-', {
         align: 'center',
         bold: emp.holidayDays > 0,
         color: emp.holidayDays > 0 ? INDIGO : GRAY,
         fillColor: rowBg,
-        fontSize: 6.5,
+        fontSize: 7,
       }),
       makeCell(emp.unpaidDays > 0 ? `${emp.unpaidDays}` : '-', {
         align: 'center',
         bold: emp.unpaidDays > 0,
         color: emp.unpaidDays > 0 ? RED : GRAY,
         fillColor: rowBg,
-        fontSize: 6.5,
-      }),
-      makeCell(`${emp.paidDays}`, { align: 'center', bold: true, color: NAVY, fillColor: rowBg, fontSize: 7 }),
-      makeCell(emp.overtimeHours > 0 ? `${emp.overtimeHours}h` : '-', {
-        align: 'center',
-        color: emp.overtimeHours > 0 ? EMERALD : GRAY,
-        fillColor: rowBg,
-        fontSize: 6.5,
-      }),
-      makeCell(emp.advanceAmount > 0 ? formatINR(emp.advanceAmount) : '-', {
-        align: 'right',
-        color: emp.advanceAmount > 0 ? RED : GRAY,
-        fillColor: rowBg,
-        fontSize: 6,
-      }),
-      makeCell(emp.deductionAmount > 0 ? formatINR(emp.deductionAmount) : '-', {
-        align: 'right',
-        color: emp.deductionAmount > 0 ? RED : GRAY,
-        fillColor: rowBg,
-        fontSize: 6,
-      }),
-      makeCell(emp.grossSalary > 0 ? formatINR(emp.grossSalary) : '-', {
-        align: 'right',
-        fillColor: rowBg,
-        fontSize: 6,
-      }),
-      makeCell(emp.netSalary > 0 ? formatINR(emp.netSalary) : '-', {
-        align: 'right',
-        bold: true,
-        color: EMERALD,
-        fillColor: rowBg,
         fontSize: 7,
-      })
+      }),
+      makeCell(`${emp.paidDays}`, { align: 'center', bold: true, color: NAVY, fillColor: rowBg, fontSize: 7.5 })
     );
 
-    tableBody.push(row);
+    musterTableBody.push(row);
   });
 
-  // 3. Totals Summary Row
-  const totalsRow: TableCell[] = [
-    makeCell('TOTALS', { colSpan: 3, bold: true, align: 'center', fillColor: '#f1f5f9', color: NAVY, fontSize: 6.5 }),
+  // Table 1 Totals Row
+  const musterTotalsRow: TableCell[] = [
+    makeCell('TOTALS', { colSpan: 4, bold: true, align: 'center', fillColor: '#f1f5f9', color: NAVY, fontSize: 6.5 }),
+    makeCell('', {}),
     makeCell('', {}),
     makeCell('', {}),
   ];
@@ -351,57 +319,162 @@ export async function generateMonthlyAttendanceReportPdf(
     }).length;
 
     if (isSun && workingCount === 0) {
-      totalsRow.push(
-        makeCell('-', { align: 'center', color: GRAY, fillColor: '#f1f5f9', fontSize: 5, margin: [0.5, 2, 0.5, 2] })
-      );
+      totalsCellForDay(musterTotalsRow, '-', GRAY);
     } else {
-      totalsRow.push(
-        makeCell(`${workingCount}`, {
-          bold: true,
-          align: 'center',
-          color: EMERALD,
-          fillColor: '#f1f5f9',
-          fontSize: 5.5,
-          margin: [0.5, 2, 0.5, 2],
-        })
-      );
+      totalsCellForDay(musterTotalsRow, `${workingCount}`, EMERALD);
     }
   }
 
-  totalsRow.push(
-    makeCell(`${totPresent}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: EMERALD, fontSize: 6.5 }),
-    makeCell(`${totDoubleDuty}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: BLUE, fontSize: 6.5 }),
-    makeCell(`${totHalf}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: AMBER, fontSize: 6.5 }),
-    makeCell(`${totHoliday}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: INDIGO, fontSize: 6.5 }),
-    makeCell(`${totUnpaid}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: RED, fontSize: 6.5 }),
+  function totalsCellForDay(target: TableCell[], text: string, color: string) {
+    target.push(
+      makeCell(text, {
+        bold: text !== '-',
+        align: 'center',
+        color,
+        fillColor: '#f1f5f9',
+        fontSize: 5.5,
+        margin: [0.5, 2, 0.5, 2],
+      })
+    );
+  }
+
+  musterTotalsRow.push(
+    makeCell(`${totPresent}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: EMERALD, fontSize: 7 }),
+    makeCell(`${totDoubleDuty}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: BLUE, fontSize: 7 }),
+    makeCell(`${totHalf}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: AMBER, fontSize: 7 }),
+    makeCell(`${totHoliday}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: INDIGO, fontSize: 7 }),
+    makeCell(`${totUnpaid}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: RED, fontSize: 7 }),
+    makeCell(`${Number(totPaidDays.toFixed(1))}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: NAVY, fontSize: 7.5 })
+  );
+  musterTableBody.push(musterTotalsRow);
+
+  // Compute Table 1 Column Widths
+  const dayColWidth = data.totalCalendarDays <= 28 ? 14.5 : data.totalCalendarDays <= 30 ? 13.5 : 13.0;
+  const dayWidths = Array(data.totalCalendarDays).fill(dayColWidth);
+  const musterTableWidths = [
+    16,  // #
+    46,  // EMP ID
+    88,  // EMPLOYEE NAME
+    68,  // DEPT / ROLE
+    ...dayWidths, // Daily attendance columns (1..totalCalendarDays)
+    28,  // PRESENT (P)
+    28,  // DOUBLE DUTY
+    28,  // HALF DAY
+    28,  // HOLIDAY (H)
+    28,  // ABSENT (A)
+    38,  // TOTAL PAID DAYS
+  ];
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // PART II: MONTHLY WAGES & NET COMPENSATION REGISTER TABLE (PAGE 2)
+  // ═════════════════════════════════════════════════════════════════════════════
+  const wageTableBody: TableCell[][] = [];
+
+  // Table 2 Header
+  wageTableBody.push([
+    makeCell('#', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
+    makeCell('EMP ID', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
+    makeCell('EMPLOYEE NAME', { bold: true, align: 'left', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
+    makeCell('DEPARTMENT / DESIGNATION', { bold: true, align: 'left', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
+    makeCell('MONTHLY CTC\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('PER-DAY\nRATE (\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('PAID\nDAYS', { bold: true, align: 'center', fillColor: NAVY_DARK, color: '#38bdf8', fontSize: 6.5 }),
+    makeCell('OT\nHRS', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('OT PAY\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('GROSS WAGE\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
+    makeCell('ADVANCES\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('DEDUCT\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
+    makeCell('NET PAYABLE\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY_DARK, color: '#4ade80', fontSize: 7 }),
+    makeCell('SIGNATURE / RECEIPT', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
+  ]);
+
+  // Table 2 Data Rows
+  data.items.forEach((emp, idx) => {
+    const isEven = idx % 2 === 0;
+    const rowBg = isEven ? '#ffffff' : LIGHT_BG;
+
+    wageTableBody.push([
+      makeCell(`${idx + 1}`, { align: 'center', fillColor: rowBg, fontSize: 6.5 }),
+      makeCell(emp.employeeId, { bold: true, align: 'center', color: NAVY, fillColor: rowBg, fontSize: 6.5 }),
+      makeCell(emp.name, { bold: true, fillColor: rowBg, fontSize: 7, color: DARK_GRAY }),
+      makeCell(`${emp.designation || '-'}\n${emp.department || '-'}`, { color: GRAY, fillColor: rowBg, fontSize: 6 }),
+      makeCell(formatINR(emp.monthlyCtc), { align: 'right', fillColor: rowBg, fontSize: 6.5 }),
+      makeCell(emp.perDayRate ? formatINR(emp.perDayRate) : '-', { align: 'right', color: GRAY, fillColor: rowBg, fontSize: 6.5 }),
+      makeCell(`${emp.paidDays}`, { align: 'center', bold: true, color: NAVY, fillColor: rowBg, fontSize: 7 }),
+      makeCell(emp.overtimeHours > 0 ? `${emp.overtimeHours}h` : '-', {
+        align: 'center',
+        color: emp.overtimeHours > 0 ? EMERALD : GRAY,
+        fillColor: rowBg,
+        fontSize: 6.5,
+      }),
+      makeCell(emp.overtimePay > 0 ? formatINR(emp.overtimePay) : '-', {
+        align: 'right',
+        color: emp.overtimePay > 0 ? EMERALD : GRAY,
+        fillColor: rowBg,
+        fontSize: 6.5,
+      }),
+      makeCell(emp.grossSalary > 0 ? formatINR(emp.grossSalary) : '-', {
+        align: 'right',
+        bold: true,
+        fillColor: rowBg,
+        fontSize: 7,
+      }),
+      makeCell(emp.advanceAmount > 0 ? formatINR(emp.advanceAmount) : '-', {
+        align: 'right',
+        color: emp.advanceAmount > 0 ? RED : GRAY,
+        fillColor: rowBg,
+        fontSize: 6.5,
+      }),
+      makeCell(emp.deductionAmount > 0 ? formatINR(emp.deductionAmount) : '-', {
+        align: 'right',
+        color: emp.deductionAmount > 0 ? RED : GRAY,
+        fillColor: rowBg,
+        fontSize: 6.5,
+      }),
+      makeCell(emp.netSalary > 0 ? formatINR(emp.netSalary) : '-', {
+        align: 'right',
+        bold: true,
+        color: EMERALD,
+        fillColor: rowBg,
+        fontSize: 7.5,
+      }),
+      makeCell('', { align: 'center', fillColor: rowBg }), // Space for signature / initials
+    ]);
+  });
+
+  // Table 2 Totals Row
+  wageTableBody.push([
+    makeCell('TOTALS', { colSpan: 4, bold: true, align: 'center', fillColor: '#f1f5f9', color: NAVY, fontSize: 7 }),
+    makeCell('', {}),
+    makeCell('', {}),
+    makeCell('', {}),
+    makeCell('-', { align: 'right', color: GRAY, fillColor: '#f1f5f9', fontSize: 6.5 }),
+    makeCell('-', { align: 'right', color: GRAY, fillColor: '#f1f5f9', fontSize: 6.5 }),
     makeCell(`${Number(totPaidDays.toFixed(1))}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: NAVY, fontSize: 7 }),
     makeCell(`${Number(totOtHours.toFixed(1))}h`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: EMERALD, fontSize: 6.5 }),
-    makeCell(formatINR(totAdvances), { bold: true, align: 'right', fillColor: '#f1f5f9', color: RED, fontSize: 6 }),
-    makeCell(formatINR(totDeductions), { bold: true, align: 'right', fillColor: '#f1f5f9', color: RED, fontSize: 6 }),
-    makeCell(formatINR(totGross), { bold: true, align: 'right', fillColor: '#f1f5f9', color: NAVY, fontSize: 6.5 }),
-    makeCell(formatINR(totNet), { bold: true, align: 'right', fillColor: '#f1f5f9', color: EMERALD, fontSize: 7 })
-  );
-  tableBody.push(totalsRow);
+    makeCell(formatINR(totOtPay), { bold: true, align: 'right', fillColor: '#f1f5f9', color: EMERALD, fontSize: 6.5 }),
+    makeCell(formatINR(totGross), { bold: true, align: 'right', fillColor: '#f1f5f9', color: NAVY, fontSize: 7 }),
+    makeCell(formatINR(totAdvances), { bold: true, align: 'right', fillColor: '#f1f5f9', color: RED, fontSize: 6.5 }),
+    makeCell(formatINR(totDeductions), { bold: true, align: 'right', fillColor: '#f1f5f9', color: RED, fontSize: 6.5 }),
+    makeCell(formatINR(totNet), { bold: true, align: 'right', fillColor: '#f1f5f9', color: EMERALD, fontSize: 8 }),
+    makeCell('-', { align: 'center', color: GRAY, fillColor: '#f1f5f9', fontSize: 6.5 }),
+  ]);
 
-  // Compute column widths dynamically based on calendar days
-  const dayColWidth = data.totalCalendarDays <= 28 ? 13.5 : data.totalCalendarDays <= 30 ? 12.8 : 12.2;
-  const dayWidths = Array(data.totalCalendarDays).fill(dayColWidth);
-  const tableWidths = [
-    12,  // #
-    38,  // EMP ID
-    78,  // EMPLOYEE NAME + DESIG
-    ...dayWidths, // Daily attendance columns (1..totalCalendarDays)
-    13,  // P (Full Days)
-    13,  // DD (2x)
-    13,  // HD (Half)
-    13,  // H (Holiday)
-    13,  // A (Absent)
-    23,  // PAID DAYS
-    18,  // OT HRS
-    30,  // ADVANCE
-    28,  // DEDUCT
-    40,  // GROSS
-    44,  // NET PAY
+  const wageTableWidths = [
+    18,  // #
+    48,  // EMP ID
+    105, // EMPLOYEE NAME
+    95,  // DEPARTMENT / DESIGNATION
+    52,  // MONTHLY CTC
+    45,  // PER DAY RATE
+    38,  // PAID DAYS
+    30,  // OT HRS
+    45,  // OT PAY
+    62,  // GROSS WAGE
+    55,  // ADVANCE
+    48,  // DEDUCT
+    68,  // NET PAYABLE
+    90,  // SIGNATURE / RECEIPT
   ];
 
   const docDefinition: TDocumentDefinitions = {
@@ -417,7 +490,7 @@ export async function generateMonthlyAttendanceReportPdf(
       margin: [18, 0, 18, 0],
       columns: [
         {
-          text: 'PRC Hardware Enterprise ERP - Confidential Muster Roll & Monthly Register',
+          text: 'PRC Hardware Enterprise ERP — Confidential Monthly Attendance & Wage Register',
           fontSize: 6,
           color: GRAY,
         },
@@ -430,7 +503,9 @@ export async function generateMonthlyAttendanceReportPdf(
       ],
     }),
     content: [
-      // ─── Header: Logo, Title & Metadata ─────────────────────────────────────
+      // ═════════════════════════════════════════════════════════════════════════
+      // SECTION 1: ATTENDANCE MUSTER ROLL (PAGE 1)
+      // ═════════════════════════════════════════════════════════════════════════
       {
         columns: [
           {
@@ -444,7 +519,7 @@ export async function generateMonthlyAttendanceReportPdf(
             stack: [
               { text: 'PACIFIC PRODUCTS & SOLUTIONS', bold: true, fontSize: 12, color: NAVY },
               { text: 'PRC HARDWARE — MANUFACTURING & SITE EXECUTION DIVISION', fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] },
-              { text: `MASTER ATTENDANCE & PAYROLL MUSTER ROLL — ${payPeriod.toUpperCase()}`, bold: true, fontSize: 8.5, color: NAVY },
+              { text: `PART I: DAILY ATTENDANCE MUSTER ROLL — ${payPeriod.toUpperCase()}`, bold: true, fontSize: 8.5, color: NAVY },
               {
                 text: `${data.filterLabel || 'ALL ACTIVE EMPLOYEES'} | Total Calendar Days: ${data.totalCalendarDays} | Statutory Sundays: ${data.sundaysCount} | Standard Working Days: ${data.workingDays}`,
                 fontSize: 6.5,
@@ -467,7 +542,7 @@ export async function generateMonthlyAttendanceReportPdf(
                         alignment: 'center',
                         margin: [4, 2, 4, 2],
                         stack: [
-                          { text: 'MONTHLY REGISTER', bold: true, color: '#ffffff', fontSize: 6.5 },
+                          { text: 'ATTENDANCE MUSTER', bold: true, color: '#ffffff', fontSize: 6.5 },
                           { text: payPeriod.toUpperCase(), bold: true, color: '#38bdf8', fontSize: 8 },
                         ],
                       },
@@ -481,9 +556,9 @@ export async function generateMonthlyAttendanceReportPdf(
         ],
       },
 
-      { text: '', margin: [0, 3, 0, 3] },
+      { text: '', margin: [0, 2, 0, 2] },
 
-      // ─── Executive KPI Card Deck ────────────────────────────────────────────
+      // KPI Deck (Attendance Overview)
       {
         table: {
           widths: ['*', '*', '*', '*', '*', '*', '*', '*'],
@@ -518,9 +593,9 @@ export async function generateMonthlyAttendanceReportPdf(
         },
       },
 
-      // ─── Status Code Legend ─────────────────────────────────────────────────
+      // Status Code Legend
       {
-        margin: [0, 4, 0, 4],
+        margin: [0, 3, 0, 3],
         table: {
           widths: ['*'],
           body: [
@@ -528,7 +603,7 @@ export async function generateMonthlyAttendanceReportPdf(
               {
                 fillColor: '#f8fafc',
                 borderColor: [BORDER_COLOR, BORDER_COLOR, BORDER_COLOR, BORDER_COLOR],
-                margin: [6, 2.5, 6, 2.5],
+                margin: [6, 2, 6, 2],
                 fontSize: 6,
                 text: [
                   { text: 'STATUS CODES:  ', bold: true, color: NAVY },
@@ -563,12 +638,12 @@ export async function generateMonthlyAttendanceReportPdf(
         },
       },
 
-      // ─── Master Itemized Attendance & Payroll Muster Roll Table ─────────────
+      // Table 1: Daily Attendance Muster Roll
       {
         table: {
           headerRows: 1,
-          widths: tableWidths,
-          body: tableBody,
+          widths: musterTableWidths,
+          body: musterTableBody,
         },
         layout: {
           hLineWidth: (i, node) => (i === 0 || i === 1 || i === node.table.body.length - 1 || i === node.table.body.length ? 1 : 0.5),
@@ -578,15 +653,115 @@ export async function generateMonthlyAttendanceReportPdf(
         },
       },
 
-      // ─── Signatory & Verification Block ─────────────────────────────────────
+      // ═════════════════════════════════════════════════════════════════════════
+      // SECTION 2: MONTHLY WAGES & NET COMPENSATION REGISTER (PAGE 2)
+      // ═════════════════════════════════════════════════════════════════════════
       {
-        margin: [0, 8, 0, 0],
+        pageBreak: 'before',
+        columns: [
+          {
+            width: 130,
+            image: PACIFIC_RESTROOM_LOGO_DATA_URL,
+            fit: [120, 32],
+          },
+          {
+            width: '*',
+            alignment: 'center',
+            stack: [
+              { text: 'PACIFIC PRODUCTS & SOLUTIONS', bold: true, fontSize: 12, color: NAVY },
+              { text: 'PRC HARDWARE — MANUFACTURING & SITE EXECUTION DIVISION', fontSize: 7, color: GRAY, margin: [0, 1, 0, 1] },
+              { text: `PART II: WAGES, ADVANCES & NET COMPENSATION REGISTER — ${payPeriod.toUpperCase()}`, bold: true, fontSize: 8.5, color: NAVY },
+              {
+                text: `${data.filterLabel || 'ALL ACTIVE EMPLOYEES'} | Statutory Form / Wage Register under PRC Hardware ERP | Currency: INR (\u20B9)`,
+                fontSize: 6.5,
+                color: GRAY,
+                margin: [0, 1, 0, 0],
+              },
+            ],
+          },
+          {
+            width: 140,
+            alignment: 'right',
+            stack: [
+              {
+                table: {
+                  widths: ['*'],
+                  body: [
+                    [
+                      {
+                        fillColor: NAVY_DARK,
+                        alignment: 'center',
+                        margin: [4, 2, 4, 2],
+                        stack: [
+                          { text: 'WAGE REGISTER', bold: true, color: '#ffffff', fontSize: 6.5 },
+                          { text: payPeriod.toUpperCase(), bold: true, color: '#4ade80', fontSize: 8 },
+                        ],
+                      },
+                    ],
+                  ],
+                },
+                layout: 'noBorders',
+              },
+            ],
+          },
+        ],
+      },
+
+      { text: '', margin: [0, 3, 0, 3] },
+
+      // Compensation Summary Deck
+      {
+        table: {
+          widths: ['*', '*', '*', '*'],
+          body: [
+            [
+              makeCell('TOTAL GROSS SALARY', { bold: true, align: 'center', fillColor: LIGHT_BG, color: GRAY, fontSize: 6.5 }),
+              makeCell('TOTAL ADVANCES RECOVERED', { bold: true, align: 'center', fillColor: LIGHT_BG, color: GRAY, fontSize: 6.5 }),
+              makeCell('TOTAL DEDUCTIONS / PENALTIES', { bold: true, align: 'center', fillColor: LIGHT_BG, color: GRAY, fontSize: 6.5 }),
+              makeCell('TOTAL NET DISBURSEMENT', { bold: true, align: 'center', fillColor: LIGHT_BG, color: GRAY, fontSize: 6.5 }),
+            ],
+            [
+              makeCell(formatINR(totGross), { bold: true, align: 'center', fontSize: 9.5, color: NAVY }),
+              makeCell(formatINR(totAdvances), { bold: true, align: 'center', fontSize: 9.5, color: RED }),
+              makeCell(formatINR(totDeductions), { bold: true, align: 'center', fontSize: 9.5, color: RED }),
+              makeCell(formatINR(totNet), { bold: true, align: 'center', fontSize: 10, color: EMERALD }),
+            ],
+          ],
+        },
+        layout: {
+          hLineWidth: () => 0.5,
+          vLineWidth: () => 0.5,
+          hLineColor: () => BORDER_COLOR,
+          vLineColor: () => BORDER_COLOR,
+        },
+      },
+
+      { text: '', margin: [0, 3, 0, 3] },
+
+      // Table 2: Compensation Register Table
+      {
+        table: {
+          headerRows: 1,
+          widths: wageTableWidths,
+          body: wageTableBody,
+        },
+        layout: {
+          hLineWidth: (i, node) => (i === 0 || i === 1 || i === node.table.body.length - 1 || i === node.table.body.length ? 1 : 0.5),
+          vLineWidth: () => 0.5,
+          hLineColor: (i, node) => (i === 0 || i === 1 || i === node.table.body.length - 1 ? NAVY : BORDER_COLOR),
+          vLineColor: () => BORDER_COLOR,
+        },
+      },
+
+      // Tripartite Signatory Block (under wage register)
+      {
+        margin: [0, 16, 0, 0],
         columns: [
           {
             width: '33%',
             stack: [
               { text: 'Prepared By:', bold: true, fontSize: 7, color: NAVY },
-              { text: 'HR & Attendance Officer', fontSize: 6.5, color: GRAY, margin: [0, 16, 0, 0] },
+              { text: 'HR & Attendance Officer', fontSize: 6.5, color: GRAY, margin: [0, 20, 0, 0] },
               { text: 'Signature & Date', fontSize: 6, color: GRAY },
             ],
           },
@@ -595,7 +770,7 @@ export async function generateMonthlyAttendanceReportPdf(
             alignment: 'center',
             stack: [
               { text: 'Verified By:', bold: true, fontSize: 7, color: NAVY },
-              { text: 'Plant / Operations Manager', fontSize: 6.5, color: GRAY, margin: [0, 16, 0, 0] },
+              { text: 'Plant / Operations Manager', fontSize: 6.5, color: GRAY, margin: [0, 20, 0, 0] },
               { text: 'Signature & Date', fontSize: 6, color: GRAY },
             ],
           },
@@ -604,7 +779,7 @@ export async function generateMonthlyAttendanceReportPdf(
             alignment: 'right',
             stack: [
               { text: 'Authorized Signatory:', bold: true, fontSize: 7, color: NAVY },
-              { text: 'Director / Super Admin', fontSize: 6.5, color: GRAY, margin: [0, 16, 0, 0] },
+              { text: 'Director / Super Admin', fontSize: 6.5, color: GRAY, margin: [0, 20, 0, 0] },
               { text: 'PACIFIC PRODUCTS & SOLUTIONS', fontSize: 6, color: GRAY },
             ],
           },
