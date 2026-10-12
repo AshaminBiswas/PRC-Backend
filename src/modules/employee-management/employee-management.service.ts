@@ -18,11 +18,14 @@ import {
   AccrueMonthlyLeaveInput,
   CreateAdvanceInput,
   UpdateAdvanceInput,
+  RecoverAdvanceInput,
+  PartialDeductAdvanceInput,
   ListAdvancesQuery,
   CreateDeductionInput,
   UpdateDeductionInput,
   ListDeductionsQuery,
   CalculatePayrollInput,
+  SimulateSalaryCalculationInput,
   MarkPayrollPaidInput,
   ListPayrollQuery,
 } from './employee-management.schema';
@@ -31,6 +34,14 @@ import { Prisma } from '@prisma/client';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getYearMonthString(year: number, month: number): string {
   return `${year}${String(month).padStart(2, '0')}`;
+}
+
+function getMonthName(month: number): string {
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  return months[month - 1] || `Month ${month}`;
 }
 
 function getDaysInMonth(year: number, month: number): number {
@@ -316,11 +327,14 @@ export async function recordAttendance(
   if (!employee) throw new Error('Employee not found');
 
   if (existing?.status !== data.status) {
+    let currentClBalance = Number(employee.clBalance);
+    let currentElBalance = Number(employee.elBalance);
+
     if (existing?.status === 'CL') {
-      const newCl = Number(employee.clBalance) + 1;
+      currentClBalance += 1;
       await prisma.employee.update({
         where: { id: data.employeeId },
-        data: { clBalance: newCl },
+        data: { clBalance: currentClBalance },
       });
       await prisma.employeeLeaveLedger.create({
         data: {
@@ -328,7 +342,7 @@ export async function recordAttendance(
           leaveType: 'CL',
           transactionType: 'ADJUSTMENT',
           amount: new Prisma.Decimal(1),
-          balanceAfter: new Prisma.Decimal(newCl),
+          balanceAfter: new Prisma.Decimal(currentClBalance),
           month: dateObj.getMonth() + 1,
           year: dateObj.getFullYear(),
           reason: `Refund 1 CL due to attendance status change from CL to ${data.status} on ${data.date}`,
@@ -337,10 +351,10 @@ export async function recordAttendance(
       });
     }
     if (existing?.status === 'EL') {
-      const newEl = Number(employee.elBalance) + 1;
+      currentElBalance += 1;
       await prisma.employee.update({
         where: { id: data.employeeId },
-        data: { elBalance: newEl },
+        data: { elBalance: currentElBalance },
       });
       await prisma.employeeLeaveLedger.create({
         data: {
@@ -348,7 +362,7 @@ export async function recordAttendance(
           leaveType: 'EL',
           transactionType: 'ADJUSTMENT',
           amount: new Prisma.Decimal(1),
-          balanceAfter: new Prisma.Decimal(newEl),
+          balanceAfter: new Prisma.Decimal(currentElBalance),
           month: dateObj.getMonth() + 1,
           year: dateObj.getFullYear(),
           reason: `Refund 1 EL due to attendance status change from EL to ${data.status} on ${data.date}`,
@@ -358,10 +372,15 @@ export async function recordAttendance(
     }
 
     if (data.status === 'CL') {
-      const newCl = Math.max(0, Number(employee.clBalance) - 1);
+      if (currentClBalance < 1) {
+        throw new Error(
+          `Insufficient Casual Leave (CL) balance for ${employee.name}. Current balance is ${currentClBalance.toFixed(1)}. Leave cannot be applied as paid CL without available balance.`
+        );
+      }
+      currentClBalance = Number((currentClBalance - 1).toFixed(2));
       await prisma.employee.update({
         where: { id: data.employeeId },
-        data: { clBalance: newCl },
+        data: { clBalance: currentClBalance },
       });
       await prisma.employeeLeaveLedger.create({
         data: {
@@ -369,7 +388,7 @@ export async function recordAttendance(
           leaveType: 'CL',
           transactionType: 'USAGE',
           amount: new Prisma.Decimal(-1),
-          balanceAfter: new Prisma.Decimal(newCl),
+          balanceAfter: new Prisma.Decimal(currentClBalance),
           month: dateObj.getMonth() + 1,
           year: dateObj.getFullYear(),
           reason: `Casual Leave consumed for attendance on ${data.date}`,
@@ -378,10 +397,15 @@ export async function recordAttendance(
       });
     }
     if (data.status === 'EL') {
-      const newEl = Math.max(0, Number(employee.elBalance) - 1);
+      if (currentElBalance < 1) {
+        throw new Error(
+          `Insufficient Earned Leave (EL) balance for ${employee.name}. Current balance is ${currentElBalance.toFixed(1)}. Leave cannot be applied as paid EL without available balance.`
+        );
+      }
+      currentElBalance = Number((currentElBalance - 1).toFixed(2));
       await prisma.employee.update({
         where: { id: data.employeeId },
-        data: { elBalance: newEl },
+        data: { elBalance: currentElBalance },
       });
       await prisma.employeeLeaveLedger.create({
         data: {
@@ -389,7 +413,7 @@ export async function recordAttendance(
           leaveType: 'EL',
           transactionType: 'USAGE',
           amount: new Prisma.Decimal(-1),
-          balanceAfter: new Prisma.Decimal(newEl),
+          balanceAfter: new Prisma.Decimal(currentElBalance),
           month: dateObj.getMonth() + 1,
           year: dateObj.getFullYear(),
           reason: `Earned Leave consumed for attendance on ${data.date}`,
@@ -767,6 +791,137 @@ export async function updateAdvance(id: string, data: UpdateAdvanceInput) {
   return adv;
 }
 
+export async function recoverAdvance(
+  id: string,
+  input: RecoverAdvanceInput,
+  actorId?: string
+) {
+  const existing = await prisma.employeeAdvance.findUnique({
+    where: { id },
+    include: {
+      employee: { select: { id: true, employeeId: true, name: true, department: true } },
+    },
+  });
+
+  if (!existing) {
+    throw new Error('Salary advance record not found');
+  }
+
+  if (existing.isRecovered) {
+    throw new Error('This advance has already been fully recovered/deducted');
+  }
+
+  const currentAmount = Number(existing.amount);
+  const originalTotal = Number(existing.originalAmount || existing.amount);
+
+  // Check if Full Recovery is requested
+  const isFullRecovery =
+    input.recoveryType === 'FULL' ||
+    (input.deductAmount !== undefined && Number(input.deductAmount) >= currentAmount);
+
+  if (isFullRecovery) {
+    // 100% Full Recovery: Mark this advance as recovered without carry forward
+    const updated = await prisma.employeeAdvance.update({
+      where: { id },
+      data: {
+        isRecovered: true,
+        recoveredAt: new Date(),
+        reason: input.notes
+          ? `${existing.reason} [Full Recovery: \u20B9${currentAmount.toLocaleString('en-IN')} - ${input.notes.trim()}]`
+          : `${existing.reason} [Full Recovery: \u20B9${currentAmount.toLocaleString('en-IN')}]`,
+      },
+      include: {
+        employee: { select: { id: true, employeeId: true, name: true, department: true } },
+      },
+    });
+
+    queuePayrollAutoCalculation(existing.employeeId, existing.recoveryMonth, existing.recoveryYear);
+
+    return {
+      deductedAdvance: updated,
+      remainingAdvance: null,
+      isFullRecovery: true,
+      deductedAmount: currentAmount,
+      remainingAmount: 0,
+    };
+  }
+
+  // Customized Amount Recovery: deduct portion now, carry forward remaining balance
+  const deductAmount = Number(input.deductAmount);
+  if (isNaN(deductAmount) || deductAmount <= 0) {
+    throw new Error('Recovery deduction amount must be greater than 0');
+  }
+
+  const remainingAmount = Number((currentAmount - deductAmount).toFixed(2));
+
+  // Determine carry-forward recovery month & year
+  let nextMonth = input.nextRecoveryMonth;
+  let nextYear = input.nextRecoveryYear;
+
+  if (!nextMonth || !nextYear) {
+    if (existing.recoveryMonth === 12) {
+      nextMonth = 1;
+      nextYear = existing.recoveryYear + 1;
+    } else {
+      nextMonth = existing.recoveryMonth + 1;
+      nextYear = existing.recoveryYear;
+    }
+  }
+
+  // Atomic database transaction: update existing advance with custom amount, create carry-forward advance
+  const [deductedAdvance, remainingAdvance] = await prisma.$transaction(async (tx) => {
+    // 1. Update current advance record to reflect the custom amount to deduct this month
+    const updated = await tx.employeeAdvance.update({
+      where: { id },
+      data: {
+        amount: new Prisma.Decimal(deductAmount),
+        originalAmount: new Prisma.Decimal(originalTotal),
+        reason: input.notes
+          ? `${existing.reason} [Custom Deduct: \u20B9${deductAmount.toLocaleString('en-IN')} - ${input.notes.trim()}]`
+          : `${existing.reason} [Custom Deduction: \u20B9${deductAmount.toLocaleString('en-IN')} of \u20B9${currentAmount.toLocaleString('en-IN')}]`,
+      },
+      include: {
+        employee: { select: { id: true, employeeId: true, name: true, department: true } },
+      },
+    });
+
+    // 2. Create the carry-forward record for the remaining balance
+    const carryForward = await tx.employeeAdvance.create({
+      data: {
+        employeeId: existing.employeeId,
+        amount: new Prisma.Decimal(remainingAmount),
+        originalAmount: new Prisma.Decimal(originalTotal),
+        reason: `Remaining advance balance (\u20B9${remainingAmount.toLocaleString('en-IN')} of \u20B9${originalTotal.toLocaleString('en-IN')}) carried forward from ${getMonthName(existing.recoveryMonth)} ${existing.recoveryYear}: ${existing.reason}`,
+        advanceDate: existing.advanceDate,
+        recoveryMonth: nextMonth,
+        recoveryYear: nextYear,
+        isRecovered: false,
+        parentAdvanceId: existing.id,
+        createdById: actorId,
+      },
+      include: {
+        employee: { select: { id: true, employeeId: true, name: true, department: true } },
+      },
+    });
+
+    return [updated, carryForward];
+  });
+
+  // Re-queue auto-calculation for both the current month and the carry-forward month
+  queuePayrollAutoCalculation(existing.employeeId, existing.recoveryMonth, existing.recoveryYear);
+  queuePayrollAutoCalculation(existing.employeeId, nextMonth, nextYear);
+
+  return {
+    deductedAdvance,
+    remainingAdvance,
+    isFullRecovery: false,
+    deductedAmount: deductAmount,
+    remainingAmount,
+  };
+}
+
+export const partialDeductAdvance = recoverAdvance;
+
 export async function deleteAdvance(id: string) {
   const existing = await prisma.employeeAdvance.findUnique({ where: { id } });
   const res = await prisma.employeeAdvance.delete({ where: { id } });
@@ -790,6 +945,203 @@ export async function listAdvances(query: ListAdvancesQuery) {
       employee: { select: { id: true, employeeId: true, name: true, department: true } },
     },
   });
+}
+
+export interface AdvanceLedgerTransaction {
+  id: string;
+  advanceId: string;
+  date: string;
+  type: 'CREDIT' | 'DEBIT'; // CREDIT = Advance Issued (+), DEBIT = Advance Recovered / Deducted (-)
+  amount: number;
+  balanceAfter?: number;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  department: string;
+  designation?: string;
+  recoveryMonth: number;
+  recoveryYear: number;
+  status: 'PENDING' | 'RECOVERED' | 'CARRIED_FORWARD';
+  reason: string;
+  payrollRunId?: string | null;
+  createdAt: string;
+}
+
+export interface AdvanceSummaryResult {
+  totalDisbursed: number;
+  totalRecovered: number;
+  totalPendingRecovery: number;
+  totalAdvancesCount: number;
+  pendingAdvancesCount: number;
+  recoveredAdvancesCount: number;
+  byEmployee: Array<{
+    employeeId: string;
+    employeeCode: string;
+    employeeName: string;
+    department: string;
+    designation: string;
+    totalDisbursed: number;
+    totalRecovered: number;
+    totalPendingRecovery: number;
+    pendingCount: number;
+    recoveredCount: number;
+  }>;
+}
+
+export async function getAdvanceSummary(query: ListAdvancesQuery): Promise<AdvanceSummaryResult> {
+  const where: Prisma.EmployeeAdvanceWhereInput = {};
+  if (query.employeeId) where.employeeId = query.employeeId;
+  if (query.recoveryMonth) where.recoveryMonth = query.recoveryMonth;
+  if (query.recoveryYear) where.recoveryYear = query.recoveryYear;
+
+  const advances = await prisma.employeeAdvance.findMany({
+    where,
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  let totalDisbursed = 0;
+  let totalRecovered = 0;
+  let totalPendingRecovery = 0;
+
+  const byEmployeeMap = new Map<string, AdvanceSummaryResult['byEmployee'][number]>();
+
+  for (const adv of advances) {
+    const amt = Number(adv.amount || 0);
+    const origAmt = adv.originalAmount ? Number(adv.originalAmount) : amt;
+    const isCarryForward = Boolean(adv.parentAdvanceId);
+
+    if (!isCarryForward) {
+      totalDisbursed += origAmt;
+    }
+
+    if (adv.isRecovered) {
+      totalRecovered += amt;
+    } else {
+      totalPendingRecovery += amt;
+    }
+
+    let emp = byEmployeeMap.get(adv.employeeId);
+    if (!emp) {
+      emp = {
+        employeeId: adv.employeeId,
+        employeeCode: adv.employee?.employeeId || 'N/A',
+        employeeName: adv.employee?.name || 'Unknown',
+        department: adv.employee?.department || '-',
+        designation: adv.employee?.designation || '-',
+        totalDisbursed: 0,
+        totalRecovered: 0,
+        totalPendingRecovery: 0,
+        pendingCount: 0,
+        recoveredCount: 0,
+      };
+      byEmployeeMap.set(adv.employeeId, emp);
+    }
+
+    if (!isCarryForward) {
+      emp.totalDisbursed += origAmt;
+    }
+    if (adv.isRecovered) {
+      emp.totalRecovered += amt;
+      emp.recoveredCount += 1;
+    } else {
+      emp.totalPendingRecovery += amt;
+      emp.pendingCount += 1;
+    }
+  }
+
+  return {
+    totalDisbursed: Number(totalDisbursed.toFixed(2)),
+    totalRecovered: Number(totalRecovered.toFixed(2)),
+    totalPendingRecovery: Number(totalPendingRecovery.toFixed(2)),
+    totalAdvancesCount: advances.length,
+    pendingAdvancesCount: advances.filter((a) => !a.isRecovered).length,
+    recoveredAdvancesCount: advances.filter((a) => a.isRecovered).length,
+    byEmployee: Array.from(byEmployeeMap.values()),
+  };
+}
+
+export async function getAdvanceLedger(query: ListAdvancesQuery): Promise<{
+  summary: AdvanceSummaryResult;
+  transactions: AdvanceLedgerTransaction[];
+}> {
+  const where: Prisma.EmployeeAdvanceWhereInput = {};
+  if (query.employeeId) where.employeeId = query.employeeId;
+  if (query.recoveryMonth) where.recoveryMonth = query.recoveryMonth;
+  if (query.recoveryYear) where.recoveryYear = query.recoveryYear;
+
+  const advances = await prisma.employeeAdvance.findMany({
+    where,
+    include: {
+      employee: {
+        select: { id: true, employeeId: true, name: true, department: true, designation: true },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const summary = await getAdvanceSummary(query);
+  const transactions: AdvanceLedgerTransaction[] = [];
+
+  for (const adv of advances) {
+    const amt = Number(adv.amount || 0);
+    const origAmt = adv.originalAmount ? Number(adv.originalAmount) : amt;
+    const isCarryForward = Boolean(adv.parentAdvanceId);
+
+    // 1. Credit entry: Advance issued / disbursed to employee
+    transactions.push({
+      id: `${adv.id}-credit`,
+      advanceId: adv.id,
+      date: (adv.advanceDate || adv.createdAt).toISOString(),
+      type: 'CREDIT',
+      amount: isCarryForward ? amt : origAmt,
+      employeeId: adv.employeeId,
+      employeeCode: adv.employee?.employeeId || 'N/A',
+      employeeName: adv.employee?.name || 'Unknown',
+      department: adv.employee?.department || '-',
+      designation: adv.employee?.designation || '-',
+      recoveryMonth: adv.recoveryMonth,
+      recoveryYear: adv.recoveryYear,
+      status: adv.isRecovered ? 'RECOVERED' : isCarryForward ? 'CARRIED_FORWARD' : 'PENDING',
+      reason: adv.reason,
+      payrollRunId: adv.payrollRunId,
+      createdAt: adv.createdAt.toISOString(),
+    });
+
+    // 2. Debit entry: When advance is recovered or deducted
+    if (adv.isRecovered) {
+      transactions.push({
+        id: `${adv.id}-debit`,
+        advanceId: adv.id,
+        date: (adv.recoveredAt || adv.updatedAt).toISOString(),
+        type: 'DEBIT',
+        amount: amt,
+        employeeId: adv.employeeId,
+        employeeCode: adv.employee?.employeeId || 'N/A',
+        employeeName: adv.employee?.name || 'Unknown',
+        department: adv.employee?.department || '-',
+        designation: adv.employee?.designation || '-',
+        recoveryMonth: adv.recoveryMonth,
+        recoveryYear: adv.recoveryYear,
+        status: 'RECOVERED',
+        reason: `Advance recovered / deducted in payroll (${getMonthName(adv.recoveryMonth)} ${adv.recoveryYear}): ${adv.reason}`,
+        payrollRunId: adv.payrollRunId,
+        createdAt: (adv.recoveredAt || adv.updatedAt).toISOString(),
+      });
+    }
+  }
+
+  // Sort chronological by date descending
+  transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  return {
+    summary,
+    transactions,
+  };
 }
 
 export async function createDeduction(data: CreateDeductionInput, createdById?: string) {
@@ -866,17 +1218,28 @@ export async function listDeductions(query: ListDeductionsQuery) {
  * Calculates payroll according to PRC Hardware HR specifications:
  *
  * Total Calendar Days: Days in the target month (e.g. 30 in September)
- * Default Sundays: Number of Sundays in target month (e.g. 4)
- * Admin-Approved Sundays: Sundays where isSundayOverride = true
- * Payable Days = Total Calendar Days - Default Sundays + Admin-Approved Sundays
- * Per-Day Rate = Monthly CTC / Payable Days
+ * Default Sundays: Number of statutory Sundays in target month (e.g. 4)
+ * Payable Days = Total Calendar Days - Default Sundays (e.g. 30 - 4 = 26 days in September)
+ * Per-Day Rate = Monthly CTC / Payable Days (e.g. CTC / 26)
  *
- * Paid Days = Present Days + CL Days + EL Days + (0.5 * Half Days) + Admin-Approved Sundays
- * OT Rate = Per-Day Rate / Standard Hours (8)
- * OT Pay = Total Overtime Hours * OT Rate
+ * Standard Shift = 8 Hours
+ * OT Hourly Rate = (Monthly CTC / Payable Days) / 8 = Per-Day Rate / 8
+ * OT Pay = Total Overtime Hours * OT Hourly Rate
+ *
+ * Month-End Gross Salary Formula:
+ * Paid Days = Regular Present Days + (2 * Double Duty Days) + Sunday Present (Approved) + (0.5 * Half Days) + Holiday Days + CL + EL
  * Gross Salary = (Per-Day Rate * Paid Days) + OT Pay
- * Net Salary = Gross Salary - Pending Deductions - Pending Advances
+ * Net Salary = Max(0, Gross Salary - Advances Recovered - Deductions)
  */
+export interface SalaryCalculationStepHistory {
+  step: number;
+  title: string;
+  formula: string;
+  calculation: string;
+  result: string;
+  explanation: string;
+}
+
 export interface ComputedPayrollBreakdown {
   employeeId: string;
   month: number;
@@ -887,6 +1250,7 @@ export interface ComputedPayrollBreakdown {
   approvedSundays: number;
   payableDays: number;
   perDayRate: number;
+  perHourRate: number;
   presentDays: number;
   doubleDutyDays: number;
   clDays: number;
@@ -895,9 +1259,13 @@ export interface ComputedPayrollBreakdown {
   unpaidDays: number;
   holidayDays: number;
   paidDays: number;
+  workingHoursPerDay: number;
   overtimeHours: number;
   overtimeRate: number;
+  overtimeMultiplier: number;
   overtimePay: number;
+  basePayableSalary: number;
+  additionalAllowances: number;
   grossSalary: number;
   advanceDeduction: number;
   otherDeductions: number;
@@ -906,6 +1274,106 @@ export interface ComputedPayrollBreakdown {
     deductions: { id: string; amount: number; reason: string | null }[];
   };
   netSalary: number;
+  calculationHistory: SalaryCalculationStepHistory[];
+}
+
+export function buildSalaryCalculationHistory(params: {
+  monthlyCtc: number;
+  standardPayableDays: number;
+  standardWorkingHours: number;
+  perDayRate: number;
+  perHourRate: number;
+  regularPayableDays: number;
+  additionalSundayDutyCredits: number;
+  additionalDoubleDutyCredits: number;
+  totalPayableDayEquivalents: number;
+  basePayableSalary: number;
+  approvedOvertimeHours: number;
+  overtimeMultiplier: number;
+  overtimePay: number;
+  additionalAllowances: number;
+  grossSalary: number;
+  totalDeductions: number;
+  finalPayableSalary: number;
+}): SalaryCalculationStepHistory[] {
+  const {
+    monthlyCtc,
+    standardPayableDays,
+    standardWorkingHours,
+    perDayRate,
+    perHourRate,
+    regularPayableDays,
+    additionalSundayDutyCredits,
+    additionalDoubleDutyCredits,
+    totalPayableDayEquivalents,
+    basePayableSalary,
+    approvedOvertimeHours,
+    overtimeMultiplier,
+    overtimePay,
+    additionalAllowances,
+    grossSalary,
+    totalDeductions,
+    finalPayableSalary,
+  } = params;
+
+  return [
+    {
+      step: 1,
+      title: 'Per-Day Salary (Formula A)',
+      formula: 'Monthly Salary Base ÷ Payable Days (Fixed)',
+      calculation: `₹${monthlyCtc.toLocaleString('en-IN')} ÷ ${standardPayableDays} = ₹${perDayRate.toFixed(4)}`,
+      result: `₹${perDayRate.toFixed(2)} / day`,
+      explanation: 'Calculated using fixed payable days in the month (e.g. 26 days in September, 27 days in October, excluding default Sundays). Note: Sunday work and double duty shifts do not increase this fixed divisor.',
+    },
+    {
+      step: 2,
+      title: 'Per-Hour Salary (Formula B)',
+      formula: 'Per-Day Salary ÷ Standard Working Hours',
+      calculation: `₹${perDayRate.toFixed(4)} ÷ ${standardWorkingHours} hrs = ₹${perHourRate.toFixed(4)}`,
+      result: `₹${perHourRate.toFixed(2)} / hr`,
+      explanation: `Standard hourly wage rate based on standard ${standardWorkingHours}-hour working shift.`,
+    },
+    {
+      step: 3,
+      title: 'Paid Days / Present Day Equivalents',
+      formula: 'Regular Payable Attendance + Sunday Duty Credits + Double-Duty Credits',
+      calculation: `${regularPayableDays} + ${additionalSundayDutyCredits} + ${additionalDoubleDutyCredits} = ${totalPayableDayEquivalents}`,
+      result: `${totalPayableDayEquivalents} days`,
+      explanation: 'Total present day equivalent units eligible for payment. Sunday duty and double duty shifts provide extra day credit without modifying the fixed payable days divisor.',
+    },
+    {
+      step: 4,
+      title: 'Base Payable Salary',
+      formula: 'Paid Days (Total Present) × Per-Day Salary',
+      calculation: `${totalPayableDayEquivalents} × ₹${perDayRate.toFixed(4)} = ₹${basePayableSalary.toFixed(2)}`,
+      result: `₹${basePayableSalary.toFixed(2)}`,
+      explanation: 'Base wages earned for all attendance days before overtime and allowances.',
+    },
+    {
+      step: 5,
+      title: 'Approved Overtime Compensation',
+      formula: 'Approved Overtime Hours × Per-Hour Salary × Overtime Multiplier',
+      calculation: `${approvedOvertimeHours} hrs × ₹${perHourRate.toFixed(4)} × ${overtimeMultiplier} = ₹${overtimePay.toFixed(2)}`,
+      result: `₹${overtimePay.toFixed(2)}`,
+      explanation: `Overtime payment for ${approvedOvertimeHours} approved hours at ${overtimeMultiplier}x hourly rate.`,
+    },
+    {
+      step: 6,
+      title: 'Gross Earnings',
+      formula: 'Base Payable Salary + Overtime Pay + Additional Allowances',
+      calculation: `₹${basePayableSalary.toFixed(2)} + ₹${overtimePay.toFixed(2)} + ₹${additionalAllowances.toFixed(2)} = ₹${grossSalary.toFixed(2)}`,
+      result: `₹${grossSalary.toFixed(2)}`,
+      explanation: 'Total gross compensation before deductions.',
+    },
+    {
+      step: 7,
+      title: 'Final Payable Salary (Take-Home)',
+      formula: 'Gross Salary − Total Deductions (Advances & Deductions)',
+      calculation: `₹${grossSalary.toFixed(2)} − ₹${totalDeductions.toFixed(2)} = ₹${finalPayableSalary.toFixed(2)}`,
+      result: `₹${finalPayableSalary.toFixed(2)}`,
+      explanation: 'Final net payable amount after deducting partial advance recovery and approved deductions.',
+    },
+  ];
 }
 
 /**
@@ -918,7 +1386,13 @@ export function computePayrollBreakdown(
   year: number,
   attendances: any[],
   pendingAdvances: any[],
-  pendingDeductions: any[]
+  pendingDeductions: any[],
+  options?: {
+    standardPayableDaysOverride?: number;
+    workingHoursPerDay?: number;
+    overtimeMultiplier?: number;
+    additionalAllowances?: number;
+  }
 ): ComputedPayrollBreakdown {
   const totalCalendarDays = getDaysInMonth(year, month);
   const sundaysCount = countSundaysInMonth(year, month);
@@ -947,7 +1421,6 @@ export function computePayrollBreakdown(
     switch (att.status) {
       case 'DOUBLE_DUTY':
         doubleDutyDays += 1;
-        presentDays += 2; // 2x duty credit for full double shifts
         break;
       case 'PRESENT':
         presentDays += 1;
@@ -971,25 +1444,71 @@ export function computePayrollBreakdown(
     }
   }
 
-  // Formula: Payable Days = Total Calendar Days - Default Sundays + Approved Sundays
-  const payableDays = Math.max(1, totalCalendarDays - sundaysCount + approvedSundays);
+  // Formula: Payable Days (Fixed) = Total Calendar Days - Default Sundays
+  // In September (30 calendar days, 4 Sundays): fixedPayableDays = 26
+  // In October (31 calendar days, 4 Sundays): fixedPayableDays = 27
+  const defaultFixedPayableDays = Math.max(1, totalCalendarDays - sundaysCount);
+  const payableDays = options?.standardPayableDaysOverride && options.standardPayableDaysOverride > 0
+    ? options.standardPayableDaysOverride
+    : defaultFixedPayableDays;
+
   const monthlyCtc = Number(employee.monthlyCtc || 0);
-  const perDayRate = monthlyCtc / payableDays;
+  const perDayRateRaw = payableDays > 0 ? monthlyCtc / payableDays : 0;
 
-  // Paid Days = Present + Double Duty (2x) + CL + EL + Holiday + 0.5 * HalfDay + ApprovedSundays
-  const paidDays = presentDays + clDays + elDays + holidayDays + 0.5 * halfDays + approvedSundays;
+  const standardWorkingHours = options?.workingHoursPerDay && options.workingHoursPerDay > 0
+    ? options.workingHoursPerDay
+    : 8;
+  const perHourRateRaw = standardWorkingHours > 0 ? perDayRateRaw / standardWorkingHours : 0;
+  const overtimeMultiplier = options?.overtimeMultiplier && options.overtimeMultiplier > 0
+    ? options.overtimeMultiplier
+    : 1.0;
 
-  const standardHours = 8;
-  const overtimeRate = perDayRate / standardHours;
-  const overtimePay = overtimeHours * overtimeRate;
+  // Paid Days = Total Present Attendance & Duty Equivalents (Present + Double Duty + CL + EL + Holiday + 0.5 * HalfDay + ApprovedSundays)
+  const paidDays = presentDays + 2 * doubleDutyDays + clDays + elDays + holidayDays + 0.5 * halfDays + approvedSundays;
 
-  const grossSalary = perDayRate * paidDays + overtimePay;
+  const overtimePayRaw = overtimeHours * perHourRateRaw * overtimeMultiplier;
+  const basePayableSalaryRaw = perDayRateRaw * paidDays;
+  const additionalAllowances = options?.additionalAllowances ? Number(options.additionalAllowances) : 0;
+
+  // Gross Salary = Base Payable Salary + OT Pay + Additional Allowances
+  const grossSalaryRaw = basePayableSalaryRaw + overtimePayRaw + additionalAllowances;
 
   const advanceDeduction = pendingAdvances.reduce((sum, adv) => sum + Number(adv.amount || 0), 0);
   const otherDeductions = pendingDeductions.reduce((sum, ded) => sum + Number(ded.amount || 0), 0);
+  const totalDeductions = advanceDeduction + otherDeductions;
 
   // Net = Gross - Advance - Deductions
-  const netSalary = Math.max(0, grossSalary - advanceDeduction - otherDeductions);
+  const netSalaryRaw = Math.max(0, grossSalaryRaw - totalDeductions);
+
+  // Decimal-safe outputs matching payslip line items
+  const perDayRate = Number(perDayRateRaw.toFixed(2));
+  const perHourRate = Number(perHourRateRaw.toFixed(2));
+  const basePayableSalary = Number(basePayableSalaryRaw.toFixed(2));
+  const overtimePay = Number(overtimePayRaw.toFixed(2));
+  const grossSalary = Number((basePayableSalary + overtimePay + additionalAllowances).toFixed(2));
+  const netSalary = Math.max(0, Number((grossSalary - totalDeductions).toFixed(2)));
+
+  // Build step-by-step history
+  const regularAttendanceDays = presentDays + clDays + elDays + holidayDays + 0.5 * halfDays + doubleDutyDays;
+  const calculationHistory = buildSalaryCalculationHistory({
+    monthlyCtc,
+    standardPayableDays: payableDays,
+    standardWorkingHours,
+    perDayRate: perDayRateRaw,
+    perHourRate: perHourRateRaw,
+    regularPayableDays: regularAttendanceDays,
+    additionalSundayDutyCredits: approvedSundays,
+    additionalDoubleDutyCredits: doubleDutyDays,
+    totalPayableDayEquivalents: paidDays,
+    basePayableSalary: basePayableSalaryRaw,
+    approvedOvertimeHours: overtimeHours,
+    overtimeMultiplier,
+    overtimePay: overtimePayRaw,
+    additionalAllowances,
+    grossSalary: grossSalaryRaw,
+    totalDeductions,
+    finalPayableSalary: netSalaryRaw,
+  });
 
   return {
     employeeId: employee.id,
@@ -1000,7 +1519,9 @@ export function computePayrollBreakdown(
     sundaysCount,
     approvedSundays,
     payableDays: Number(payableDays.toFixed(2)),
-    perDayRate: Number(perDayRate.toFixed(2)),
+    paidDays: Number(paidDays.toFixed(2)),
+    perDayRate,
+    perHourRate,
     presentDays,
     doubleDutyDays,
     clDays,
@@ -1008,18 +1529,22 @@ export function computePayrollBreakdown(
     halfDays,
     unpaidDays,
     holidayDays,
-    paidDays: Number(paidDays.toFixed(2)),
+    workingHoursPerDay: standardWorkingHours,
     overtimeHours: Number(overtimeHours.toFixed(2)),
-    overtimeRate: Number(overtimeRate.toFixed(2)),
-    overtimePay: Number(overtimePay.toFixed(2)),
-    grossSalary: Number(grossSalary.toFixed(2)),
+    overtimeRate: perHourRate,
+    overtimeMultiplier,
+    overtimePay,
+    basePayableSalary,
+    additionalAllowances,
+    grossSalary,
     advanceDeduction: Number(advanceDeduction.toFixed(2)),
     otherDeductions: Number(otherDeductions.toFixed(2)),
     deductionSummary: {
       advances: pendingAdvances.map((a) => ({ id: a.id, amount: Number(a.amount), reason: a.reason })),
       deductions: pendingDeductions.map((d) => ({ id: d.id, amount: Number(d.amount), reason: d.reason })),
     },
-    netSalary: Number(netSalary.toFixed(2)),
+    netSalary,
+    calculationHistory,
   };
 }
 
@@ -1120,19 +1645,24 @@ export async function calculateEmployeeMonthlyPayroll(
       payableDays: new Prisma.Decimal(breakdown.payableDays),
       perDayRate: new Prisma.Decimal(breakdown.perDayRate),
       presentDays: new Prisma.Decimal(breakdown.presentDays),
+      doubleDutyDays: new Prisma.Decimal(breakdown.doubleDutyDays),
       clDays: new Prisma.Decimal(breakdown.clDays),
       elDays: new Prisma.Decimal(breakdown.elDays),
       halfDays: new Prisma.Decimal(breakdown.halfDays),
       unpaidDays: new Prisma.Decimal(breakdown.unpaidDays),
       holidayDays: new Prisma.Decimal(breakdown.holidayDays),
       paidDays: new Prisma.Decimal(breakdown.paidDays),
+      workingHoursPerDay: new Prisma.Decimal(breakdown.workingHoursPerDay || 8),
       overtimeHours: new Prisma.Decimal(breakdown.overtimeHours),
       overtimeRate: new Prisma.Decimal(breakdown.overtimeRate),
+      overtimeMultiplier: new Prisma.Decimal(breakdown.overtimeMultiplier || 1),
       overtimePay: new Prisma.Decimal(breakdown.overtimePay),
+      additionalAllowances: new Prisma.Decimal(breakdown.additionalAllowances || 0),
       grossSalary: new Prisma.Decimal(breakdown.grossSalary),
       advanceDeduction: new Prisma.Decimal(breakdown.advanceDeduction),
       otherDeductions: new Prisma.Decimal(breakdown.otherDeductions),
       deductionSummary: breakdown.deductionSummary,
+      calculationHistory: breakdown.calculationHistory as any,
       netSalary: new Prisma.Decimal(breakdown.netSalary),
       status: 'DRAFT',
       createdById: calculatedById,
@@ -1145,19 +1675,24 @@ export async function calculateEmployeeMonthlyPayroll(
       payableDays: new Prisma.Decimal(breakdown.payableDays),
       perDayRate: new Prisma.Decimal(breakdown.perDayRate),
       presentDays: new Prisma.Decimal(breakdown.presentDays),
+      doubleDutyDays: new Prisma.Decimal(breakdown.doubleDutyDays),
       clDays: new Prisma.Decimal(breakdown.clDays),
       elDays: new Prisma.Decimal(breakdown.elDays),
       halfDays: new Prisma.Decimal(breakdown.halfDays),
       unpaidDays: new Prisma.Decimal(breakdown.unpaidDays),
       holidayDays: new Prisma.Decimal(breakdown.holidayDays),
       paidDays: new Prisma.Decimal(breakdown.paidDays),
+      workingHoursPerDay: new Prisma.Decimal(breakdown.workingHoursPerDay || 8),
       overtimeHours: new Prisma.Decimal(breakdown.overtimeHours),
       overtimeRate: new Prisma.Decimal(breakdown.overtimeRate),
+      overtimeMultiplier: new Prisma.Decimal(breakdown.overtimeMultiplier || 1),
       overtimePay: new Prisma.Decimal(breakdown.overtimePay),
+      additionalAllowances: new Prisma.Decimal(breakdown.additionalAllowances || 0),
       grossSalary: new Prisma.Decimal(breakdown.grossSalary),
       advanceDeduction: new Prisma.Decimal(breakdown.advanceDeduction),
       otherDeductions: new Prisma.Decimal(breakdown.otherDeductions),
       deductionSummary: breakdown.deductionSummary,
+      calculationHistory: breakdown.calculationHistory as any,
       netSalary: new Prisma.Decimal(breakdown.netSalary),
     },
     include: {
@@ -1316,19 +1851,24 @@ export async function calculatePayroll(input: CalculatePayrollInput, calculatedB
         payableDays: new Prisma.Decimal(breakdown.payableDays),
         perDayRate: new Prisma.Decimal(breakdown.perDayRate),
         presentDays: new Prisma.Decimal(breakdown.presentDays),
+        doubleDutyDays: new Prisma.Decimal(breakdown.doubleDutyDays),
         clDays: new Prisma.Decimal(breakdown.clDays),
         elDays: new Prisma.Decimal(breakdown.elDays),
         halfDays: new Prisma.Decimal(breakdown.halfDays),
         unpaidDays: new Prisma.Decimal(breakdown.unpaidDays),
         holidayDays: new Prisma.Decimal(breakdown.holidayDays),
         paidDays: new Prisma.Decimal(breakdown.paidDays),
+        workingHoursPerDay: new Prisma.Decimal(breakdown.workingHoursPerDay || 8),
         overtimeHours: new Prisma.Decimal(breakdown.overtimeHours),
         overtimeRate: new Prisma.Decimal(breakdown.overtimeRate),
+        overtimeMultiplier: new Prisma.Decimal(breakdown.overtimeMultiplier || 1),
         overtimePay: new Prisma.Decimal(breakdown.overtimePay),
+        additionalAllowances: new Prisma.Decimal(breakdown.additionalAllowances || 0),
         grossSalary: new Prisma.Decimal(breakdown.grossSalary),
         advanceDeduction: new Prisma.Decimal(breakdown.advanceDeduction),
         otherDeductions: new Prisma.Decimal(breakdown.otherDeductions),
         deductionSummary: breakdown.deductionSummary,
+        calculationHistory: breakdown.calculationHistory as any,
         netSalary: new Prisma.Decimal(breakdown.netSalary),
         status: 'DRAFT',
         createdById: calculatedById,
@@ -1341,19 +1881,24 @@ export async function calculatePayroll(input: CalculatePayrollInput, calculatedB
         payableDays: new Prisma.Decimal(breakdown.payableDays),
         perDayRate: new Prisma.Decimal(breakdown.perDayRate),
         presentDays: new Prisma.Decimal(breakdown.presentDays),
+        doubleDutyDays: new Prisma.Decimal(breakdown.doubleDutyDays),
         clDays: new Prisma.Decimal(breakdown.clDays),
         elDays: new Prisma.Decimal(breakdown.elDays),
         halfDays: new Prisma.Decimal(breakdown.halfDays),
         unpaidDays: new Prisma.Decimal(breakdown.unpaidDays),
         holidayDays: new Prisma.Decimal(breakdown.holidayDays),
         paidDays: new Prisma.Decimal(breakdown.paidDays),
+        workingHoursPerDay: new Prisma.Decimal(breakdown.workingHoursPerDay || 8),
         overtimeHours: new Prisma.Decimal(breakdown.overtimeHours),
         overtimeRate: new Prisma.Decimal(breakdown.overtimeRate),
+        overtimeMultiplier: new Prisma.Decimal(breakdown.overtimeMultiplier || 1),
         overtimePay: new Prisma.Decimal(breakdown.overtimePay),
+        additionalAllowances: new Prisma.Decimal(breakdown.additionalAllowances || 0),
         grossSalary: new Prisma.Decimal(breakdown.grossSalary),
         advanceDeduction: new Prisma.Decimal(breakdown.advanceDeduction),
         otherDeductions: new Prisma.Decimal(breakdown.otherDeductions),
         deductionSummary: breakdown.deductionSummary,
+        calculationHistory: breakdown.calculationHistory as any,
         netSalary: new Prisma.Decimal(breakdown.netSalary),
       },
       include: {
@@ -1422,6 +1967,341 @@ export function queueBatchPayrollAutoCalculation(month: number, year: number) {
   }, 500);
 
   debounceTimers.set(key, timer);
+}
+
+/**
+ * Fetches default dynamic calculation parameters for a specific employee and payroll month/year.
+ * Gathers attendance counts (Present, Sunday overrides, Double Duty, Overtime) and active advances/deductions.
+ */
+export async function getEmployeeSalaryDefaults(employeeId: string, month: number, year: number) {
+  const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+  if (!employee) {
+    throw new Error('Employee not found');
+  }
+
+  const totalCalendarDays = getDaysInMonth(year, month);
+  const sundaysCount = countSundaysInMonth(year, month);
+  const standardPayableDays = Math.max(1, totalCalendarDays - sundaysCount);
+  const standardWorkingHours = 8;
+
+  const startDate = new Date(year, month - 1, 1);
+  const endDate = new Date(year, month - 1, totalCalendarDays);
+
+  const [attendances, advances, deductions, existingRun, allUnrecoveredAdvances] = await Promise.all([
+    prisma.employeeAttendance.findMany({
+      where: {
+        employeeId: employee.id,
+        date: { gte: startDate, lte: endDate },
+      },
+    }),
+    prisma.employeeAdvance.findMany({
+      where: {
+        employeeId: employee.id,
+        recoveryMonth: month,
+        recoveryYear: year,
+        isRecovered: false,
+      },
+    }),
+    prisma.employeeDeduction.findMany({
+      where: {
+        employeeId: employee.id,
+        applyMonth: month,
+        applyYear: year,
+        isApplied: false,
+      },
+    }),
+    prisma.employeePayrollRun.findUnique({
+      where: {
+        employeeId_year_month: {
+          employeeId: employee.id,
+          year,
+          month,
+        },
+      },
+    }),
+    prisma.employeeAdvance.findMany({
+      where: {
+        employeeId: employee.id,
+        isRecovered: false,
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+  ]);
+
+  let presentDays = 0;
+  let doubleDutyDays = 0;
+  let clDays = 0;
+  let elDays = 0;
+  let halfDays = 0;
+  let holidayDays = 0;
+  let approvedSundays = 0;
+  let overtimeHours = 0;
+
+  for (const att of attendances) {
+    overtimeHours += Number(att.overtimeHours || 0);
+    if (att.isSunday) {
+      if (att.isSundayOverride) approvedSundays++;
+      continue;
+    }
+    switch (att.status) {
+      case 'DOUBLE_DUTY':
+        doubleDutyDays++;
+        break;
+      case 'PRESENT':
+        presentDays++;
+        break;
+      case 'CL':
+        clDays++;
+        break;
+      case 'EL':
+        elDays++;
+        break;
+      case 'HALF_DAY':
+        halfDays++;
+        break;
+      case 'HOLIDAY':
+        holidayDays++;
+        break;
+    }
+  }
+
+  const regularPayableDays = presentDays + clDays + elDays + holidayDays + 0.5 * halfDays + doubleDutyDays;
+  const advanceDeduction = advances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+  const otherDeductions = deductions.reduce((sum, d) => sum + Number(d.amount || 0), 0);
+  const totalPendingAdvance = allUnrecoveredAdvances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+
+  return {
+    employeeId: employee.id,
+    employeeName: employee.name,
+    month,
+    year,
+    monthlyCtc: Number(employee.monthlyCtc || 0),
+    standardPayableDays,
+    standardWorkingHours,
+    regularPayableDays,
+    additionalSundayDutyCredits: approvedSundays,
+    additionalDoubleDutyCredits: doubleDutyDays,
+    approvedOvertimeHours: overtimeHours,
+    overtimeMultiplier: existingRun?.overtimeMultiplier ? Number(existingRun.overtimeMultiplier) : 1.0,
+    partialDeductions: advanceDeduction + otherDeductions,
+    totalPendingAdvance,
+    monthScheduledAdvance: advanceDeduction,
+    pendingAdvancesCount: allUnrecoveredAdvances.length,
+    pendingAdvancesList: allUnrecoveredAdvances.map((a) => ({
+      id: a.id,
+      amount: Number(a.amount),
+      originalAmount: a.originalAmount ? Number(a.originalAmount) : Number(a.amount),
+      reason: a.reason,
+      recoveryMonth: a.recoveryMonth,
+      recoveryYear: a.recoveryYear,
+      advanceDate: a.advanceDate,
+    })),
+    additionalAllowances: existingRun?.additionalAllowances ? Number(existingRun.additionalAllowances) : 0,
+  };
+}
+
+/**
+ * Dynamic Salary, Attendance & Overtime Calculation Engine
+ * Implements strict Indian payroll standards with configurable base CTC, payable days,
+ * overtime hours, multipliers, and partial deductions.
+ */
+export async function simulateSalaryCalculation(
+  input: SimulateSalaryCalculationInput,
+  actorId?: string
+) {
+  const {
+    employeeId,
+    month,
+    year,
+    monthlyCtc,
+    standardPayableDays,
+    standardWorkingHours,
+    regularPayableDays,
+    additionalSundayDutyCredits,
+    additionalDoubleDutyCredits,
+    approvedOvertimeHours,
+    overtimeMultiplier,
+    partialDeductions,
+    additionalAllowances,
+    saveToPayroll,
+  } = input;
+
+  // Formula A: Per-Day Salary = Monthly Salary Base ÷ Standard Payable Days
+  const perDaySalaryRaw = standardPayableDays > 0 ? monthlyCtc / standardPayableDays : 0;
+
+  // Formula B: Per-Hour Salary = Per-Day Salary ÷ Standard Working Hours
+  const perHourSalaryRaw = standardWorkingHours > 0 ? perDaySalaryRaw / standardWorkingHours : 0;
+
+  // Total Payable Day Equivalents = Regular Payable Days + Additional Sunday Duty Credits + Additional Double-Duty Credits
+  const totalPayableDayEquivalents = regularPayableDays + additionalSundayDutyCredits + additionalDoubleDutyCredits;
+
+  // Base Payable Salary = Total Payable Day Equivalents × Per-Day Salary
+  const basePayableSalaryRaw = totalPayableDayEquivalents * perDaySalaryRaw;
+
+  // Overtime Pay = Approved Overtime Hours × Per-Hour Salary × Overtime Multiplier
+  const overtimePayRaw = approvedOvertimeHours * perHourSalaryRaw * overtimeMultiplier;
+
+  // Gross Earnings = Base Payable Salary + Overtime Pay + Additional Allowances
+  const grossEarningsRaw = basePayableSalaryRaw + overtimePayRaw + additionalAllowances;
+
+  // Final Payable Salary = Max(0, Gross Earnings − Total Deductions)
+  const finalPayableSalaryRaw = Math.max(0, grossEarningsRaw - partialDeductions);
+
+  // Decimal-safe outputs for display (exact 2 decimal places matching payslip line items)
+  const perDaySalary = Number(perDaySalaryRaw.toFixed(2));
+  const perHourSalary = Number(perHourSalaryRaw.toFixed(2));
+  const basePayableSalary = Number(basePayableSalaryRaw.toFixed(2));
+  const overtimePay = Number(overtimePayRaw.toFixed(2));
+  const grossEarnings = Number((basePayableSalary + overtimePay + additionalAllowances).toFixed(2));
+  const finalPayableSalary = Math.max(0, Number((grossEarnings - partialDeductions).toFixed(2)));
+
+  // Build 7-step transparent calculation history
+  const calculationHistory = buildSalaryCalculationHistory({
+    monthlyCtc,
+    standardPayableDays,
+    standardWorkingHours,
+    perDayRate: perDaySalaryRaw,
+    perHourRate: perHourSalaryRaw,
+    regularPayableDays,
+    additionalSundayDutyCredits,
+    additionalDoubleDutyCredits,
+    totalPayableDayEquivalents,
+    basePayableSalary: basePayableSalaryRaw,
+    approvedOvertimeHours,
+    overtimeMultiplier,
+    overtimePay: overtimePayRaw,
+    additionalAllowances,
+    grossSalary: grossEarnings,
+    totalDeductions: partialDeductions,
+    finalPayableSalary,
+  });
+
+  const breakdown = {
+    // 14 Core Output Breakdown Items
+    monthlySalaryBase: monthlyCtc,
+    standardPayableDays,
+    payableDays: standardPayableDays,
+    paidDays: totalPayableDayEquivalents,
+    perDaySalary,
+    perHourSalary,
+    regularPayableAttendance: regularPayableDays,
+    additionalSundayDutyCredit: additionalSundayDutyCredits,
+    additionalDoubleDutyCredit: additionalDoubleDutyCredits,
+    totalPayableDayEquivalents,
+    basePayableSalary,
+    approvedOvertimeHours,
+    overtimeMultiplier,
+    overtimePay,
+    additionalEarnings: additionalAllowances,
+    partialDeductions,
+    grossEarnings,
+    finalPayableSalary,
+
+    // High-precision raw calculations
+    raw: {
+      perDaySalary: perDaySalaryRaw,
+      perHourSalary: perHourSalaryRaw,
+      basePayableSalary: basePayableSalaryRaw,
+      overtimePay: overtimePayRaw,
+      grossEarnings: grossEarningsRaw,
+      finalPayableSalary: finalPayableSalaryRaw,
+    },
+
+    // Detailed formula walkthrough & audit trail
+    calculationHistory,
+  };
+
+  // If requested and employeeId is supplied, lock/save into database
+  if (saveToPayroll && employeeId) {
+    const employee = await prisma.employee.findUnique({ where: { id: employeeId } });
+    if (!employee) {
+      throw new Error('Employee not found to save payroll run');
+    }
+
+    const totalCalendarDays = getDaysInMonth(year, month);
+    const sundaysCount = countSundaysInMonth(year, month);
+
+    const savedRun = await prisma.employeePayrollRun.upsert({
+      where: {
+        employeeId_year_month: {
+          employeeId: employee.id,
+          year,
+          month,
+        },
+      },
+      create: {
+        employeeId: employee.id,
+        month,
+        year,
+        monthlyCtc: new Prisma.Decimal(monthlyCtc),
+        totalCalendarDays,
+        sundaysCount,
+        approvedSundays: additionalSundayDutyCredits,
+        payableDays: new Prisma.Decimal(standardPayableDays),
+        perDayRate: new Prisma.Decimal(perDaySalary),
+        presentDays: new Prisma.Decimal(regularPayableDays),
+        doubleDutyDays: new Prisma.Decimal(additionalDoubleDutyCredits),
+        clDays: new Prisma.Decimal(0),
+        elDays: new Prisma.Decimal(0),
+        halfDays: new Prisma.Decimal(0),
+        unpaidDays: new Prisma.Decimal(0),
+        holidayDays: new Prisma.Decimal(0),
+        paidDays: new Prisma.Decimal(totalPayableDayEquivalents),
+        workingHoursPerDay: new Prisma.Decimal(standardWorkingHours),
+        overtimeHours: new Prisma.Decimal(approvedOvertimeHours),
+        overtimeRate: new Prisma.Decimal(perHourSalary),
+        overtimeMultiplier: new Prisma.Decimal(overtimeMultiplier),
+        overtimePay: new Prisma.Decimal(overtimePay),
+        additionalAllowances: new Prisma.Decimal(additionalAllowances),
+        grossSalary: new Prisma.Decimal(grossEarnings),
+        advanceDeduction: new Prisma.Decimal(partialDeductions),
+        otherDeductions: new Prisma.Decimal(0),
+        deductionSummary: {
+          partialDeductions,
+          notes: 'Configured via Dynamic Salary Calculator Studio',
+        },
+        calculationHistory: calculationHistory as any,
+        netSalary: new Prisma.Decimal(finalPayableSalary),
+        status: 'DRAFT',
+        createdById: actorId,
+      },
+      update: {
+        monthlyCtc: new Prisma.Decimal(monthlyCtc),
+        totalCalendarDays,
+        sundaysCount,
+        approvedSundays: additionalSundayDutyCredits,
+        payableDays: new Prisma.Decimal(standardPayableDays),
+        perDayRate: new Prisma.Decimal(perDaySalary),
+        presentDays: new Prisma.Decimal(regularPayableDays),
+        doubleDutyDays: new Prisma.Decimal(additionalDoubleDutyCredits),
+        paidDays: new Prisma.Decimal(totalPayableDayEquivalents),
+        workingHoursPerDay: new Prisma.Decimal(standardWorkingHours),
+        overtimeHours: new Prisma.Decimal(approvedOvertimeHours),
+        overtimeRate: new Prisma.Decimal(perHourSalary),
+        overtimeMultiplier: new Prisma.Decimal(overtimeMultiplier),
+        overtimePay: new Prisma.Decimal(overtimePay),
+        additionalAllowances: new Prisma.Decimal(additionalAllowances),
+        grossSalary: new Prisma.Decimal(grossEarnings),
+        advanceDeduction: new Prisma.Decimal(partialDeductions),
+        deductionSummary: {
+          partialDeductions,
+          notes: 'Updated via Dynamic Salary Calculator Studio',
+        },
+        calculationHistory: calculationHistory as any,
+        netSalary: new Prisma.Decimal(finalPayableSalary),
+      },
+      include: {
+        employee: true,
+      },
+    });
+
+    return {
+      ...breakdown,
+      savedPayrollRun: savedRun,
+    };
+  }
+
+  return breakdown;
 }
 
 export async function listPayrollRuns(query: ListPayrollQuery) {
@@ -1601,6 +2481,7 @@ export async function getPayslipPdfBuffer(payrollRunId: string): Promise<{ buffe
       payableDays: run.payableDays.toString(),
       perDayRate: run.perDayRate.toString(),
       presentDays: run.presentDays.toString(),
+      doubleDutyDays: (run.doubleDutyDays ?? 0).toString(),
       clDays: run.clDays.toString(),
       elDays: run.elDays.toString(),
       halfDays: run.halfDays.toString(),
@@ -1688,8 +2569,8 @@ export async function dispatchPayslipEmail(payrollRunId: string, recipientEmail?
                 <td style="padding: 6px 0; color: #0f172a; text-align: right;">${period}</td>
               </tr>
               <tr>
-                <td style="padding: 6px 0; color: #64748b;"><strong>Paid Days:</strong></td>
-                <td style="padding: 6px 0; color: #0f172a; text-align: right;">${run.paidDays} / ${run.payableDays} Days</td>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Payable / Paid Days:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a; text-align: right;">${run.payableDays} Payable (Present) / ${run.paidDays} Paid (Fixed) Days</td>
               </tr>
               <tr style="border-top: 1px solid #e2e8f0;">
                 <td style="padding: 8px 0; color: #0f172a; font-weight: 700; font-size: 14px;">Net Disbursed Salary:</td>
@@ -1976,7 +2857,7 @@ export async function getMonthlyAttendanceReportPdfBuffer(params: {
       monthlyCtc: Number(emp.monthlyCtc || 0),
       perDayRate: breakdown.perDayRate,
       dailyAttendance,
-      presentDays: Math.max(0, breakdown.presentDays - (breakdown.doubleDutyDays * 2)),
+      presentDays: breakdown.presentDays,
       doubleDutyDays: breakdown.doubleDutyDays,
       halfDays: breakdown.halfDays,
       holidayDays: breakdown.holidayDays,
@@ -1984,6 +2865,7 @@ export async function getMonthlyAttendanceReportPdfBuffer(params: {
       unpaidDays: breakdown.unpaidDays,
       approvedSundays: breakdown.approvedSundays,
       paidDays: breakdown.paidDays,
+      payableDays: breakdown.payableDays,
       overtimeHours: breakdown.overtimeHours,
       overtimePay: breakdown.overtimePay,
       advanceAmount: advanceTotal,

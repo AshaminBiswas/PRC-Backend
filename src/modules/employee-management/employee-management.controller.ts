@@ -12,11 +12,14 @@ import {
   AdjustLeaveSchema,
   CreateAdvanceSchema,
   UpdateAdvanceSchema,
+  PartialDeductAdvanceSchema,
+  RecoverAdvanceSchema,
   ListAdvancesQuerySchema,
   CreateDeductionSchema,
   UpdateDeductionSchema,
   ListDeductionsQuerySchema,
   CalculatePayrollSchema,
+  SimulateSalaryCalculationSchema,
   MarkPayrollPaidSchema,
   ListPayrollQuerySchema,
   ResendPayslipEmailSchema,
@@ -207,6 +210,23 @@ export const updateAdvanceHandler = async (req: Request, res: Response, next: Ne
   }
 };
 
+export const recoverAdvanceHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const input = RecoverAdvanceSchema.parse(req.body);
+    const actorId = req.user?.id;
+    const result = await employeeService.recoverAdvance(id, input, actorId);
+    const message = result.isFullRecovery
+      ? `Advance fully recovered (\u20B9${result.deductedAmount.toLocaleString('en-IN')}) successfully.`
+      : `Advance recovered (\u20B9${result.deductedAmount.toLocaleString('en-IN')}). Remaining balance (\u20B9${result.remainingAmount.toLocaleString('en-IN')}) carried forward successfully.`;
+    sendSuccess(res, result, message);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const partialDeductAdvanceHandler = recoverAdvanceHandler;
+
 export const deleteAdvanceHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = req.params.id as string;
@@ -221,6 +241,26 @@ export const listAdvancesHandler = async (req: Request, res: Response, next: Nex
   try {
     const query = ListAdvancesQuerySchema.parse(req.query);
     const result = await employeeService.listAdvances(query);
+    sendSuccess(res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAdvanceSummaryHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = ListAdvancesQuerySchema.parse(req.query);
+    const result = await employeeService.getAdvanceSummary(query);
+    sendSuccess(res, result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAdvanceLedgerHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const query = ListAdvancesQuerySchema.parse(req.query);
+    const result = await employeeService.getAdvanceLedger(query);
     sendSuccess(res, result);
   } catch (error) {
     next(error);
@@ -277,6 +317,29 @@ export const calculatePayrollHandler = async (req: Request, res: Response, next:
     const calculatedById = req.user?.id;
     const result = await employeeService.calculatePayroll(input, calculatedById);
     sendSuccess(res, result, `Payroll calculation completed for ${result.length} employee(s)`);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const simulateSalaryCalculationHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const input = SimulateSalaryCalculationSchema.parse(req.body);
+    const actorId = req.user?.id;
+    const result = await employeeService.simulateSalaryCalculation(input, actorId);
+    sendSuccess(res, result, 'Salary calculation simulated successfully');
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getEmployeeSalaryDefaultsHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const id = req.params.id as string;
+    const month = Number(req.query.month) || 9;
+    const year = Number(req.query.year) || 2026;
+    const result = await employeeService.getEmployeeSalaryDefaults(id, month, year);
+    sendSuccess(res, result, 'Employee salary defaults retrieved successfully');
   } catch (error) {
     next(error);
   }

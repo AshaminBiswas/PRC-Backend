@@ -91,6 +91,7 @@ export interface EmployeePayslipPdfData {
     payableDays: number | string;
     perDayRate: number | string;
     presentDays: number | string;
+    doubleDutyDays?: number | string;
     clDays: number | string;
     elDays: number | string;
     halfDays: number | string;
@@ -369,17 +370,17 @@ export async function generateEmployeePayslipPdf(data: EmployeePayslipPdfData): 
           body: [
             [
               makeCell('CALENDAR DAYS', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
-              makeCell('PAYABLE DAYS', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
+              makeCell('PAYABLE DAYS (FIXED)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
+              makeCell('PAID DAYS (PRESENT)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
               makeCell('PRESENT DAYS', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
-              makeCell('PAID LEAVES (CL/EL)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
               makeCell('UNPAID DAYS', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
-              makeCell('TOTAL PAID DAYS', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
+              makeCell('NET DAYS PAID', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 7.5 }),
             ],
             [
               makeCell(`${payrollRun.totalCalendarDays ?? (payrollRun as any).daysInMonth ?? 30}`, { align: 'center', bold: true, fontSize: 9 }),
               makeCell(`${payrollRun.payableDays}`, { align: 'center', bold: true, fontSize: 9 }),
+              makeCell(`${payrollRun.paidDays}`, { align: 'center', bold: true, fontSize: 9, color: EMERALD }),
               makeCell(`${payrollRun.presentDays}`, { align: 'center', bold: true, fontSize: 9 }),
-              makeCell(`${Number(payrollRun.clDays || 0) + Number(payrollRun.elDays || 0)}`, { align: 'center', bold: true, fontSize: 9 }),
               makeCell(`${payrollRun.unpaidDays}`, { align: 'center', bold: true, fontSize: 9, color: Number(payrollRun.unpaidDays) > 0 ? RED : DARK_GRAY }),
               makeCell(`${payrollRun.paidDays}`, { align: 'center', bold: true, fontSize: 9, color: EMERALD }),
             ],

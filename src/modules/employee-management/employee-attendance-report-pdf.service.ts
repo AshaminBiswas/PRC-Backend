@@ -57,6 +57,7 @@ export interface MonthlyAttendanceReportEmployeeItem {
   unpaidDays: number; // UL + LEAVE
   approvedSundays: number;
   paidDays: number;
+  payableDays?: number;
   overtimeHours: number;
   overtimePay: number;
   advanceAmount: number;
@@ -172,6 +173,7 @@ export async function generateMonthlyAttendanceReportPdf(
   let totUnpaid = 0;
   let totSundays = 0;
   let totPaidDays = 0;
+  let totPayableDays = 0;
   let totOtHours = 0;
   let totOtPay = 0;
   let totAdvances = 0;
@@ -188,6 +190,7 @@ export async function generateMonthlyAttendanceReportPdf(
     totUnpaid += Number(item.unpaidDays || 0);
     totSundays += Number(item.approvedSundays || 0);
     totPaidDays += Number(item.paidDays || 0);
+    totPayableDays += Number(item.payableDays ?? item.paidDays ?? 0);
     totOtHours += Number(item.overtimeHours || 0);
     totOtPay += Number(item.overtimePay || 0);
     totAdvances += Number(item.advanceAmount || 0);
@@ -232,7 +235,7 @@ export async function generateMonthlyAttendanceReportPdf(
     makeCell('HALF\nDAY', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
     makeCell('HOLIDAY\n(H)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
     makeCell('ABSENT\n(A)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
-    makeCell('TOTAL PAID\nDAYS', { bold: true, align: 'center', fillColor: NAVY_DARK, color: '#38bdf8', fontSize: 6.5 })
+    makeCell('TOTAL PRESENT\n(PAYABLE)', { bold: true, align: 'center', fillColor: NAVY_DARK, color: '#38bdf8', fontSize: 6 })
   );
   musterTableBody.push(musterHeaderRow);
 
@@ -378,7 +381,8 @@ export async function generateMonthlyAttendanceReportPdf(
     makeCell('DEPARTMENT / DESIGNATION', { bold: true, align: 'left', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
     makeCell('MONTHLY CTC\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
     makeCell('PER-DAY\nRATE (\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
-    makeCell('PAID\nDAYS', { bold: true, align: 'center', fillColor: NAVY_DARK, color: '#38bdf8', fontSize: 6.5 }),
+    makeCell('PAYABLE DAYS\n(FIXED)', { bold: true, align: 'center', fillColor: NAVY_DARK, color: '#38bdf8', fontSize: 6 }),
+    makeCell('PAID DAYS\n(PRESENT)', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
     makeCell('OT\nHRS', { bold: true, align: 'center', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
     makeCell('OT PAY\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6 }),
     makeCell('GROSS WAGE\n(\u20B9)', { bold: true, align: 'right', fillColor: NAVY, color: '#ffffff', fontSize: 6.5 }),
@@ -400,7 +404,8 @@ export async function generateMonthlyAttendanceReportPdf(
       makeCell(`${emp.designation || '-'}\n${emp.department || '-'}`, { color: GRAY, fillColor: rowBg, fontSize: 6 }),
       makeCell(formatINR(emp.monthlyCtc), { align: 'right', fillColor: rowBg, fontSize: 6.5 }),
       makeCell(emp.perDayRate ? formatINR(emp.perDayRate) : '-', { align: 'right', color: GRAY, fillColor: rowBg, fontSize: 6.5 }),
-      makeCell(`${emp.paidDays}`, { align: 'center', bold: true, color: NAVY, fillColor: rowBg, fontSize: 7 }),
+      makeCell(`${emp.payableDays}`, { align: 'center', bold: true, color: NAVY, fillColor: rowBg, fontSize: 6.5 }),
+      makeCell(`${emp.paidDays}`, { align: 'center', bold: true, color: EMERALD, fillColor: rowBg, fontSize: 6.5 }),
       makeCell(emp.overtimeHours > 0 ? `${emp.overtimeHours}h` : '-', {
         align: 'center',
         color: emp.overtimeHours > 0 ? EMERALD : GRAY,
@@ -450,7 +455,8 @@ export async function generateMonthlyAttendanceReportPdf(
     makeCell('', {}),
     makeCell('-', { align: 'right', color: GRAY, fillColor: '#f1f5f9', fontSize: 6.5 }),
     makeCell('-', { align: 'right', color: GRAY, fillColor: '#f1f5f9', fontSize: 6.5 }),
-    makeCell(`${Number(totPaidDays.toFixed(1))}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: NAVY, fontSize: 7 }),
+    makeCell(`${Number(totPayableDays.toFixed(1))}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: NAVY, fontSize: 6.5 }),
+    makeCell(`${Number(totPaidDays.toFixed(1))}`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: EMERALD, fontSize: 6.5 }),
     makeCell(`${Number(totOtHours.toFixed(1))}h`, { bold: true, align: 'center', fillColor: '#f1f5f9', color: EMERALD, fontSize: 6.5 }),
     makeCell(formatINR(totOtPay), { bold: true, align: 'right', fillColor: '#f1f5f9', color: EMERALD, fontSize: 6.5 }),
     makeCell(formatINR(totGross), { bold: true, align: 'right', fillColor: '#f1f5f9', color: NAVY, fontSize: 7 }),
@@ -463,18 +469,19 @@ export async function generateMonthlyAttendanceReportPdf(
   const wageTableWidths = [
     18,  // #
     48,  // EMP ID
-    105, // EMPLOYEE NAME
-    95,  // DEPARTMENT / DESIGNATION
+    95,  // EMPLOYEE NAME
+    80,  // DEPARTMENT / DESIGNATION
     52,  // MONTHLY CTC
-    45,  // PER DAY RATE
-    38,  // PAID DAYS
-    30,  // OT HRS
-    45,  // OT PAY
-    62,  // GROSS WAGE
-    55,  // ADVANCE
+    44,  // PER DAY RATE
+    36,  // PAYABLE DAYS (FIXED)
+    36,  // PAID DAYS (PRESENT)
+    28,  // OT HRS
+    44,  // OT PAY
+    60,  // GROSS WAGE
+    54,  // ADVANCE
     48,  // DEDUCT
     68,  // NET PAYABLE
-    90,  // SIGNATURE / RECEIPT
+    88,  // SIGNATURE / RECEIPT
   ];
 
   const docDefinition: TDocumentDefinitions = {

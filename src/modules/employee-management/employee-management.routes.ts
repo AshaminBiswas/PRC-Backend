@@ -17,13 +17,19 @@ import {
   getLeaveLedgerHandler,
   createAdvanceHandler,
   updateAdvanceHandler,
+  partialDeductAdvanceHandler,
+  recoverAdvanceHandler,
   deleteAdvanceHandler,
   listAdvancesHandler,
+  getAdvanceSummaryHandler,
+  getAdvanceLedgerHandler,
   createDeductionHandler,
   updateDeductionHandler,
   deleteDeductionHandler,
   listDeductionsHandler,
   calculatePayrollHandler,
+  simulateSalaryCalculationHandler,
+  getEmployeeSalaryDefaultsHandler,
   listPayrollRunsHandler,
   finalizePayrollHandler,
   revertPayrollToDraftHandler,
@@ -128,8 +134,12 @@ router.post('/:id/leave-ledger', authorize('leaves.adjust'), adjustLeaveHandler)
 
 // ─── Advances ─────────────────────────────────────────────────────────────────
 router.get('/advances', authorize('advances.read'), listAdvancesHandler);
+router.get('/advances/summary', authorize('advances.read'), getAdvanceSummaryHandler);
+router.get('/advances/ledger', authorize('advances.read'), getAdvanceLedgerHandler);
 router.post('/advances', authorize('advances.create'), createAdvanceHandler);
 router.put('/advances/:id', authorize('advances.update'), updateAdvanceHandler);
+router.post('/advances/:id/partial-deduct', authorize('advances.create', 'advances.update'), partialDeductAdvanceHandler);
+router.post('/advances/:id/recover', authorize('advances.create', 'advances.update'), recoverAdvanceHandler);
 router.delete('/advances/:id', authorize('advances.delete'), deleteAdvanceHandler);
 
 // ─── Deductions ───────────────────────────────────────────────────────────────
@@ -141,6 +151,8 @@ router.delete('/deductions/:id', authorize('deductions.delete'), deleteDeduction
 // ─── Monthly Payroll Engine ───────────────────────────────────────────────────
 router.get('/payroll', authorize('payroll.read'), listPayrollRunsHandler);
 router.post('/payroll/calculate', authorize('payroll.calculate'), calculatePayrollHandler);
+router.post('/payroll/simulate', authorize('payroll.calculate'), simulateSalaryCalculationHandler);
+router.get('/payroll/defaults/:id', authorize('payroll.read', 'payroll.calculate'), getEmployeeSalaryDefaultsHandler);
 router.post('/payroll/:id/finalize', authorize('payroll.finalize'), finalizePayrollHandler);
 router.post('/payroll/:id/revert-draft', authorize('payroll.revert_draft'), revertPayrollToDraftHandler);
 router.post('/payroll/:id/mark-paid', authorize('payroll.disburse'), markPayrollPaidHandler);

@@ -326,6 +326,17 @@ export const UpdateAdvanceSchema = z.object({
   isRecovered: z.boolean().optional(),
 });
 
+export const RecoverAdvanceSchema = z.object({
+  recoveryType: z.enum(['FULL', 'CUSTOM']).default('CUSTOM'),
+  deductAmount: z.coerce.number().positive('Deduction amount must be greater than 0').optional(),
+  nextRecoveryMonth: z.coerce.number().int().min(1).max(12).optional(),
+  nextRecoveryYear: z.coerce.number().int().min(2020).max(2100).optional(),
+  notes: z.string().optional(),
+});
+export type RecoverAdvanceInput = z.infer<typeof RecoverAdvanceSchema>;
+export const PartialDeductAdvanceSchema = RecoverAdvanceSchema;
+export type PartialDeductAdvanceInput = RecoverAdvanceInput;
+
 export const ListAdvancesQuerySchema = z.object({
   employeeId: z.string().uuid().optional(),
   recoveryMonth: z.coerce.number().int().min(1).max(12).optional(),
@@ -370,6 +381,24 @@ export const CalculatePayrollSchema = z.object({
   previewOnly: z.boolean().default(false),
 });
 
+export const SimulateSalaryCalculationSchema = z.object({
+  employeeId: z.string().optional().nullable(),
+  employeeName: z.string().optional().nullable(),
+  month: z.coerce.number().int().min(1).max(12).default(9),
+  year: z.coerce.number().int().min(2020).max(2100).default(2026),
+  monthlyCtc: z.coerce.number().min(0, 'Monthly CTC cannot be negative').default(23500),
+  standardPayableDays: z.coerce.number().min(1, 'Standard payable days must be at least 1').default(26),
+  standardWorkingHours: z.coerce.number().min(1, 'Standard working hours must be at least 1').default(8),
+  regularPayableDays: z.coerce.number().min(0, 'Regular payable days cannot be negative').default(26),
+  additionalSundayDutyCredits: z.coerce.number().min(0, 'Sunday duty credits cannot be negative').default(0),
+  additionalDoubleDutyCredits: z.coerce.number().min(0, 'Double duty credits cannot be negative').default(0),
+  approvedOvertimeHours: z.coerce.number().min(0, 'Overtime hours cannot be negative').default(0),
+  overtimeMultiplier: z.coerce.number().min(0, 'Overtime multiplier cannot be negative').default(1.0),
+  partialDeductions: z.coerce.number().min(0, 'Partial deductions cannot be negative').default(0),
+  additionalAllowances: z.coerce.number().min(0, 'Additional allowances cannot be negative').default(0),
+  saveToPayroll: z.boolean().optional().default(false),
+});
+
 export const MarkPayrollPaidSchema = z.object({
   paymentMode: z.string().min(1, 'Payment mode is required (e.g. Bank Transfer, UPI, Cheque, Cash)'),
   paymentReference: z.string().optional().nullable(),
@@ -409,5 +438,6 @@ export type UpdateDeductionInput = z.infer<typeof UpdateDeductionSchema>;
 export type ListDeductionsQuery = z.infer<typeof ListDeductionsQuerySchema>;
 
 export type CalculatePayrollInput = z.infer<typeof CalculatePayrollSchema>;
+export type SimulateSalaryCalculationInput = z.infer<typeof SimulateSalaryCalculationSchema>;
 export type MarkPayrollPaidInput = z.infer<typeof MarkPayrollPaidSchema>;
 export type ListPayrollQuery = z.infer<typeof ListPayrollQuerySchema>;

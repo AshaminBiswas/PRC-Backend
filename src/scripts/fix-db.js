@@ -3442,6 +3442,13 @@ const STATEMENTS = [
   // Add HOLIDAY to AttendanceStatus enum and holiday_days to employee_payroll_runs
   `ALTER TYPE "AttendanceStatus" ADD VALUE IF NOT EXISTS 'HOLIDAY';`,
   `ALTER TABLE "employee_payroll_runs" ADD COLUMN IF NOT EXISTS "holiday_days" DECIMAL(6, 2) DEFAULT 0;`,
+  `ALTER TABLE "employee_payroll_runs" ADD COLUMN IF NOT EXISTS "double_duty_days" DECIMAL(6, 2) DEFAULT 0;`,
+  `ALTER TABLE "employee_payroll_runs" ADD COLUMN IF NOT EXISTS "working_hours_per_day" DECIMAL(4, 2) DEFAULT 8.00;`,
+  `ALTER TABLE "employee_payroll_runs" ADD COLUMN IF NOT EXISTS "overtime_multiplier" DECIMAL(4, 2) DEFAULT 1.00;`,
+  `ALTER TABLE "employee_payroll_runs" ADD COLUMN IF NOT EXISTS "additional_allowances" DECIMAL(12, 2) DEFAULT 0.00;`,
+  `ALTER TABLE "employee_payroll_runs" ADD COLUMN IF NOT EXISTS "calculation_history" JSONB;`,
+  `ALTER TABLE "employee_advances" ADD COLUMN IF NOT EXISTS "original_amount" DECIMAL(12, 2);`,
+  `ALTER TABLE "employee_advances" ADD COLUMN IF NOT EXISTS "parent_advance_id" TEXT;`,
 ];
 
 async function run() {
